@@ -40,4 +40,10 @@ backend.add(
   import('@openchoreo/backstage-plugin-openchoreo-portal-assistant-backend'),
 );
 
+// AI Delivery Portal — orchestration-api Custom Scaffolder Actions (Golden
+// Paths: Train->Track->Register, Register->Deploy, Recommend->Track->Register,
+// Register External Run, Setup Model Monitoring, Serving LLM, LLMOps
+// Lifecycle). See packages/backend/src/actions/mlopsActions.ts.
+backend.add(import('./actions'));
+
 backend.start();

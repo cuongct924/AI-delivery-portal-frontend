@@ -386,6 +386,47 @@ catalog:
     #   rules:
     #     - allow: [Template]
 
+    # AI Delivery Portal — org data + example catalog entities (models/prompts
+    # the golden paths below produce) and their 8 golden path templates.
+    - type: file
+      target: ../../catalog-entities/ai-delivery-org.yaml
+      rules:
+        - allow: [User, Group]
+    - type: file
+      target: ../../catalog-entities/ai-delivery-entities.yaml
+    - type: file
+      target: ../../templates/train-track-register/template.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: ../../templates/register-deploy/template.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: ../../templates/register-external-run/template.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: ../../templates/recommend-train-register/template.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: ../../templates/setup-model-monitoring/template.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: ../../templates/deploy-llm/template.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: ../../templates/llm-draft-register/template.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: ../../templates/llm-evaluate-deploy/template.yaml
+      rules:
+        - allow: [Template]
+
     ## Uncomment these lines to add more example data
     # - type: url
     #   target: https://github.com/backstage/backstage/blob/master/packages/catalog-model/examples/all.yaml

@@ -10,7 +10,7 @@
     "node": "20 || 22"
   },
   "scripts": {
-    "start": "NODE_OPTIONS=--no-node-snapshot backstage-cli repo start",
+    "start": "NODE_OPTIONS=--no-node-snapshot dotenv -e .env -- backstage-cli repo start",
     "build:backend": "yarn workspace backend build",
     "build:all": "backstage-cli repo build --all",
     "build-image": "yarn workspace backend build-image",
@@ -43,6 +43,7 @@
     "@changesets/cli": "2.29.7",
     "@playwright/test": "1.56.0",
     "@types/jest": "^29.5.14",
+    "dotenv-cli": "^11.0.0",
     "jest": "^29.7.0",
     "jest-cli": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",

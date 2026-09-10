@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@backstage/cli": "^0.36.2",
+    "@backstage/plugin-notifications": "^0.5.20",
     "@backstage/ui": "^0.15.0",
     "@openchoreo/backstage-portal-app": "workspace:^",
     "react": "18.3.1",

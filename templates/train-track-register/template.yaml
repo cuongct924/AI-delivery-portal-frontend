@@ -1,0 +1,916 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: train-track-register
+  title: "Train → Track → Register (Golden Path #1)"
+  description: >
+    Validates the dataset, trains (or fine-tunes) a model on the local Argo
+    Workflows cluster, tracks the run in MLflow, registers the resulting
+    model version, and opens a PR with its Catalog entry — calling
+    services/orchestration-api the whole way, no mock steps.
+  tags:
+    - mlops
+
+spec:
+  owner: user:guest
+  type: service
+
+
+  parameters:
+    - title: Thông tin chung
+      required:
+        - owner
+        - modelName
+        - repoUrl
+      properties:
+        owner:
+          title: Owning team
+          type: string
+          enum: [mlops-team, platform-team]
+          default: mlops-team
+          description: >
+            Sets the registered model's Catalog `owner:` — see
+            examples/org.yaml and infra/argocd/appproject-*-mlops-team.yaml
+            for what this maps to downstream.
+        modelName:
+          title: Model name
+          type: string
+          description: E.g. "fraud-detection"
+          default: fraud-detection-demo
+        repoUrl:
+          title: Repository
+          type: string
+          description: >
+            Target repo for the Catalog entry PR, in the format
+            github.com?owner=<org>&repo=<repo> (same shape
+            publish:github:pull-request expects). No RepoUrlPicker field
+            extension is confirmed available in this repo's frontend, so
+            this is a plain string field.
+          default: github.com?owner=cuongct924&repo=backstage-plugins
+      # StepLayout is a custom Scaffolder field extension (see
+      # packages/app-backstage/src/modules/scaffolder/) registered via
+      # FormFieldBlueprint — renders this step's own unchanged properties
+      # inside titled Card/Accordion groups with a responsive grid, instead
+      # of RJSF's default one-field-per-full-width-row layout. Field names
+      # below still resolve as plain ${{ parameters.X }} — this only
+      # changes how the step looks.
+      ui:field: StepLayout
+      ui:options:
+        groups:
+          - title: Thông tin chung
+            fields:
+              - name: owner
+                width: 6
+              - name: modelName
+                width: 6
+              - repoUrl
+
+    - title: Dataset & Task
+      required:
+        - datasetUri
+        - taskType
+      properties:
+        datasetUri:
+          title: Dataset URI
+          type: string
+          description: >
+            A file:// path readable inside the training pod — the kind
+            cluster mounts the repo's data/ directory at /mnt/data
+            (infra/k8s-local-cluster/kind-config.yaml). architecture=cv
+            expects a .zip of <className>/<file> images instead of a CSV.
+          default: file:///Users/cuongct090_04/Code/AI-delivery-portal/data/fraud-detection-sample.csv
+        taskType:
+          title: Task type
+          type: string
+          enum: [classification, regression, clustering]
+          default: classification
+          description: >
+            Drives which fields the next step ("Kiến trúc & tham số") shows
+            — e.g. the Algorithm choices, and whether Target column applies.
+      # StepLayout's datasetPicker turns Dataset URI into a dropdown of
+      # what's actually in the object store (GET /datasets —
+      # adapters/object_storage_adapter.py, real MinIO in production)
+      # instead of a blind file:// text field — falls back to the plain
+      # field if that list is empty/unreachable, so this never blocks the
+      # step from being usable.
+      ui:field: StepLayout
+      ui:options:
+        groups:
+          - title: Dataset & Task
+            icon: apps
+            fields:
+              - name: datasetUri
+                datasetPicker: true
+              - taskType
+
+    # Branches on `architecture` (and, for the sklearn branch, `algorithm`).
+    # Each architecture's fields only appear once that architecture is
+    # selected — picking "sklearn" never shows lstm/nlp/cv fields and
+    # vice versa.
+    - title: Kiến trúc & tham số
+      required:
+        - modelCategory
+        - architecture
+      properties:
+        modelCategory:
+          title: Nhóm mô hình
+          type: string
+          oneOf:
+            - const: traditional-ml
+              title: Traditional ML
+            - const: deep-learning
+              title: Deep Learning
+          default: traditional-ml
+          description: >
+            Traditional ML = scikit-learn (kèm XGBoost/LightGBM/CatBoost
+            qua Thư viện/thuật toán bên dưới). Deep Learning = PyTorch
+            (mlp/lstm) hoặc fine-tune Transformer/CNN. Chọn nhóm trước —
+            các lựa chọn bên dưới chỉ hiện đúng nhóm này.
+        architecture:
+          type: string
+        # UI-only — never read by steps: (baseModelUri is what's actually
+        # sent, already optional on its own). Exists purely so the
+        # Fine-tune panel can show an explicit "Bật" checkbox instead of
+        # silently inferring on/off from whether the URI field is empty.
+        finetuneEnabled:
+          title: Fine-tune từ model có sẵn
+          type: boolean
+          default: false
+          description: >
+            Để trống = huấn luyện từ đầu. Nếu bật, nhập MLflow model URI để
+            fine-tune.
+        baseModelUri:
+          title: Base model
+          type: string
+          description: >
+            MLflow model URI to fine-tune from — sets mode=finetune on the
+            same train-register-golden-path WorkflowTemplate (see
+            services/orchestration-api/routers/models.py trigger_training()),
+            not a separate flow.
+        idColumns:
+          title: ID columns to exclude
+          type: array
+          items:
+            type: string
+          description: >
+            Identifier columns to drop before training (never used as a
+            feature), e.g. "transaction_id".
+          default: [transaction_id]
+      ui:field: StepLayout
+      ui:options:
+        groups:
+          - title: Nhóm mô hình & phương pháp
+            icon: apps
+            fields:
+              - name: modelCategory
+                width: 6
+              # Whichever of these 2 exists for the current modelCategory
+              # (algorithmFamily for traditional-ml, architecture for
+              # deep-learning — see the allOf below) fills the other half;
+              # the absent one is silently skipped, never an empty slot.
+              - name: algorithmFamily
+                width: 6
+              - name: architecture
+                width: 6
+          # variant=optional -> light-gray surface, signaling "off by
+          # default" the same way everywhere a toggleField is used.
+          - title: Fine-tune từ model có sẵn
+            icon: tune
+            variant: optional
+            toggleField: finetuneEnabled
+            fields:
+              - baseModelUri
+          - title: Thuật toán
+            icon: function
+            fields:
+              - algorithm
+              # Dashed subpanel, not a sibling panel — BYOC is a CHILD of
+              # "Algorithm = Custom", not an independent decision. Skipped
+              # entirely (no empty dashed box) unless that branch is active.
+              - subpanel:
+                  title: Custom code (BYOC)
+                  fields:
+                    - name: codeRepoUrl
+                      width: 6
+                    - name: entrypointPath
+                      width: 6
+                    - customConfig
+          # One panel shared by all 4 deep-learning architectures (+
+          # traditional-ml's Target column) instead of leaving them
+          # ungrouped — each field only exists in the branch-resolved
+          # schema for its own architecture (StepLayout already skips any
+          # field missing from `schema.properties`), so per architecture
+          # this panel only ever shows the rows that apply to it, and
+          # disappears entirely for combinations with nothing to show
+          # (e.g. traditional-ml + clustering, which has no Target column).
+          - title: Tham số huấn luyện
+            icon: tune
+            fields:
+              - name: hiddenLayers
+                width: 12
+              - name: sequenceLength
+                width: 4
+              - name: numLayers
+                width: 4
+              - name: hiddenSize
+                width: 4
+              - name: textColumn
+                width: 6
+                columnPicker: single
+              - name: baseModelName
+                width: 6
+              - name: dropout
+                width: 6
+              - name: timeColumn
+                width: 6
+                columnPicker: single
+              - name: learningRate
+                width: 6
+              - name: epochs
+                width: 6
+              - name: batchSize
+                width: 6
+              - name: optimizer
+                width: 6
+              - name: targetColumn
+                width: 12
+                columnPicker: single
+          - title: Loại trừ cột ID (tuỳ chọn)
+            icon: list
+            collapsible: true
+            fields:
+              - name: idColumns
+                columnPicker: multi
+      allOf:
+        - if:
+            properties:
+              finetuneEnabled:
+                const: true
+          then:
+            required:
+              - baseModelUri
+        # --- modelCategory narrows which architectures are selectable —
+        # must come before the architecture-keyed branches below so the
+        # dropdown is already filtered by the time the user reaches them.
+        - if:
+            properties:
+              modelCategory:
+                const: traditional-ml
+          then:
+            required:
+              - algorithmFamily
+            properties:
+              # Fixed — every traditional-ML library dispatches through
+              # the same backend architecture branch (see the field's own
+              # description above); the actual library choice lives in
+              # algorithmFamily instead, so nothing interactive to pick.
+              architecture:
+                const: sklearn
+              algorithmFamily:
+                title: Thư viện / thuật toán
+                type: string
+                oneOf:
+                  - const: scikit-learn
+                    title: scikit-learn
+                  - const: xgboost
+                    title: XGBoost
+                  - const: lightgbm
+                    title: LightGBM
+                  - const: catboost
+                    title: CatBoost
+                default: scikit-learn
+                description: >
+                  Thư viện huấn luyện — quyết định danh sách Algorithm bên
+                  dưới. Cả 4 đều chạy qua cùng 1 backend "sklearn" (chung
+                  API .fit()/.predict()), khác nhau ở thư viện/thuật toán
+                  cụ thể, không phải kiến trúc mạng.
+        # XGBoost/LightGBM/CatBoost have no clustering algorithms in
+        # algorithm_registry.py — narrow to the only family that does
+        # before the user can even pick one of the other three.
+        - if:
+            properties:
+              modelCategory:
+                const: traditional-ml
+              taskType:
+                const: clustering
+          then:
+            properties:
+              algorithmFamily:
+                oneOf:
+                  - const: scikit-learn
+                    title: scikit-learn
+        - if:
+            properties:
+              modelCategory:
+                const: deep-learning
+          then:
+            properties:
+              # Real network architecture — the wire value is the bare
+              # string (mlp/lstm/nlp/cv) the backend needs, but each option
+              # gets an accurate title instead of showing that string raw.
+              architecture:
+                oneOf:
+                  - const: mlp
+                    title: "MLP (Multi-Layer Perceptron)"
+                  - const: lstm
+                    title: "LSTM (mạng hồi quy — dữ liệu chuỗi/thời gian)"
+                  - const: nlp
+                    title: "Transformer fine-tune (NLP — phân loại văn bản)"
+                  - const: cv
+                    title: "CNN fine-tune (ResNet18 — ảnh)"
+
+        # --- traditional-ml: pick an algorithm within the chosen library ---
+        - if:
+            properties:
+              modelCategory:
+                const: traditional-ml
+          then:
+            required:
+              - algorithm
+            properties:
+              algorithm:
+                title: Algorithm
+                type: string
+                description: >
+                  Options depend on the library (above) and task type
+                  chosen in the previous step. Choose "Custom (BYOC)" —
+                  Dev-supplied training code instead of a registry
+                  algorithm; 3 more fields appear below when chosen.
+                default: LogisticRegression
+        # Every algorithmFamily-keyed branch below is anchored to BOTH
+        # `required: [algorithmFamily]` AND an explicit
+        # `modelCategory: {const: traditional-ml}` check. `required` alone
+        # only stops the vacuous-truth case (algorithmFamily absent); it
+        # does NOT stop a genuinely-still-present STALE value (e.g.
+        # algorithmFamily="scikit-learn" left over in formData right after
+        # switching to Deep Learning, before StepLayoutField's own
+        # disappeared-field cleanup has had a render to catch up) from
+        # legitimately re-matching. Anchoring to modelCategory closes that
+        # gap immediately — modelCategory itself is a real, always
+        # up-to-date field with no staleness window of its own, so this
+        # can never vacuously OR stale-ly fire once modelCategory is
+        # genuinely "deep-learning". This is what was letting a Deep
+        # Learning selection still show Traditional ML's sklearn Algorithm
+        # dropdown underneath it.
+        - if:
+            required:
+              - algorithmFamily
+            properties:
+              modelCategory:
+                const: traditional-ml
+              algorithmFamily:
+                const: scikit-learn
+              taskType:
+                const: classification
+          then:
+            properties:
+              algorithm:
+                enum: [LogisticRegression, RandomForestClassifier, GradientBoostingClassifier, KNeighborsClassifier, SVC, GaussianNB, custom]
+        - if:
+            required:
+              - algorithmFamily
+            properties:
+              modelCategory:
+                const: traditional-ml
+              algorithmFamily:
+                const: scikit-learn
+              taskType:
+                const: regression
+          then:
+            properties:
+              algorithm:
+                enum: [LinearRegression, Ridge, Lasso, RandomForestRegressor, GradientBoostingRegressor, SVR, custom]
+        - if:
+            required:
+              - algorithmFamily
+            properties:
+              modelCategory:
+                const: traditional-ml
+              algorithmFamily:
+                const: scikit-learn
+              taskType:
+                const: clustering
+          then:
+            properties:
+              algorithm:
+                enum: [KMeans, DBSCAN, AgglomerativeClustering, GaussianMixture, custom]
+        - if:
+            required:
+              - algorithmFamily
+            properties:
+              modelCategory:
+                const: traditional-ml
+              algorithmFamily:
+                const: xgboost
+              taskType:
+                const: classification
+          then:
+            properties:
+              algorithm:
+                enum: [XGBClassifier, custom]
+        - if:
+            required:
+              - algorithmFamily
+            properties:
+              modelCategory:
+                const: traditional-ml
+              algorithmFamily:
+                const: xgboost
+              taskType:
+                const: regression
+          then:
+            properties:
+              algorithm:
+                enum: [XGBRegressor, custom]
+        - if:
+            required:
+              - algorithmFamily
+            properties:
+              modelCategory:
+                const: traditional-ml
+              algorithmFamily:
+                const: lightgbm
+              taskType:
+                const: classification
+          then:
+            properties:
+              algorithm:
+                enum: [LGBMClassifier, custom]
+        - if:
+            required:
+              - algorithmFamily
+            properties:
+              modelCategory:
+                const: traditional-ml
+              algorithmFamily:
+                const: lightgbm
+              taskType:
+                const: regression
+          then:
+            properties:
+              algorithm:
+                enum: [LGBMRegressor, custom]
+        - if:
+            required:
+              - algorithmFamily
+            properties:
+              modelCategory:
+                const: traditional-ml
+              algorithmFamily:
+                const: catboost
+              taskType:
+                const: classification
+          then:
+            properties:
+              algorithm:
+                enum: [CatBoostClassifier, custom]
+        - if:
+            required:
+              - algorithmFamily
+            properties:
+              modelCategory:
+                const: traditional-ml
+              algorithmFamily:
+                const: catboost
+              taskType:
+                const: regression
+          then:
+            properties:
+              algorithm:
+                enum: [CatBoostRegressor, custom]
+        # required: [algorithm] closes the same vacuous-truth gap as above
+        # — without it, algorithm being absent right after switching to
+        # Deep Learning would vacuously match `algorithm: {const: custom}`
+        # and show the BYOC fields under Deep Learning too.
+        - if:
+            required:
+              - algorithm
+            properties:
+              modelCategory:
+                const: traditional-ml
+              algorithm:
+                const: custom
+          then:
+            required:
+              - codeRepoUrl
+              - entrypointPath
+            properties:
+              codeRepoUrl:
+                title: Code repository
+                type: string
+                description: Git repo URL containing your training script.
+              entrypointPath:
+                title: Entrypoint path
+                type: string
+                description: >
+                  Path, relative to the repo root, to the file defining
+                  `def train(dataset: pd.DataFrame, config: dict) -> tuple[Any, dict[str, float]]`.
+              customConfig:
+                title: Config JSON
+                type: string
+                description: >
+                  JSON object of hyperparameters passed as `config` to your
+                  train() function, e.g. {"lr": 0.01}.
+                default: "{}"
+
+        # Every architecture-keyed branch below (mlp/lstm/nlp/cv, and
+        # Target column further down) adds `required: [architecture]` to
+        # its own `if` for the same reason as algorithmFamily above —
+        # right after switching modelCategory to Deep Learning but before
+        # picking a specific architecture, `architecture` is genuinely
+        # absent, and without `required` every one of these `if`s would
+        # vacuously match at once (showing MLP + LSTM + NLP's fields
+        # together) instead of none of them until a choice is made.
+        # --- mlp ---
+        - if:
+            required:
+              - architecture
+            properties:
+              architecture:
+                const: mlp
+          then:
+            required:
+              - hiddenLayers
+              - dropout
+              - learningRate
+              - epochs
+              - batchSize
+            properties:
+              hiddenLayers:
+                title: Hidden layer sizes
+                type: array
+                items:
+                  type: integer
+                  # RJSF's default per-item label ("hiddenLayers-0") has
+                  # nothing meaningful to say for a bare integer in a list —
+                  # left on, it renders on top of the input's own value,
+                  # producing the overlapping-text glitch seen in the mockup
+                  # review. The array's own title + description already say
+                  # what each entry means, so suppress the redundant label.
+                  ui:options:
+                    label: false
+                description: E.g. [64, 32] — one Linear+ReLU+Dropout block per entry.
+              dropout:
+                title: Dropout
+                type: number
+              learningRate:
+                title: Learning rate
+                type: number
+              epochs:
+                title: Epochs
+                type: integer
+              batchSize:
+                title: Batch size
+                type: integer
+              optimizer:
+                title: Optimizer
+                type: string
+                enum: [adam, sgd]
+                default: adam
+                description: >
+                  How the network is fitted. "adam" (default) needs less
+                  manual tuning for most non-convex problems; "sgd" is the
+                  classic alternative.
+
+        # --- lstm ---
+        - if:
+            required:
+              - architecture
+            properties:
+              architecture:
+                const: lstm
+          then:
+            required:
+              - sequenceLength
+              - numLayers
+              - hiddenSize
+              - learningRate
+              - epochs
+              - batchSize
+              - timeColumn
+            properties:
+              sequenceLength:
+                title: Sequence length
+                type: integer
+                description: Number of past rows in each sliding-window input.
+              numLayers:
+                title: LSTM layers
+                type: integer
+              hiddenSize:
+                title: Hidden size
+                type: integer
+              learningRate:
+                title: Learning rate
+                type: number
+              epochs:
+                title: Epochs
+                type: integer
+              batchSize:
+                title: Batch size
+                type: integer
+              optimizer:
+                title: Optimizer
+                type: string
+                enum: [adam, sgd]
+                default: adam
+              timeColumn:
+                title: Time column
+                type: string
+                description: >
+                  Required for lstm — training always uses a chronological
+                  split (TimeSeriesSplit) instead of a random one, to avoid
+                  leaking future rows into the training set.
+
+        # --- nlp ---
+        - if:
+            required:
+              - architecture
+            properties:
+              architecture:
+                const: nlp
+          then:
+            required:
+              - textColumn
+              - baseModelName
+              - learningRate
+              - epochs
+              - batchSize
+            properties:
+              textColumn:
+                title: Text column
+                type: string
+                description: Column containing the text to classify.
+              baseModelName:
+                title: Base model
+                type: string
+                default: distilbert-base-uncased
+                description: HuggingFace Hub model id to fine-tune.
+              learningRate:
+                title: Learning rate
+                type: number
+              epochs:
+                title: Epochs
+                type: integer
+              batchSize:
+                title: Batch size
+                type: integer
+              optimizer:
+                title: Optimizer
+                type: string
+                enum: [adam, sgd]
+                default: adam
+
+        # --- cv ---
+        - if:
+            required:
+              - architecture
+            properties:
+              architecture:
+                const: cv
+          then:
+            required:
+              - learningRate
+              - epochs
+              - batchSize
+            properties:
+              learningRate:
+                title: Learning rate
+                type: number
+              epochs:
+                title: Epochs
+                type: integer
+              batchSize:
+                title: Batch size
+                type: integer
+              optimizer:
+                title: Optimizer
+                type: string
+                enum: [adam, sgd]
+                default: adam
+
+        # --- target column: any architecture except cv, task != clustering ---
+        - if:
+            required:
+              - architecture
+            properties:
+              taskType:
+                enum: [classification, regression]
+              architecture:
+                not:
+                  const: cv
+          then:
+            required:
+              - targetColumn
+            properties:
+              targetColumn:
+                title: Target column
+                type: string
+                description: >
+                  Label column to predict — required for classification/
+                  regression, leave empty for clustering. Doesn't apply to
+                  architecture=cv (class comes from the image folder name).
+                default: is_fraud
+
+    # Both fields here default off (fixed / no Feast) — most runs skip
+    # both, so they share one step instead of two near-empty ones. No
+    # accordion widget exists for either group yet (would need a custom
+    # Scaffolder field extension); each still expands via if/then exactly
+    # like before, just side by side in the same step.
+    - title: Tuỳ chỉnh nâng cao (tuỳ chọn)
+      properties:
+        searchStrategy:
+          title: Hyperparameter search strategy
+          type: string
+          enum: [fixed, grid, random, bayesian]
+          default: fixed
+          description: >
+            "fixed" (default) trains once with the values chosen in the
+            previous step, unchanged. "grid"/"random"/"bayesian" run
+            multiple trials instead — set Search space JSON below to say
+            which hyperparameters to search.
+        useFeast:
+          title: Enrich with Feast features
+          type: boolean
+          default: false
+          description: >
+            Merges precomputed features from the Feature Store
+            (infra/feature-store/) into datasetUri before training. Most
+            runs leave this off.
+      allOf:
+        - if:
+            properties:
+              searchStrategy:
+                enum: [grid, random, bayesian]
+          then:
+            required:
+              - objectiveMetric
+            properties:
+              searchSpaceJson:
+                title: Search space JSON
+                type: string
+                default: "{}"
+                description: >
+                  JSON object mapping hyperparameter name to either
+                  {"choices": [...]} or {"low": ..., "high": ...}, e.g.
+                  {"learning_rate": {"low": 0.0001, "high": 0.1}}. Any
+                  hyperparameter from the previous step not listed here
+                  stays fixed at its value.
+              objectiveMetric:
+                title: Objective metric
+                type: string
+                description: >
+                  Metric name to optimize across trials, e.g. "accuracy" or
+                  "mean_absolute_error" — must be one of the metrics this
+                  task type computes (see evaluations/gate.py
+                  TASK_TYPE_THRESHOLDS).
+              objectiveDirection:
+                title: Objective direction
+                type: string
+                enum: [maximize, minimize]
+                default: maximize
+        - if:
+            properties:
+              searchStrategy:
+                enum: [random, bayesian]
+          then:
+            required:
+              - numTrials
+            properties:
+              numTrials:
+                title: Number of trials
+                type: integer
+                description: Ignored by "grid" — trial count there is the full grid size.
+        - if:
+            properties:
+              useFeast:
+                const: true
+          then:
+            required:
+              - entityIdColumn
+              - featureNames
+            properties:
+              entityIdColumn:
+                title: Entity id column
+                type: string
+                description: >
+                  Column identifying each row for the Feast lookup, e.g.
+                  "transaction_id".
+              featureNames:
+                title: Feature names
+                type: array
+                items:
+                  type: string
+                description: >
+                  Feast "<feature_view>:<feature>" references, e.g.
+                  "transaction_features:amount".
+
+  steps:
+    - id: enrich-features
+      name: "Enrich dataset with Feast features"
+      action: orchestration:enrich-dataset-features
+      if: ${{ parameters.useFeast }}
+      input:
+        datasetUri: ${{ parameters.datasetUri }}
+        entityIdColumn: ${{ parameters.entityIdColumn }}
+        featureNames: ${{ parameters.featureNames }}
+
+    - id: validate-dataset
+      name: "Validate the dataset"
+      action: orchestration:validate-dataset
+      # Data Quality checks assume a CSV read via pd.read_csv — CV's
+      # datasetUri is a .zip of images, skip this step.
+      if: ${{ parameters.architecture !== 'cv' }}
+      input:
+        datasetUri: ${{ parameters.useFeast and steps['enrich-features'].output.datasetUri or parameters.datasetUri }}
+        taskType: ${{ parameters.taskType }}
+        targetColumn: ${{ parameters.targetColumn }}
+        timeColumn: ${{ parameters.timeColumn }}
+
+    - id: trigger-training
+      name: "Train and register the model"
+      action: orchestration:trigger-training
+      input:
+        modelName: ${{ parameters.modelName }}
+        datasetUri: ${{ parameters.useFeast and steps['enrich-features'].output.datasetUri or parameters.datasetUri }}
+        taskType: ${{ parameters.taskType }}
+        architecture: ${{ parameters.architecture }}
+        algorithm: ${{ parameters.algorithm }}
+        targetColumn: ${{ parameters.targetColumn }}
+        idColumns: ${{ parameters.idColumns }}
+        timeColumn: ${{ parameters.timeColumn }}
+        baseModelUri: ${{ parameters.baseModelUri }}
+        hiddenLayers: ${{ parameters.hiddenLayers }}
+        dropout: ${{ parameters.dropout }}
+        sequenceLength: ${{ parameters.sequenceLength }}
+        numLayers: ${{ parameters.numLayers }}
+        hiddenSize: ${{ parameters.hiddenSize }}
+        learningRate: ${{ parameters.learningRate }}
+        epochs: ${{ parameters.epochs }}
+        batchSize: ${{ parameters.batchSize }}
+        optimizer: ${{ parameters.optimizer }}
+        codeRepoUrl: ${{ parameters.codeRepoUrl }}
+        entrypointPath: ${{ parameters.entrypointPath }}
+        customConfig: ${{ parameters.customConfig }}
+        searchStrategy: ${{ parameters.searchStrategy }}
+        numTrials: ${{ parameters.numTrials }}
+        searchSpaceJson: ${{ parameters.searchSpaceJson }}
+        objectiveMetric: ${{ parameters.objectiveMetric }}
+        objectiveDirection: ${{ parameters.objectiveDirection }}
+        textColumn: ${{ parameters.textColumn }}
+        baseModelName: ${{ parameters.baseModelName }}
+
+    - id: model-summary
+      name: "Fetch the model version's metrics"
+      action: orchestration:model-summary
+      input:
+        modelName: ${{ parameters.modelName }}
+        modelVersion: ${{ steps['trigger-training'].output.modelVersion }}
+
+    - id: render-catalog-info
+      name: "Generate the model's catalog entity"
+      action: fetch:template
+      input:
+        url: ./skeleton
+        targetPath: catalog-output
+        values:
+          modelName: ${{ parameters.modelName }}
+          modelVersion: ${{ steps['trigger-training'].output.modelVersion }}
+          owner: ${{ parameters.owner }}
+
+    - id: publish-catalog-pr
+      name: "Open the catalog entry PR"
+      action: publish:github:pull-request
+      input:
+        repoUrl: ${{ parameters.repoUrl }}
+        branchName: register-${{ parameters.modelName }}-${{ steps['trigger-training'].output.modelVersion }}
+        title: "Register ${{ parameters.modelName }}:${{ steps['trigger-training'].output.modelVersion }}"
+        description: >
+          Adds the Catalog entry for **${{ parameters.modelName }}** version
+          **${{ steps['trigger-training'].output.modelVersion }}**, trained
+          with ${{ parameters.algorithm }} (${{ parameters.taskType }}).
+        sourcePath: catalog-output
+        targetPath: catalog/${{ parameters.modelName }}
+
+  output:
+    links:
+      - title: View run in MLflow
+        url: http://localhost:5000
+      - title: "Argo Workflow: ${{ steps['trigger-training'].output.workflowName }}"
+        url: http://localhost:2746
+      - title: View catalog entry pull request
+        url: ${{ steps['publish-catalog-pr'].output.remoteUrl }}
+    text:
+      - title: Result
+        content: |
+          Trained and registered **${{ parameters.modelName }}** version
+          **${{ steps['trigger-training'].output.modelVersion }}**
+          (${{ parameters.algorithm }}, Argo Workflow
+          `${{ steps['trigger-training'].output.workflowName }}`, finished
+          as `${{ steps['trigger-training'].output.phase }}`).
+
+          Metrics: `${{ steps['model-summary'].output.metrics }}`
+
+          Catalog entry PR opened:
+          ${{ steps['publish-catalog-pr'].output.remoteUrl }} — merge it to
+          make the entity discoverable (add its path to `catalog.locations`
+          per `CLAUDE.md`'s "Adding a Catalog entity" workflow rule).
