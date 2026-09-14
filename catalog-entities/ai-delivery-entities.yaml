@@ -61,6 +61,22 @@ spec:
   providesApis: [golden-paths-mcp]
   consumesApis: [orchestration-api-openapi]
 ---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: golden-path-guide-server
+  description: >
+    MCP server — read-only "how do I run Golden Path X" lookup, reading
+    the live Catalog Template entities (not a RAG index) so it never goes
+    stale.
+spec:
+  type: service
+  lifecycle: experimental
+  owner: group:platform-team
+  system: ai-delivery-portal
+  providesApis: [golden-path-guide-mcp]
+  consumesApis: [orchestration-api-openapi]
+---
 # https://backstage.io/docs/features/software-catalog/descriptor-format#kind-api
 apiVersion: backstage.io/v1alpha1
 kind: API
@@ -119,6 +135,27 @@ spec:
     activate_prompt/rag_activate are tagged destructive_hint=True — LLMOps
     activation is Instant with no PR-gate, so a calling Agent must treat
     these as propose-then-confirm, never auto-executable.
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: golden-path-guide-mcp
+  description: >
+    Read-only MCP tools: list_golden_paths, get_golden_path_guide —
+    "how do I run Golden Path X" lookup against the live Catalog.
+  annotations:
+    mcp/endpoint: http://golden-path-guide-server:9003/mcp
+    mcp/transport: streamable-http
+spec:
+  type: mcp
+  lifecycle: experimental
+  owner: group:platform-team
+  system: ai-delivery-portal
+  definition: |
+    MCP tools exposed by
+    agents/mcp-servers/golden-path-guide-server/server.py. Both
+    read-only (ToolAnnotations.read_only_hint=True) — this server never
+    mutates state.
 ---
 # Sample data for the Catalog's Kind=Resource / type=ml-model filter — a
 # real Golden Path #1 run produces the exact same shape (see
