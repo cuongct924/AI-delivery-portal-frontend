@@ -1,3 +1,5 @@
+import { useParams } from 'react-router-dom';
+import useAsync from 'react-use/esm/useAsync';
 import Box from '@material-ui/core/Box';
 import Button from '@material-ui/core/Button';
 import Paper from '@material-ui/core/Paper';
@@ -5,14 +7,26 @@ import { makeStyles } from '@material-ui/core/styles';
 import Alert, { Color as AlertSeverity } from '@material-ui/lab/Alert';
 import AlertTitle from '@material-ui/lab/AlertTitle';
 import LinkIcon from '@material-ui/icons/Link';
+import RefreshIcon from '@material-ui/icons/Refresh';
+import ArrowBackIcon from '@material-ui/icons/ArrowBack';
+import HistoryIcon from '@material-ui/icons/History';
 import { parseEntityRef } from '@backstage/catalog-model';
 import { Link, MarkdownContent } from '@backstage/core-components';
-import { useApp, useRouteRef } from '@backstage/core-plugin-api';
+import { useApi, useApp, useRouteRef } from '@backstage/core-plugin-api';
 import { entityRouteRef } from '@backstage/plugin-catalog-react';
+import { scaffolderApiRef } from '@backstage/plugin-scaffolder-react';
+import { scaffolderPlugin } from '@backstage/plugin-scaffolder';
 import type { ScaffolderTaskOutput } from '@backstage/plugin-scaffolder-common';
 
 const useStyles = makeStyles({
   section: {
+    padding: 16,
+    display: 'flex',
+    justifyContent: 'center',
+    gap: 16,
+    flexWrap: 'wrap',
+  },
+  nav: {
     padding: 16,
     display: 'flex',
     justifyContent: 'center',
@@ -69,6 +83,63 @@ function TemplateTextOutput(props: {
 }
 
 /**
+ * "Run this template again" / "Choose another template" bar above a
+ * task's outputs. Template ref isn't passed to this component, so it's
+ * resolved via a one-shot `getTask(taskId)` rather than
+ * `useTaskEventStream` (which would open a second log stream).
+ */
+function TemplateRunNav() {
+  const classes = useStyles();
+  const scaffolderApi = useApi(scaffolderApiRef);
+  const { taskId } = useParams<{ taskId: string }>();
+  const tasksLink = useRouteRef(scaffolderPlugin.routes.listTasks);
+
+  const { value: runAgainHref } = useAsync(async () => {
+    if (!taskId) return undefined;
+    const task = await scaffolderApi.getTask(taskId);
+    const entityRef = task.spec.templateInfo?.entityRef;
+    if (!entityRef) return undefined;
+    const { namespace, name } = parseEntityRef(entityRef, {
+      defaultKind: 'Template',
+      defaultNamespace: 'default',
+    });
+    return `/create/templates/${namespace}/${name}`;
+  }, [taskId]);
+
+  return (
+    <Box paddingBottom={2}>
+      <Paper>
+        <Box className={classes.nav}>
+          <Link to="/create" classes={{ root: classes.link }}>
+            <Button startIcon={<ArrowBackIcon />} component="div">
+              Choose another template
+            </Button>
+          </Link>
+          {tasksLink && (
+            <Link to={tasksLink()} classes={{ root: classes.link }}>
+              <Button startIcon={<HistoryIcon />} component="div">
+                View all task runs
+              </Button>
+            </Link>
+          )}
+          {runAgainHref && (
+            <Link to={runAgainHref} classes={{ root: classes.link }}>
+              <Button
+                startIcon={<RefreshIcon />}
+                component="div"
+                color="primary"
+              >
+                Run this template again
+              </Button>
+            </Link>
+          )}
+        </Box>
+      </Paper>
+    </Box>
+  );
+}
+
+/**
  * Scaffolder task-page outputs renderer used across all OpenChoreo templates
  * (wired as `EXPERIMENTAL_TemplateOutputsComponent` in OpenChoreoScaffolderPage).
  *
@@ -93,7 +164,7 @@ export function OpenChoreoTemplateOutputs(props: {
   const texts = (output?.text ?? []).filter(text => Boolean(text.content));
 
   if (links.length === 0 && texts.length === 0) {
-    return null;
+    return <TemplateRunNav />;
   }
 
   const resolveIcon = (key?: string) =>
@@ -101,6 +172,7 @@ export function OpenChoreoTemplateOutputs(props: {
 
   return (
     <>
+      <TemplateRunNav />
       {links.length > 0 && (
         <Box paddingBottom={2}>
           <Paper>

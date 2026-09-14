@@ -2,15 +2,11 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: deploy-llm
-  title: "Serving LLM"
+  title: "Serve LLM (Self-hosted)"
   description: >
-    Deploys a self-hosted LLM (vLLM, referenced by HuggingFace Hub id — not
-    an MLflow-registered artifact) as a KServe InferenceService — calling
-    services/orchestration-api the whole way, no mock steps. Requires a
-    GPU-enabled cluster with the vLLM ServingRuntime installed
-    (infra/llm-serving/README.md) — the local `kind` cluster used by the
-    other Golden Paths here has no GPU, so this template's render/validate
-    steps work locally but a real deploy needs a real GPU cluster.
+    Deploys a self-hosted LLM (vLLM, from a HuggingFace Hub model id) as a
+    KServe InferenceService. Requires a GPU-enabled cluster with the vLLM
+    ServingRuntime installed.
   tags:
     - mlops
     - llm-serving

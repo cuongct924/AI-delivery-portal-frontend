@@ -2,12 +2,10 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: llm-draft-register
-  title: "Draft/Ingest → Register (LLMOps Golden Path #1)"
+  title: "Draft Prompt / Ingest RAG Data"
   description: >
     Drafts a new prompt version, or ingests documents into a new RAG index
-    version — calling services/orchestration-api the whole way, no mock
-    steps. Neither is active yet; run "Evaluate → Deploy (LLMOps Golden
-    Path #2)" next.
+    version.
   tags:
     - llmops
 

@@ -2,11 +2,10 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: register-deploy
-  title: "Register → Deploy (Golden Path #2)"
+  title: "Evaluate & Deploy Model"
   description: >
-    Runs the Evaluate Gate against a registered model version and, if it
-    passes, deploys via the chosen deploy/release strategy — calling
-    services/orchestration-api the whole way, no mock steps.
+    Evaluates a registered model version and deploys it via your chosen
+    strategy if it passes.
   tags:
     - mlops
 

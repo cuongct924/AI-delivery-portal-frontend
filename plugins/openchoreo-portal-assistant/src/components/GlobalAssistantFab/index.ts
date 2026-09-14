@@ -1,0 +1,1 @@
+export { GlobalAssistantFab } from './GlobalAssistantFab';

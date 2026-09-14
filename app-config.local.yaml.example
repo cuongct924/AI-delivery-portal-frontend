@@ -34,6 +34,20 @@ backend:
     connection:
       directory: ./.backstage-db
 
+# AI Delivery Portal — orchestration-api Custom Scaffolder Actions base URL
+# (services/orchestration-api). Falls back to this same default if unset.
+orchestrationApi:
+  baseUrl: http://localhost:8000
+
+# Lets the Dataset URI field render as a dropdown of the object store's
+# real contents instead of a free-text path. Target must match
+# orchestrationApi.baseUrl above.
+proxy:
+  endpoints:
+    '/orchestration-api':
+      target: http://localhost:8000
+      changeOrigin: true
+
 # OpenChoreo API configuration (k3d cluster)
 openchoreo:
   baseUrl: http://api.openchoreo.localhost:8080/api/v1

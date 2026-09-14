@@ -2,15 +2,10 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: setup-model-monitoring
-  title: "Setup Model Monitoring (Phase 9)"
+  title: "Set Up Model Monitoring"
   description: >
-    Registers a periodic Argo CronWorkflow that compares recent
-    production input data against the model's training data with
-    Evidently, logs the result to MLflow as a monitoring run, and — if you
-    choose auto-retrain — calls the same trigger-training endpoint the
-    other Golden Paths use when drift crosses your threshold. Unlike every
-    other Golden Path here, this one doesn't run once and finish — it sets
-    up a schedule and returns immediately.
+    Schedules recurring drift checks between production and training data,
+    logged to MLflow, with optional auto-retraining.
   tags:
     - mlops
     - monitoring
@@ -109,8 +104,6 @@ spec:
     links:
       - title: View monitoring runs in MLflow
         url: http://localhost:5000
-      - title: "CronWorkflow: ${{ steps['setup-monitoring'].output.cronWorkflowName }}"
-        url: http://localhost:2746
     text:
       - title: Result
         content: |

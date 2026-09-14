@@ -2,13 +2,10 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: llm-evaluate-deploy
-  title: "Evaluate → Deploy (LLMOps Golden Path #2)"
+  title: "Evaluate & Activate LLM Version"
   description: >
-    Runs the LLM-as-judge Evaluate Gate against a drafted prompt or RAG
-    index version and, if it passes, activates it — calling
-    services/orchestration-api the whole way, no mock steps. Activation is
-    instant (no PR) — see docs/llmops-lifecycle-plan.md mục 8 Q4 for why a
-    PR-gated option isn't offered here.
+    Evaluates a drafted prompt or RAG index version with an LLM judge and
+    activates it immediately if it passes.
   tags:
     - llmops
 

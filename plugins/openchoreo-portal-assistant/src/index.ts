@@ -27,13 +27,9 @@ export {
 // future component grows large enough to warrant code-splitting, wrap
 // that one specifically.
 //
-// Note: the always-on global FAB was deliberately removed — Perch is
-// surfaced by the contextual launchers below (build page, logs page,
-// failed-run snackbar) on the pages where it can do useful work.
-// Mounting a global FAB invited the user into a chat that had no scope
-// and degraded the UX on pages where Perch can't act. If we ever need a
-// FAB again, prefer scoping it to specific routes rather than a global
-// "available everywhere" mount.
+// Note: GlobalAssistantFab reinstates the global FAB upstream removed here
+// (see its own docstring for why) — rendered inside AssistantDrawerProvider
+// itself, not exported from this file.
 export { FailedBuildSnackbar } from './components/FailedBuildSnackbar/FailedBuildSnackbar';
 export { BuildPagePromptLauncher } from './components/BuildPagePromptLauncher/BuildPagePromptLauncher';
 export { LogsPageDebugPrompt } from './components/LogsPageDebugPrompt/LogsPageDebugPrompt';

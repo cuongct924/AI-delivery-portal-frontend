@@ -2,12 +2,10 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: register-external-run
-  title: "Register External Run"
+  title: "Register External Model Run"
   description: >
-    Registers an already-trained MLflow run (e.g. from AI Notebook) into the
-    Model Registry and opens a PR with its Catalog entry — the entry point
-    for a model that wasn't trained through a Golden Path, calling
-    services/orchestration-api the whole way, no mock steps.
+    Registers an already-trained MLflow run into the Model Registry with a
+    Catalog entry.
   tags:
     - mlops
 

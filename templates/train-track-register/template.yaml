@@ -2,12 +2,10 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: train-track-register
-  title: "Train → Track → Register (Golden Path #1)"
+  title: "Train & Register Model"
   description: >
-    Validates the dataset, trains (or fine-tunes) a model on the local Argo
-    Workflows cluster, tracks the run in MLflow, registers the resulting
-    model version, and opens a PR with its Catalog entry — calling
-    services/orchestration-api the whole way, no mock steps.
+    Trains or fine-tunes a model, tracks the run in MLflow, and registers
+    the resulting version with a Catalog entry.
   tags:
     - mlops
 
@@ -17,7 +15,7 @@ spec:
 
 
   parameters:
-    - title: Thông tin chung
+    - title: General Information
       required:
         - owner
         - modelName
@@ -26,12 +24,13 @@ spec:
         owner:
           title: Owning team
           type: string
-          enum: [mlops-team, platform-team]
           default: mlops-team
-          description: >
-            Sets the registered model's Catalog `owner:` — see
-            examples/org.yaml and infra/argocd/appproject-*-mlops-team.yaml
-            for what this maps to downstream.
+          description: Catalog owner for the registered model.
+          # Dropdown listing live Catalog Group entities. Renders as a
+          # plain select (see OwnerTeamPicker) so clicking the field always
+          # reopens the full list, instead of OwnerPicker's Autocomplete
+          # which narrows the list to whatever text is already typed.
+          ui:field: OwnerTeamPicker
         modelName:
           title: Model name
           type: string
@@ -40,12 +39,7 @@ spec:
         repoUrl:
           title: Repository
           type: string
-          description: >
-            Target repo for the Catalog entry PR, in the format
-            github.com?owner=<org>&repo=<repo> (same shape
-            publish:github:pull-request expects). No RepoUrlPicker field
-            extension is confirmed available in this repo's frontend, so
-            this is a plain string field.
+          description: Target repo for the Catalog entry PR.
           default: github.com?owner=cuongct924&repo=backstage-plugins
       # StepLayout is a custom Scaffolder field extension (see
       # packages/app-backstage/src/modules/scaffolder/) registered via
@@ -57,7 +51,7 @@ spec:
       ui:field: StepLayout
       ui:options:
         groups:
-          - title: Thông tin chung
+          - title: General Information
             fields:
               - name: owner
                 width: 6
@@ -65,55 +59,28 @@ spec:
                 width: 6
               - repoUrl
 
-    - title: Dataset & Task
-      required:
-        - datasetUri
-        - taskType
-      properties:
-        datasetUri:
-          title: Dataset URI
-          type: string
-          description: >
-            A file:// path readable inside the training pod — the kind
-            cluster mounts the repo's data/ directory at /mnt/data
-            (infra/k8s-local-cluster/kind-config.yaml). architecture=cv
-            expects a .zip of <className>/<file> images instead of a CSV.
-          default: file:///Users/cuongct090_04/Code/AI-delivery-portal/data/fraud-detection-sample.csv
-        taskType:
-          title: Task type
-          type: string
-          enum: [classification, regression, clustering]
-          default: classification
-          description: >
-            Drives which fields the next step ("Kiến trúc & tham số") shows
-            — e.g. the Algorithm choices, and whether Target column applies.
-      # StepLayout's datasetPicker turns Dataset URI into a dropdown of
-      # what's actually in the object store (GET /datasets —
-      # adapters/object_storage_adapter.py, real MinIO in production)
-      # instead of a blind file:// text field — falls back to the plain
-      # field if that list is empty/unreachable, so this never blocks the
-      # step from being usable.
-      ui:field: StepLayout
-      ui:options:
-        groups:
-          - title: Dataset & Task
-            icon: apps
-            fields:
-              - name: datasetUri
-                datasetPicker: true
-              - taskType
-
     # Branches on `architecture` (and, for the sklearn branch, `algorithm`).
     # Each architecture's fields only appear once that architecture is
     # selected — picking "sklearn" never shows lstm/nlp/cv fields and
     # vice versa.
-    - title: Kiến trúc & tham số
+    #
+    # Comes BEFORE the Dataset & Task step on purpose: `architecture`
+    # decides what a valid dataset looks like (cv needs a .zip of images,
+    # everything else a CSV — train.py's `pd.read_csv(...)` runs for
+    # everything except cv), so Dataset & Task needs this step's value
+    # already in formData to scope its own fields. targetColumn/
+    # timeColumn/textColumn/idColumns live there too, for the same reason
+    # (need a real dataset picked first for columnPicker to offer real
+    # names) — the lstm/nlp branches below only keep their non-column
+    # hyperparameters, so this move didn't touch this step's other branches.
+    - title: Architecture & Task
       required:
         - modelCategory
         - architecture
+        - taskType
       properties:
         modelCategory:
-          title: Nhóm mô hình
+          title: Model category
           type: string
           oneOf:
             - const: traditional-ml
@@ -121,45 +88,29 @@ spec:
             - const: deep-learning
               title: Deep Learning
           default: traditional-ml
-          description: >
-            Traditional ML = scikit-learn (kèm XGBoost/LightGBM/CatBoost
-            qua Thư viện/thuật toán bên dưới). Deep Learning = PyTorch
-            (mlp/lstm) hoặc fine-tune Transformer/CNN. Chọn nhóm trước —
-            các lựa chọn bên dưới chỉ hiện đúng nhóm này.
+          # Traditional ML = scikit-learn (plus XGBoost/LightGBM/CatBoost
+          # via Library below). Deep Learning = PyTorch (mlp/lstm)
+          # or fine-tuning a Transformer/CNN. Pick this first — the choices
+          # below only show for this category.
+          description: Pick first — narrows the choices below to this category.
         architecture:
           type: string
-        # UI-only — never read by steps: (baseModelUri is what's actually
-        # sent, already optional on its own). Exists purely so the
-        # Fine-tune panel can show an explicit "Bật" checkbox instead of
-        # silently inferring on/off from whether the URI field is empty.
-        finetuneEnabled:
-          title: Fine-tune từ model có sẵn
-          type: boolean
-          default: false
-          description: >
-            Để trống = huấn luyện từ đầu. Nếu bật, nhập MLflow model URI để
-            fine-tune.
-        baseModelUri:
-          title: Base model
+        taskType:
+          title: Task type
           type: string
-          description: >
-            MLflow model URI to fine-tune from — sets mode=finetune on the
-            same train-register-golden-path WorkflowTemplate (see
-            services/orchestration-api/routers/models.py trigger_training()),
-            not a separate flow.
-        idColumns:
-          title: ID columns to exclude
-          type: array
-          items:
-            type: string
-          description: >
-            Identifier columns to drop before training (never used as a
-            feature), e.g. "transaction_id".
-          default: [transaction_id]
+          enum: [classification, regression, clustering]
+          default: classification
+          # Also decides which data columns need picking in the next
+          # Dataset step (e.g. Target column).
+          description: Narrows the Algorithm list below.
+        # finetuneEnabled/baseModelUri are declared conditionally in the
+        # allOf below, not here — only combos that support mode=finetune
+        # get them, and StepLayoutField's own stale-value cleanup then
+        # hides the toggle panel for free when a user switches away.
       ui:field: StepLayout
       ui:options:
         groups:
-          - title: Nhóm mô hình & phương pháp
+          - title: Model Category & Task
             icon: apps
             fields:
               - name: modelCategory
@@ -172,15 +123,18 @@ spec:
                 width: 6
               - name: architecture
                 width: 6
+              - name: taskType
+                width: 6
           # variant=optional -> light-gray surface, signaling "off by
           # default" the same way everywhere a toggleField is used.
-          - title: Fine-tune từ model có sẵn
+          - title: Continue training from an existing model
             icon: tune
             variant: optional
             toggleField: finetuneEnabled
             fields:
-              - baseModelUri
-          - title: Thuật toán
+              - name: baseModelUri
+                baseModelPicker: true
+          - title: Algorithm
             icon: function
             fields:
               - algorithm
@@ -195,15 +149,14 @@ spec:
                     - name: entrypointPath
                       width: 6
                     - customConfig
-          # One panel shared by all 4 deep-learning architectures (+
-          # traditional-ml's Target column) instead of leaving them
-          # ungrouped — each field only exists in the branch-resolved
-          # schema for its own architecture (StepLayout already skips any
-          # field missing from `schema.properties`), so per architecture
-          # this panel only ever shows the rows that apply to it, and
-          # disappears entirely for combinations with nothing to show
-          # (e.g. traditional-ml + clustering, which has no Target column).
-          - title: Tham số huấn luyện
+          # One panel shared by all 4 deep-learning architectures instead
+          # of leaving them ungrouped — each field only exists in the
+          # branch-resolved schema for its own architecture (StepLayout
+          # already skips any field missing from `schema.properties`), so
+          # per architecture this panel only ever shows the rows that
+          # apply to it, and disappears entirely for combinations with
+          # nothing to show (e.g. traditional-ml, which has none of these).
+          - title: Training parameters
             icon: tune
             fields:
               - name: hiddenLayers
@@ -214,16 +167,10 @@ spec:
                 width: 4
               - name: hiddenSize
                 width: 4
-              - name: textColumn
-                width: 6
-                columnPicker: single
               - name: baseModelName
                 width: 6
               - name: dropout
                 width: 6
-              - name: timeColumn
-                width: 6
-                columnPicker: single
               - name: learningRate
                 width: 6
               - name: epochs
@@ -232,15 +179,6 @@ spec:
                 width: 6
               - name: optimizer
                 width: 6
-              - name: targetColumn
-                width: 12
-                columnPicker: single
-          - title: Loại trừ cột ID (tuỳ chọn)
-            icon: list
-            collapsible: true
-            fields:
-              - name: idColumns
-                columnPicker: multi
       allOf:
         - if:
             properties:
@@ -249,6 +187,47 @@ spec:
           then:
             required:
               - baseModelUri
+        # --- "Continue training" (warm_start / mode=finetune) only exists
+        # for combos train.py actually supports: architecture=sklearn (via
+        # warm_start=True) and mlp/lstm (via mlflow_pytorch.load_model).
+        # NOT nlp/cv (train.py raises — both already fine-tune from their
+        # own pretrained weights, an unrelated mechanism), algorithm=custom
+        # (BYOC has no base model to resume), or taskType=clustering
+        # (nothing persists to continue from).
+        - if:
+            not:
+              anyOf:
+                - required:
+                    - architecture
+                  properties:
+                    architecture:
+                      enum: [nlp, cv]
+                - required:
+                    - algorithm
+                  properties:
+                    algorithm:
+                      const: custom
+                - required:
+                    - taskType
+                  properties:
+                    taskType:
+                      const: clustering
+          then:
+            properties:
+              finetuneEnabled:
+                title: Continue training from an existing model
+                type: boolean
+                default: false
+                description: >
+                  Leave off to train from scratch. If enabled, pick a
+                  registered model below to continue training from
+                  (warm-start) instead.
+              baseModelUri:
+                title: Base model
+                type: string
+                description: >
+                  Reuses that model's own algorithm — your Algorithm
+                  choice above (if any) is ignored while this is on.
         # --- modelCategory narrows which architectures are selectable —
         # must come before the architecture-keyed branches below so the
         # dropdown is already filtered by the time the user reaches them.
@@ -267,7 +246,7 @@ spec:
               architecture:
                 const: sklearn
               algorithmFamily:
-                title: Thư viện / thuật toán
+                title: Library
                 type: string
                 oneOf:
                   - const: scikit-learn
@@ -279,11 +258,10 @@ spec:
                   - const: catboost
                     title: CatBoost
                 default: scikit-learn
-                description: >
-                  Thư viện huấn luyện — quyết định danh sách Algorithm bên
-                  dưới. Cả 4 đều chạy qua cùng 1 backend "sklearn" (chung
-                  API .fit()/.predict()), khác nhau ở thư viện/thuật toán
-                  cụ thể, không phải kiến trúc mạng.
+                # All 4 run through the same "sklearn" backend (shared
+                # .fit()/.predict() API), differing only in the specific
+                # library, not the network architecture.
+                description: Narrows the Algorithm list below.
         # XGBoost/LightGBM/CatBoost have no clustering algorithms in
         # algorithm_registry.py — narrow to the only family that does
         # before the user can even pick one of the other three.
@@ -313,11 +291,11 @@ spec:
                   - const: mlp
                     title: "MLP (Multi-Layer Perceptron)"
                   - const: lstm
-                    title: "LSTM (mạng hồi quy — dữ liệu chuỗi/thời gian)"
+                    title: "LSTM (recurrent network — sequential/time-series data)"
                   - const: nlp
-                    title: "Transformer fine-tune (NLP — phân loại văn bản)"
+                    title: "Transformer fine-tune (NLP — text classification)"
                   - const: cv
-                    title: "CNN fine-tune (ResNet18 — ảnh)"
+                    title: "CNN fine-tune (ResNet18 — images)"
 
         # --- traditional-ml: pick an algorithm within the chosen library ---
         - if:
@@ -332,10 +310,10 @@ spec:
                 title: Algorithm
                 type: string
                 description: >
-                  Options depend on the library (above) and task type
-                  chosen in the previous step. Choose "Custom (BYOC)" —
-                  Dev-supplied training code instead of a registry
-                  algorithm; 3 more fields appear below when chosen.
+                  Options depend on the library and task type chosen
+                  above. Choose "Custom (BYOC)" — Dev-supplied training
+                  code instead of a registry algorithm; 3 more fields
+                  appear below when chosen.
                 default: LogisticRegression
         # Every algorithmFamily-keyed branch below is anchored to BOTH
         # `required: [algorithmFamily]` AND an explicit
@@ -513,14 +491,14 @@ spec:
                   train() function, e.g. {"lr": 0.01}.
                 default: "{}"
 
-        # Every architecture-keyed branch below (mlp/lstm/nlp/cv, and
-        # Target column further down) adds `required: [architecture]` to
-        # its own `if` for the same reason as algorithmFamily above —
-        # right after switching modelCategory to Deep Learning but before
-        # picking a specific architecture, `architecture` is genuinely
-        # absent, and without `required` every one of these `if`s would
-        # vacuously match at once (showing MLP + LSTM + NLP's fields
-        # together) instead of none of them until a choice is made.
+        # Every architecture-keyed branch below (mlp/lstm/nlp/cv) adds
+        # `required: [architecture]` to its own `if` for the same reason
+        # as algorithmFamily above — right after switching modelCategory
+        # to Deep Learning but before picking a specific architecture,
+        # `architecture` is genuinely absent, and without `required` every
+        # one of these `if`s would vacuously match at once (showing MLP +
+        # LSTM + NLP's fields together) instead of none of them until a
+        # choice is made.
         # --- mlp ---
         - if:
             required:
@@ -572,7 +550,9 @@ spec:
                   manual tuning for most non-convex problems; "sgd" is the
                   classic alternative.
 
-        # --- lstm ---
+        # --- lstm --- (timeColumn itself lives in the Dataset & Task step
+        # further down — it needs a real dataset already picked to offer
+        # real column names; only the non-column hyperparameters stay here)
         - if:
             required:
               - architecture
@@ -587,7 +567,6 @@ spec:
               - learningRate
               - epochs
               - batchSize
-              - timeColumn
             properties:
               sequenceLength:
                 title: Sequence length
@@ -613,15 +592,9 @@ spec:
                 type: string
                 enum: [adam, sgd]
                 default: adam
-              timeColumn:
-                title: Time column
-                type: string
-                description: >
-                  Required for lstm — training always uses a chronological
-                  split (TimeSeriesSplit) instead of a random one, to avoid
-                  leaking future rows into the training set.
 
-        # --- nlp ---
+        # --- nlp --- (textColumn lives in the Dataset & Task step, same
+        # reason as lstm's timeColumn above)
         - if:
             required:
               - architecture
@@ -630,16 +603,11 @@ spec:
                 const: nlp
           then:
             required:
-              - textColumn
               - baseModelName
               - learningRate
               - epochs
               - batchSize
             properties:
-              textColumn:
-                title: Text column
-                type: string
-                description: Column containing the text to classify.
               baseModelName:
                 title: Base model
                 type: string
@@ -688,6 +656,112 @@ spec:
                 enum: [adam, sgd]
                 default: adam
 
+    - title: Dataset & Task
+      required:
+        - dataSource
+        - datasetUri
+      properties:
+        # Descriptions stay short/user-facing — the "how" (which adapters
+        # back these, why the value looks like a file:// path) belongs in
+        # comments, not in front of someone picking a dataset from a list.
+        dataSource:
+          title: Data source
+          type: string
+          description: Where the dataset is stored — pick this before browsing the list below.
+        # dataSourcePicker/datasetPicker (ui:options below) populate both
+        # from GET /datasets, which merges every IObjectStorageAdapter
+        # that's wired up (local filesystem, MinIO/S3, whatever gets added
+        # later — no template change needed). Falls back to a plain
+        # file:// text field if that list is empty/unreachable.
+        datasetUri:
+          title: Dataset name
+          type: string
+          description: >
+            Dataset used for training — a .zip of images for Computer
+            Vision, CSV for everything else.
+        idColumns:
+          title: ID columns to exclude
+          type: array
+          items:
+            type: string
+          description: >
+            Identifier columns to drop before training (never used as a
+            feature), e.g. "transaction_id".
+          default: [transaction_id]
+      ui:field: StepLayout
+      ui:options:
+        groups:
+          - title: Dataset & Task
+            icon: apps
+            fields:
+              - name: dataSource
+                dataSourcePicker: true
+              - name: datasetUri
+                datasetPicker: true
+                datasetPreview: true
+                datasetValidation: true
+          # Shared by targetColumn/timeColumn/textColumn — each only exists
+          # in the branch-resolved schema for its own architecture/taskType
+          # (set in the previous step), so this panel shows only what
+          # applies, and disappears for combos with nothing (e.g.
+          # clustering has no Target column).
+          - title: Data columns
+            icon: tune
+            fields:
+              - name: targetColumn
+                width: 12
+                columnPicker: single
+              - name: timeColumn
+                width: 6
+                columnPicker: single
+              - name: textColumn
+                width: 6
+                columnPicker: single
+          - title: Exclude ID columns (optional)
+            icon: list
+            collapsible: true
+            fields:
+              - name: idColumns
+                columnPicker: multi
+      allOf:
+        # --- lstm's time column — architecture is already in formData by
+        # the time this step renders (the previous step requires it).
+        # `required: [architecture]` kept anyway, same as every other
+        # architecture-keyed branch in this template.
+        - if:
+            required:
+              - architecture
+            properties:
+              architecture:
+                const: lstm
+          then:
+            required:
+              - timeColumn
+            properties:
+              timeColumn:
+                title: Time column
+                type: string
+                description: >
+                  Required for lstm — training always uses a chronological
+                  split (TimeSeriesSplit) instead of a random one, to avoid
+                  leaking future rows into the training set.
+
+        # --- nlp's text column ---
+        - if:
+            required:
+              - architecture
+            properties:
+              architecture:
+                const: nlp
+          then:
+            required:
+              - textColumn
+            properties:
+              textColumn:
+                title: Text column
+                type: string
+                description: Column containing the text to classify.
+
         # --- target column: any architecture except cv, task != clustering ---
         - if:
             required:
@@ -716,7 +790,7 @@ spec:
     # accordion widget exists for either group yet (would need a custom
     # Scaffolder field extension); each still expands via if/then exactly
     # like before, just side by side in the same step.
-    - title: Tuỳ chỉnh nâng cao (tuỳ chọn)
+    - title: Advanced customization (optional)
       properties:
         searchStrategy:
           title: Hyperparameter search strategy
@@ -895,8 +969,6 @@ spec:
     links:
       - title: View run in MLflow
         url: http://localhost:5000
-      - title: "Argo Workflow: ${{ steps['trigger-training'].output.workflowName }}"
-        url: http://localhost:2746
       - title: View catalog entry pull request
         url: ${{ steps['publish-catalog-pr'].output.remoteUrl }}
     text:

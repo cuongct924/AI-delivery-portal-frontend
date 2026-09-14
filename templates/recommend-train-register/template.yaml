@@ -2,13 +2,10 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: recommend-train-register
-  title: "Recommend → Track → Register (Golden Path #3)"
+  title: "Train & Register Recommender"
   description: >
-    Validates the interactions dataset, trains a Recommendation System
-    algorithm on the local Argo Workflows cluster, tracks the run in
-    MLflow, registers the resulting model version, and opens a PR with its
-    Catalog entry — calling services/orchestration-api the whole way, no
-    mock steps.
+    Trains a recommendation model on the interactions dataset, tracks the
+    run in MLflow, and registers the resulting version.
   tags:
     - mlops
     - recsys

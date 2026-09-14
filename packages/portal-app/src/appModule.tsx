@@ -55,6 +55,8 @@ const scaffolderPreselectionWrapper = AppRootWrapperBlueprint.make({
   params: { component: ScaffolderPreselectionProvider },
 });
 
+// Renders GlobalAssistantFab itself — a second, sibling AppRootWrapperBlueprint
+// isn't guaranteed to nest inside this one.
 const assistantDrawerWrapper = AppRootWrapperBlueprint.make({
   name: 'assistant-drawer',
   params: { component: AssistantDrawerProvider },

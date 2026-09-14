@@ -12,6 +12,7 @@ import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { Config } from '@backstage/config';
 import { createTemplateAction } from '@backstage/plugin-scaffolder-node';
+import type { OpenChoreoTokenService } from '@openchoreo/openchoreo-auth';
 
 const DEFAULT_BASE_URL = 'http://localhost:8000';
 const POLL_INTERVAL_MS = 3_000;
@@ -112,6 +113,12 @@ interface RecordDeployResponse {
 
 interface ActionDeps {
   readonly config: Config;
+  /**
+   * Absent in tests that don't wire it — falls back to no Authorization
+   * header, same as before this was added (matches orchestration-api's
+   * own AUTH_ENABLED=false dev-bypass).
+   */
+  readonly tokenService?: OpenChoreoTokenService;
 }
 
 interface TriggerTrainingActionDeps extends ActionDeps {
@@ -126,10 +133,36 @@ function getBaseUrl(config: Config): string {
   );
 }
 
-async function postJson<T>(url: string, body: unknown): Promise<T> {
+/**
+ * Every orchestration-api route but `/models/register` requires a Bearer
+ * token (`Depends(get_current_user)`). Scaffolder actions run purely
+ * server-side with no per-request end-user Thunder token available (unlike
+ * the frontend's direct-mode calls, which get one via `oauthApi` — see
+ * PerchAgentApi.ts) — a service identity via client_credentials is the
+ * right shape here, same as `ClientCredentialsProvider`'s own doc comment
+ * ("background tasks that don't have a user context").
+ */
+async function authHeaders(
+  tokenService: OpenChoreoTokenService | undefined,
+): Promise<Record<string, string>> {
+  if (!tokenService?.hasServiceCredentials()) {
+    return {};
+  }
+  const token = await tokenService.getServiceToken();
+  return { Authorization: `Bearer ${token}` };
+}
+
+async function postJson<T>(
+  url: string,
+  body: unknown,
+  tokenService?: OpenChoreoTokenService,
+): Promise<T> {
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(await authHeaders(tokenService)),
+    },
     body: JSON.stringify(body),
   });
   if (!response.ok) {
@@ -146,6 +179,7 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
  */
 export function createTriggerTrainingAction({
   config,
+  tokenService,
   pollIntervalMs = POLL_INTERVAL_MS,
   pollTimeoutMs = POLL_TIMEOUT_MS,
 }: TriggerTrainingActionDeps) {
@@ -293,14 +327,16 @@ export function createTriggerTrainingAction({
           objective_direction: ctx.input.objectiveDirection,
           text_column: ctx.input.textColumn,
           base_model_name: ctx.input.baseModelName,
-        });
+        }, tokenService);
       ctx.logger.info(`Triggered training workflow "${workflowName}"`);
 
       const deadline = Date.now() + pollTimeoutMs;
       let status: WorkflowStatusResponse;
+      let lastLoggedPhase: string | null | undefined;
       for (;;) {
         const response = await fetch(
           `${baseUrl}/trigger-training/${workflowName}/status`,
+          { headers: await authHeaders(tokenService) },
         );
         if (!response.ok) {
           throw new Error(
@@ -308,9 +344,13 @@ export function createTriggerTrainingAction({
           );
         }
         status = (await response.json()) as WorkflowStatusResponse;
-        ctx.logger.info(
-          `Workflow "${workflowName}" phase: ${status.phase ?? 'unknown'}`,
-        );
+        // Only log on a phase transition, not every poll.
+        if (status.phase !== lastLoggedPhase) {
+          ctx.logger.info(
+            `Workflow "${workflowName}" phase: ${status.phase ?? 'unknown'}`,
+          );
+          lastLoggedPhase = status.phase;
+        }
         if (status.phase !== null && TERMINAL_PHASES.has(status.phase as TerminalPhase)) {
           break;
         }
@@ -332,6 +372,7 @@ export function createTriggerTrainingAction({
       // register-step registers async — fetch the resulting version now.
       const latestVersionResponse = await fetch(
         `${baseUrl}/models/${encodeURIComponent(ctx.input.modelName)}/latest-version`,
+        { headers: await authHeaders(tokenService) },
       );
       if (!latestVersionResponse.ok) {
         throw new Error(
@@ -353,7 +394,7 @@ export function createTriggerTrainingAction({
  * (services/orchestration-api/data_quality/) before training starts, and
  * fails fast (no Argo compute spent) if any check comes back blocking.
  */
-export function createValidateDatasetAction({ config }: ActionDeps) {
+export function createValidateDatasetAction({ config, tokenService }: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:validate-dataset',
     description:
@@ -389,7 +430,7 @@ export function createValidateDatasetAction({ config }: ActionDeps) {
         task_type: ctx.input.taskType,
         target_column: ctx.input.targetColumn,
         time_column: ctx.input.timeColumn,
-      });
+      }, tokenService);
 
       for (const result of results) {
         ctx.logger.info(`[${result.severity}] ${result.check_name}: ${result.message}`);
@@ -419,7 +460,7 @@ export function createValidateDatasetAction({ config }: ActionDeps) {
  * `orchestration:trigger-training`. Opt-in — most Golden Path #1 runs skip
  * this step entirely.
  */
-export function createEnrichDatasetFeaturesAction({ config }: ActionDeps) {
+export function createEnrichDatasetFeaturesAction({ config, tokenService }: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:enrich-dataset-features',
     description: "Merges precomputed Feast features into a dataset's rows.",
@@ -446,6 +487,7 @@ export function createEnrichDatasetFeaturesAction({ config }: ActionDeps) {
           entity_id_column: ctx.input.entityIdColumn,
           feature_names: ctx.input.featureNames,
         },
+        tokenService,
       );
       ctx.output('datasetUri', result.dataset_uri);
     },
@@ -459,7 +501,7 @@ export function createEnrichDatasetFeaturesAction({ config }: ActionDeps) {
  * register-step calls — this is the entry point for a model trained
  * outside any Golden Path (e.g. interactively in AI Notebook).
  */
-export function createRegisterModelAction({ config }: ActionDeps) {
+export function createRegisterModelAction({ config, tokenService }: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:register-model',
     description: "Registers an existing MLflow run's logged model into the Model Registry.",
@@ -493,7 +535,7 @@ export function createRegisterModelAction({ config }: ActionDeps) {
         artifact_uri: ctx.input.artifactUri,
         task_type: ctx.input.taskType,
         dataset_version: ctx.input.datasetVersion,
-      });
+      }, tokenService);
       ctx.logger.info(`Registered "${result.name}" as version ${result.version}`);
       ctx.output('modelName', result.name);
       ctx.output('modelVersion', result.version);
@@ -505,7 +547,7 @@ export function createRegisterModelAction({ config }: ActionDeps) {
  * `orchestration:model-summary` — fetches a registered model version's
  * task type, metrics, and tags for display mid-template.
  */
-export function createModelSummaryAction({ config }: ActionDeps) {
+export function createModelSummaryAction({ config, tokenService }: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:model-summary',
     description: 'Fetches a registered model version — task type, metrics, and tags.',
@@ -523,6 +565,7 @@ export function createModelSummaryAction({ config }: ActionDeps) {
       const baseUrl = getBaseUrl(config);
       const response = await fetch(
         `${baseUrl}/models/${encodeURIComponent(ctx.input.modelName)}/${encodeURIComponent(ctx.input.modelVersion)}/summary`,
+        { headers: await authHeaders(tokenService) },
       );
       if (!response.ok) {
         throw new Error(
@@ -542,7 +585,7 @@ export function createModelSummaryAction({ config }: ActionDeps) {
  * thresholds, no LLM call) against a registered model version and fails
  * the step on rejection.
  */
-export function createPolicyCheckAction({ config }: ActionDeps) {
+export function createPolicyCheckAction({ config, tokenService }: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:policy-check',
     description:
@@ -566,6 +609,7 @@ export function createPolicyCheckAction({ config }: ActionDeps) {
           model_name: ctx.input.modelName,
           model_version: ctx.input.modelVersion,
         },
+        tokenService,
       );
       if (result.passed !== true) {
         const summary = Object.entries(result.metrics)
@@ -586,7 +630,7 @@ export function createPolicyCheckAction({ config }: ActionDeps) {
  * InferenceService manifest and writes it into the Scaffolder workspace so
  * a later `publish:github:pull-request` step can commit it.
  */
-export function createPrepareDeployManifestAction({ config }: ActionDeps) {
+export function createPrepareDeployManifestAction({ config, tokenService }: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:prepare-deploy-manifest',
     description:
@@ -632,7 +676,7 @@ export function createPrepareDeployManifestAction({ config }: ActionDeps) {
         traffic_strategy: ctx.input.trafficStrategy,
         traffic_percent: ctx.input.trafficPercent,
         release_strategy: ctx.input.releaseStrategy,
-      });
+      }, tokenService);
       const absolutePath = path.join(ctx.workspacePath, fileName);
       await fs.mkdir(path.dirname(absolutePath), { recursive: true });
       await fs.writeFile(absolutePath, content, 'utf-8');
@@ -655,7 +699,7 @@ export function createPrepareDeployManifestAction({ config }: ActionDeps) {
  * `orchestration:prepare-deploy-manifest` but a separate endpoint since
  * that one hardcodes the MLflow Model Registry URI formula.
  */
-export function createPrepareLlmDeployManifestAction({ config }: ActionDeps) {
+export function createPrepareLlmDeployManifestAction({ config, tokenService }: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:prepare-llm-deploy-manifest',
     description:
@@ -723,7 +767,7 @@ export function createPrepareLlmDeployManifestAction({ config }: ActionDeps) {
         traffic_strategy: ctx.input.trafficStrategy,
         traffic_percent: ctx.input.trafficPercent,
         release_strategy: ctx.input.releaseStrategy,
-      });
+      }, tokenService);
       const absolutePath = path.join(ctx.workspacePath, fileName);
       await fs.mkdir(path.dirname(absolutePath), { recursive: true });
       await fs.writeFile(absolutePath, content, 'utf-8');
@@ -742,7 +786,7 @@ export function createPrepareLlmDeployManifestAction({ config }: ActionDeps) {
  * `orchestration:record-deploy` — records the deploy PR URL as an MLflow
  * model version tag so the Dashboard can read it back later.
  */
-export function createRecordDeployAction({ config }: ActionDeps) {
+export function createRecordDeployAction({ config, tokenService }: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:record-deploy',
     description: 'Records the deploy pull request URL against the model version.',
@@ -765,7 +809,7 @@ export function createRecordDeployAction({ config }: ActionDeps) {
         model_name: ctx.input.modelName,
         model_version: ctx.input.modelVersion,
         pr_url: ctx.input.prUrl,
-      });
+      }, tokenService);
       ctx.output('recorded', true);
     },
   });
@@ -776,7 +820,7 @@ export function createRecordDeployAction({ config }: ActionDeps) {
  * separate endpoint from `orchestration:validate-dataset` since the shape
  * (interactions, no target column) doesn't match.
  */
-export function createValidateRecDatasetAction({ config }: ActionDeps) {
+export function createValidateRecDatasetAction({ config, tokenService }: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:validate-rec-dataset',
     description:
@@ -805,7 +849,7 @@ export function createValidateRecDatasetAction({ config }: ActionDeps) {
         interactions_uri: ctx.input.interactionsUri,
         user_id_column: ctx.input.userIdColumn,
         item_id_column: ctx.input.itemIdColumn,
-      });
+      }, tokenService);
 
       for (const result of results) {
         ctx.logger.info(`[${result.severity}] ${result.check_name}: ${result.message}`);
@@ -839,6 +883,7 @@ export function createValidateRecDatasetAction({ config }: ActionDeps) {
  */
 export function createTriggerRecTrainingAction({
   config,
+  tokenService,
   pollIntervalMs = POLL_INTERVAL_MS,
   pollTimeoutMs = POLL_TIMEOUT_MS,
 }: TriggerTrainingActionDeps) {
@@ -894,7 +939,7 @@ export function createTriggerRecTrainingAction({
           item_features_uri: ctx.input.itemFeaturesUri,
           item_id_column_features: ctx.input.itemIdColumnFeatures,
           item_text_column: ctx.input.itemTextColumn,
-        });
+        }, tokenService);
       ctx.logger.info(`Triggered RecSys training workflow "${workflowName}"`);
 
       const deadline = Date.now() + pollTimeoutMs;
@@ -902,6 +947,7 @@ export function createTriggerRecTrainingAction({
       for (;;) {
         const response = await fetch(
           `${baseUrl}/trigger-training/${workflowName}/status`,
+          { headers: await authHeaders(tokenService) },
         );
         if (!response.ok) {
           throw new Error(
@@ -932,6 +978,7 @@ export function createTriggerRecTrainingAction({
 
       const latestVersionResponse = await fetch(
         `${baseUrl}/models/${encodeURIComponent(ctx.input.modelName)}/latest-version`,
+        { headers: await authHeaders(tokenService) },
       );
       if (!latestVersionResponse.ok) {
         throw new Error(
@@ -953,7 +1000,7 @@ export function createTriggerRecTrainingAction({
  * Unlike every other action here, this doesn't poll a workflow to
  * completion — Setup just registers the schedule and returns.
  */
-export function createSetupMonitoringAction({ config }: ActionDeps) {
+export function createSetupMonitoringAction({ config, tokenService }: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:setup-monitoring',
     description: 'Registers a periodic Argo CronWorkflow that checks the model for data drift.',
@@ -1002,7 +1049,7 @@ export function createSetupMonitoringAction({ config }: ActionDeps) {
           drift_threshold: ctx.input.driftThreshold,
           on_drift_detected: ctx.input.onDriftDetected,
           retrain_request_json: ctx.input.retrainRequestJson,
-        });
+        }, tokenService);
       ctx.logger.info(`Registered monitoring CronWorkflow "${cronWorkflowName}"`);
       ctx.output('cronWorkflowName', cronWorkflowName);
     },
@@ -1067,7 +1114,7 @@ function parseEvalCasesJson(evalCasesJson: string): unknown {
  * `orchestration:rag-ingest` — chunks and embeds documents into a Qdrant
  * collection, registering a new (inactive) RAG index version.
  */
-export function createRagIngestAction({ config }: ActionDeps) {
+export function createRagIngestAction({ config, tokenService }: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:rag-ingest',
     description:
@@ -1096,7 +1143,7 @@ export function createRagIngestAction({ config }: ActionDeps) {
         source_paths: ctx.input.sourcePaths,
         chunk_size: ctx.input.chunkSize,
         chunk_overlap: ctx.input.chunkOverlap,
-      });
+      }, tokenService);
       ctx.logger.info(
         `Ingested ${result.chunks_ingested} chunks into "${result.collection}" as version ${result.index_version}`,
       );
@@ -1110,7 +1157,7 @@ export function createRagIngestAction({ config }: ActionDeps) {
  * `orchestration:rag-evaluate` — runs the LLM-as-judge Evaluate Gate
  * against a RAG index version and reports the pass rate.
  */
-export function createRagEvaluateAction({ config }: ActionDeps) {
+export function createRagEvaluateAction({ config, tokenService }: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:rag-evaluate',
     description:
@@ -1151,7 +1198,7 @@ export function createRagEvaluateAction({ config }: ActionDeps) {
         index_version: ctx.input.indexVersion,
         eval_cases: evalCases,
         model: ctx.input.model,
-      });
+      }, tokenService);
       ctx.logger.info(
         `RAG evaluate: passed=${result.passed} pass_rate=${result.pass_rate} total_tokens=${result.total_tokens} total_cost_usd=${result.total_cost_usd}`,
       );
@@ -1167,7 +1214,7 @@ export function createRagEvaluateAction({ config }: ActionDeps) {
  * `orchestration:rag-activate` — activates a RAG index version;
  * routers/chat.py starts retrieving from it immediately.
  */
-export function createRagActivateAction({ config }: ActionDeps) {
+export function createRagActivateAction({ config, tokenService }: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:rag-activate',
     description: 'Activates a RAG index version for use by the chat endpoint.',
@@ -1185,7 +1232,7 @@ export function createRagActivateAction({ config }: ActionDeps) {
       const result = await postJson<RagActivateResponse>(`${baseUrl}/rag/activate`, {
         collection: ctx.input.collection,
         index_version: ctx.input.indexVersion,
-      });
+      }, tokenService);
       ctx.logger.info(`Activated RAG index "${result.collection}" version ${result.active_version}`);
       ctx.output('activeVersion', result.active_version);
     },
@@ -1195,7 +1242,7 @@ export function createRagActivateAction({ config }: ActionDeps) {
 /**
  * `orchestration:draft-prompt` — registers a new (inactive) prompt version.
  */
-export function createDraftPromptAction({ config }: ActionDeps) {
+export function createDraftPromptAction({ config, tokenService }: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:draft-prompt',
     description: 'Registers a new (inactive) prompt version.',
@@ -1215,7 +1262,7 @@ export function createDraftPromptAction({ config }: ActionDeps) {
         name: ctx.input.name,
         persona: ctx.input.persona,
         content: ctx.input.content,
-      });
+      }, tokenService);
       ctx.logger.info(`Drafted prompt "${result.name}" version ${result.version}`);
       ctx.output('version', result.version);
     },
@@ -1226,7 +1273,7 @@ export function createDraftPromptAction({ config }: ActionDeps) {
  * `orchestration:evaluate-prompt` — runs the LLM-as-judge Evaluate Gate
  * against a prompt version and reports the pass rate.
  */
-export function createEvaluatePromptAction({ config }: ActionDeps) {
+export function createEvaluatePromptAction({ config, tokenService }: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:evaluate-prompt',
     description:
@@ -1269,6 +1316,7 @@ export function createEvaluatePromptAction({ config }: ActionDeps) {
           eval_cases: evalCases,
           model: ctx.input.model,
         },
+        tokenService,
       );
       ctx.logger.info(
         `Prompt evaluate: passed=${result.passed} pass_rate=${result.pass_rate} total_tokens=${result.total_tokens} total_cost_usd=${result.total_cost_usd}`,
@@ -1285,7 +1333,7 @@ export function createEvaluatePromptAction({ config }: ActionDeps) {
  * `orchestration:activate-prompt` — activates a prompt version;
  * routers/chat.py starts using it immediately.
  */
-export function createActivatePromptAction({ config }: ActionDeps) {
+export function createActivatePromptAction({ config, tokenService }: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:activate-prompt',
     description: 'Activates a prompt version for use by the chat endpoint.',
@@ -1303,6 +1351,7 @@ export function createActivatePromptAction({ config }: ActionDeps) {
       const result = await postJson<ActivatePromptResponse>(
         `${baseUrl}/prompts/${encodeURIComponent(ctx.input.name)}/activate`,
         { version: ctx.input.version },
+        tokenService,
       );
       ctx.logger.info(`Activated prompt "${result.name}" version ${result.active_version}`);
       ctx.output('activeVersion', result.active_version);

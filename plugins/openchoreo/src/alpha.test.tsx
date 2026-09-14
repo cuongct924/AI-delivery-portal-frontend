@@ -85,6 +85,7 @@ const ALPHA_EXTENSION_NAMES = [
   ['scaffolder-form-field', 'git-source-field'],
   ['scaffolder-form-field', 'namespace-entity-picker'],
   ['scaffolder-form-field', 'notification-channel-form-with-yaml'],
+  ['scaffolder-form-field', 'owner-team-picker'],
   ['scaffolder-form-field', 'project-namespace-field'],
   ['scaffolder-form-field', 'project-parameters-field'],
   ['scaffolder-form-field', 'project-type-yaml-editor'],

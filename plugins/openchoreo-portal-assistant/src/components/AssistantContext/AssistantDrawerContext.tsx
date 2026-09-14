@@ -11,6 +11,7 @@ import {
 import { identityApiRef, useApi } from '@backstage/core-plugin-api';
 import { useAssistantEnabled } from '@openchoreo/backstage-plugin-react';
 import { AssistantChatDrawer } from '../AssistantChatDrawer/AssistantChatDrawer';
+import { GlobalAssistantFab } from '../GlobalAssistantFab/GlobalAssistantFab';
 import { perchAgentApiRef, type ChatScope } from '../../api/PerchAgentApi';
 
 /**
@@ -227,6 +228,7 @@ export const AssistantDrawerProvider = ({
   return (
     <AssistantDrawerContext.Provider value={value}>
       {children}
+      <GlobalAssistantFab />
       <AssistantChatDrawer
         open={state.isOpen}
         onClose={closeDrawer}

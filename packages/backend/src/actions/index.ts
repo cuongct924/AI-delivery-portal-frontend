@@ -9,6 +9,7 @@
 
 import { coreServices, createBackendModule } from '@backstage/backend-plugin-api';
 import { scaffolderActionsExtensionPoint } from '@backstage/plugin-scaffolder-node';
+import { openChoreoTokenServiceRef } from '@openchoreo/openchoreo-auth';
 import {
   createActivatePromptAction,
   createDraftPromptAction,
@@ -38,27 +39,28 @@ export default createBackendModule({
       deps: {
         scaffolder: scaffolderActionsExtensionPoint,
         config: coreServices.rootConfig,
+        tokenService: openChoreoTokenServiceRef,
       },
-      async init({ scaffolder, config }) {
+      async init({ scaffolder, config, tokenService }) {
         scaffolder.addActions(
-          createValidateDatasetAction({ config }),
-          createEnrichDatasetFeaturesAction({ config }),
-          createTriggerTrainingAction({ config }),
-          createRegisterModelAction({ config }),
-          createModelSummaryAction({ config }),
-          createPolicyCheckAction({ config }),
-          createPrepareDeployManifestAction({ config }),
-          createPrepareLlmDeployManifestAction({ config }),
-          createRecordDeployAction({ config }),
-          createValidateRecDatasetAction({ config }),
-          createTriggerRecTrainingAction({ config }),
-          createSetupMonitoringAction({ config }),
-          createRagIngestAction({ config }),
-          createRagEvaluateAction({ config }),
-          createRagActivateAction({ config }),
-          createDraftPromptAction({ config }),
-          createEvaluatePromptAction({ config }),
-          createActivatePromptAction({ config }),
+          createValidateDatasetAction({ config, tokenService }),
+          createEnrichDatasetFeaturesAction({ config, tokenService }),
+          createTriggerTrainingAction({ config, tokenService }),
+          createRegisterModelAction({ config, tokenService }),
+          createModelSummaryAction({ config, tokenService }),
+          createPolicyCheckAction({ config, tokenService }),
+          createPrepareDeployManifestAction({ config, tokenService }),
+          createPrepareLlmDeployManifestAction({ config, tokenService }),
+          createRecordDeployAction({ config, tokenService }),
+          createValidateRecDatasetAction({ config, tokenService }),
+          createTriggerRecTrainingAction({ config, tokenService }),
+          createSetupMonitoringAction({ config, tokenService }),
+          createRagIngestAction({ config, tokenService }),
+          createRagEvaluateAction({ config, tokenService }),
+          createRagActivateAction({ config, tokenService }),
+          createDraftPromptAction({ config, tokenService }),
+          createEvaluatePromptAction({ config, tokenService }),
+          createActivatePromptAction({ config, tokenService }),
         );
       },
     });

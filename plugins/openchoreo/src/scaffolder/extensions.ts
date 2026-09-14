@@ -229,6 +229,14 @@ export const scaffolderFieldExtensions = [
     }),
   ),
   makeFormFieldExtension(
+    'owner-team-picker',
+    () => import('./OwnerTeamPicker/OwnerTeamPicker'),
+    m => ({
+      name: 'OwnerTeamPicker',
+      component: m.OwnerTeamPicker,
+    }),
+  ),
+  makeFormFieldExtension(
     'project-namespace-field',
     () => import('./ProjectNamespaceField/ProjectNamespaceField'),
     m => ({
