@@ -70,6 +70,41 @@ interface GroupField {
   datasetValidation?: boolean;
   /** Dropdown of registered models (GET /models) instead of a free-text `models:/<name>/<version>` MLflow URI. Falls back to the plain field while loading/empty. */
   baseModelPicker?: boolean;
+  /**
+   * For a field that's resolved to a `const` (see renderField's own
+   * const-skip comment): shows it anyway, as a disabled field displaying
+   * the forced value, instead of the default silent skip. Opt-in per
+   * field — most const fields (e.g. architecture) stay skipped; use this
+   * only where hiding it would read as the choice having vanished rather
+   * than having been made for the user (e.g. taskType once businessDomain
+   * fully determines it).
+   */
+  lockedDisplay?: boolean;
+  /** Multi-select of real `<feature_view>:<feature>` references (GET /features) instead of a free-text array — reuses ColumnPickerField's 'multi' mode against whatever the Feast repo actually has. Falls back to the plain field while loading/empty (e.g. Feast repo not `feast apply`-ed yet), same convention as datasetPicker/baseModelPicker. */
+  featureNamesPicker?: boolean;
+  /** Per-hyperparameter Range/Choices table (SearchSpaceBuilderField) instead of a hand-typed JSON string — reads `architecture` from formData to know which DL hyperparameters apply (mlp vs lstm). */
+  searchSpaceBuilder?: boolean;
+  /**
+   * Dropdown of registered model NAMES (GET /models) for the Evaluate &
+   * Deploy Model template's `modelName` field, instead of a free-text
+   * field a typo can silently break. Picking one auto-fills the sibling
+   * `modelVersion` field with that model's latest known version (see the
+   * modelName->modelVersion effect in StepLayout) — still freely editable
+   * from there to target an older version on purpose. Falls back to the
+   * plain field while loading/empty, same convention as baseModelPicker.
+   */
+  modelNamePicker?: boolean;
+  /**
+   * Live GET /models/{name}/{version}/summary lookup below this field —
+   * the frontend half of this session's policy-check 404 fix: instead of
+   * only finding out a model:version doesn't exist after the whole
+   * wizard submits and the training/deploy workflow fails, this surfaces
+   * it (task_type + metrics if found, a clear "not found" if not) the
+   * moment both `modelName` and this field have values. Advisory only —
+   * same non-blocking contract as datasetValidation above, not a hard
+   * gate on "Next".
+   */
+  modelVersionCheck?: boolean;
 }
 
 /**
@@ -154,7 +189,7 @@ function hasAnyRenderable(entries: GroupEntry[], properties: Record<string, JSON
 function useOpenChoreoAuthHeaders(): () => Promise<HeadersInit> {
   const configApi = useApi(configApiRef);
   const authApi = useApi(openChoreoAuthApiRef);
-  return useCallback(async () => {
+  return useCallback(async (): Promise<Record<string, string>> => {
     const authEnabled = configApi.getOptionalBoolean('openchoreo.features.auth.enabled') ?? true;
     if (!authEnabled) return {};
     try {
@@ -313,6 +348,41 @@ function useModels(): RegisteredModel[] {
   }, [discoveryApi, fetch, getAuthHeaders]);
 
   return models;
+}
+
+/**
+ * Fetches `<feature_view>:<feature>` references (GET /features) once on
+ * mount, for the Feature Enrichment panel's Feature names picker — same
+ * fail-open contract as useDatasets/useModels above: an unapplied Feast
+ * repo returns `[]` server-side already, but this also covers the request
+ * itself failing.
+ */
+function useAvailableFeatures(): string[] {
+  const discoveryApi = useApi(discoveryApiRef);
+  const { fetch } = useApi(fetchApiRef);
+  const getAuthHeaders = useOpenChoreoAuthHeaders();
+  const [features, setFeatures] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
+      .then(([proxyUrl, headers]) => fetch(`${proxyUrl}/orchestration-api/features`, { headers }))
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((body: { features: string[] }) => {
+        if (!cancelled) setFeatures(body.features);
+      })
+      .catch(() => {
+        if (!cancelled) setFeatures([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [discoveryApi, fetch, getAuthHeaders]);
+
+  return features;
 }
 
 interface DatasetPreview {
@@ -666,6 +736,177 @@ function BaseModelPickerField({
   );
 }
 
+interface ModelNamePickerFieldProps {
+  name: string;
+  title: string;
+  description?: string;
+  required: boolean;
+  modelNames: string[];
+  value: unknown;
+  onChange: (value: unknown) => void;
+}
+
+/** Select of registered model NAMES only (deduped from GET /models) — unlike BaseModelPickerField, this writes the plain name string, not a models:/ URI, since Evaluate & Deploy Model's own actions take modelName/modelVersion as two separate params. */
+function ModelNamePickerField({
+  name,
+  title,
+  description,
+  required,
+  modelNames,
+  value,
+  onChange,
+}: ModelNamePickerFieldProps): JSX.Element {
+  const selected = typeof value === 'string' ? value : '';
+  return (
+    <TextField
+      select
+      fullWidth
+      variant="outlined"
+      label={`${title}${required ? '*' : ''}`}
+      helperText={description}
+      value={selected}
+      onChange={e => onChange(e.target.value)}
+      name={name}
+    >
+      {modelNames.map(modelName => (
+        <MenuItem key={modelName} value={modelName}>
+          {modelName}
+        </MenuItem>
+      ))}
+    </TextField>
+  );
+}
+
+interface ModelVersionSummary {
+  name: string;
+  version: string;
+  task_type: string | null;
+  metrics: Record<string, number>;
+  tags: Record<string, string>;
+}
+
+type ModelVersionCheckState =
+  | { status: 'empty' }
+  | { status: 'loading' }
+  | { status: 'found'; summary: ModelVersionSummary }
+  | { status: 'not_found'; message: string };
+
+/**
+ * Live GET /models/{name}/{version}/summary lookup — the frontend half of
+ * this session's policy-check 404/400 fix: instead of only finding out a
+ * model:version combination doesn't exist after the whole wizard submits
+ * and the workflow fails downstream, this surfaces it the moment both
+ * fields have values. Debounced 500ms like useDatasetValidation. Only a
+ * clean 404 from the backend is treated as "not found" — the request
+ * itself failing outright (network error, unrelated 5xx) fails quiet back
+ * to 'empty', same non-blocking contract as every other live panel here;
+ * the real gate stays the `policy-check` step.
+ */
+function useModelVersionCheck(modelName: unknown, modelVersion: unknown): ModelVersionCheckState {
+  const discoveryApi = useApi(discoveryApiRef);
+  const { fetch } = useApi(fetchApiRef);
+  const getAuthHeaders = useOpenChoreoAuthHeaders();
+  const [state, setState] = useState<ModelVersionCheckState>({ status: 'empty' });
+
+  useEffect(() => {
+    if (
+      typeof modelName !== 'string' ||
+      !modelName ||
+      typeof modelVersion !== 'string' ||
+      !modelVersion
+    ) {
+      setState({ status: 'empty' });
+      return undefined;
+    }
+    setState({ status: 'loading' });
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
+        .then(([proxyUrl, headers]) =>
+          fetch(
+            `${proxyUrl}/orchestration-api/models/${encodeURIComponent(modelName)}/${encodeURIComponent(modelVersion)}/summary`,
+            { headers },
+          ),
+        )
+        .then(async res => {
+          if (res.status === 404) {
+            const body = await res.json().catch(() => ({ detail: undefined }));
+            if (!cancelled) {
+              setState({
+                status: 'not_found',
+                message:
+                  typeof body.detail === 'string'
+                    ? body.detail
+                    : `model version ${modelName}:${modelVersion} not found`,
+              });
+            }
+            return;
+          }
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const summary: ModelVersionSummary = await res.json();
+          if (!cancelled) setState({ status: 'found', summary });
+        })
+        .catch(() => {
+          if (!cancelled) setState({ status: 'empty' });
+        });
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [discoveryApi, fetch, modelName, modelVersion, getAuthHeaders]);
+
+  return state;
+}
+
+/** Color-coded early-warning panel for Evaluate & Deploy Model's modelName/modelVersion pair — see useModelVersionCheck. Renders nothing until both fields are filled in. */
+function ModelVersionCheckPanel({
+  modelName,
+  modelVersion,
+}: {
+  modelName: unknown;
+  modelVersion: unknown;
+}): JSX.Element | null {
+  const state = useModelVersionCheck(modelName, modelVersion);
+  if (state.status === 'empty') return null;
+  if (state.status === 'loading') {
+    return (
+      <Typography variant="body2" style={{ color: NEUTRAL.textSecondary }}>
+        Checking whether this model version exists…
+      </Typography>
+    );
+  }
+  if (state.status === 'not_found') {
+    return (
+      <Box display="flex" alignItems="flex-start" style={{ gap: 8 }}>
+        <Chip
+          label="Not found"
+          size="small"
+          style={{ backgroundColor: STATUS.error, color: '#FFF', flexShrink: 0 }}
+        />
+        <Typography variant="body2">{state.message}</Typography>
+      </Box>
+    );
+  }
+  const { summary } = state;
+  const metricsText = Object.entries(summary.metrics)
+    .map(([k, v]) => `${k}=${v}`)
+    .join(', ');
+  return (
+    <Box display="flex" alignItems="flex-start" style={{ gap: 8 }}>
+      <Chip
+        label="Found"
+        size="small"
+        style={{ backgroundColor: STATUS.success, color: '#FFF', flexShrink: 0 }}
+      />
+      <Typography variant="body2">
+        {summary.task_type ? `task_type: ${summary.task_type}` : 'no task_type tag set'}
+        {metricsText && ` — ${metricsText}`}
+      </Typography>
+    </Box>
+  );
+}
+
 interface ColumnPickerFieldProps {
   name: string;
   title: string;
@@ -725,6 +966,258 @@ function ColumnPickerField({
   );
 }
 
+interface HyperparamMeta {
+  key: string;
+  label: string;
+  kind: 'numeric' | 'categorical';
+  categoricalOptions?: string[];
+}
+
+// Snake_case to match hpo_runner.py's build_search_spaces(), which matches
+// each key against train.py's _read_dl_hyperparameters() dict — not the
+// camelCase form field names. hidden_layers (mlp) is deliberately excluded:
+// it's an array of ints (a network shape, e.g. [64, 32]), not a single
+// number/category a Range or Choices row can represent.
+const MLP_HYPERPARAMS: HyperparamMeta[] = [
+  { key: 'learning_rate', label: 'Learning rate', kind: 'numeric' },
+  { key: 'epochs', label: 'Epochs', kind: 'numeric' },
+  { key: 'batch_size', label: 'Batch size', kind: 'numeric' },
+  { key: 'dropout', label: 'Dropout', kind: 'numeric' },
+  { key: 'optimizer', label: 'Optimizer', kind: 'categorical', categoricalOptions: ['adam', 'sgd'] },
+];
+const LSTM_HYPERPARAMS: HyperparamMeta[] = [
+  { key: 'learning_rate', label: 'Learning rate', kind: 'numeric' },
+  { key: 'epochs', label: 'Epochs', kind: 'numeric' },
+  { key: 'batch_size', label: 'Batch size', kind: 'numeric' },
+  { key: 'sequence_length', label: 'Sequence length', kind: 'numeric' },
+  { key: 'num_layers', label: 'Number of layers', kind: 'numeric' },
+  { key: 'hidden_size', label: 'Hidden size', kind: 'numeric' },
+  { key: 'optimizer', label: 'Optimizer', kind: 'categorical', categoricalOptions: ['adam', 'sgd'] },
+];
+
+interface SearchSpaceRow {
+  enabled: boolean;
+  mode: 'range' | 'choices';
+  low: string;
+  high: string;
+  choicesText: string;
+  categoricalChoices: string[];
+}
+
+function emptyRow(): SearchSpaceRow {
+  return { enabled: false, mode: 'range', low: '', high: '', choicesText: '', categoricalChoices: [] };
+}
+
+/** Parses an existing `{"param": {"low":..,"high":..} | {"choices":[...]}}` JSON string (or "{}"/invalid) into per-row UI state — only called once, at mount, via useState's lazy initializer (see SearchSpaceBuilderField). */
+function parseSearchSpaceJson(
+  json: string,
+  hyperparams: HyperparamMeta[],
+): Record<string, SearchSpaceRow> {
+  let parsed: Record<string, { choices?: unknown[]; low?: number; high?: number }> = {};
+  try {
+    const value: unknown = JSON.parse(json || '{}');
+    if (value && typeof value === 'object') parsed = value as typeof parsed;
+  } catch {
+    // Invalid/empty JSON (e.g. hand-edited before this UI existed) — every
+    // row just starts unchecked, same as a fresh "{}".
+  }
+  const rows: Record<string, SearchSpaceRow> = {};
+  for (const meta of hyperparams) {
+    const spec = parsed[meta.key];
+    if (!spec) {
+      rows[meta.key] = emptyRow();
+      continue;
+    }
+    if (Array.isArray(spec.choices)) {
+      rows[meta.key] =
+        meta.kind === 'categorical'
+          ? { ...emptyRow(), enabled: true, mode: 'choices', categoricalChoices: spec.choices.map(String) }
+          : { ...emptyRow(), enabled: true, mode: 'choices', choicesText: spec.choices.join(', ') };
+    } else if (spec.low !== undefined && spec.high !== undefined) {
+      rows[meta.key] = { ...emptyRow(), enabled: true, mode: 'range', low: String(spec.low), high: String(spec.high) };
+    } else {
+      rows[meta.key] = emptyRow();
+    }
+  }
+  return rows;
+}
+
+function serializeSearchSpace(
+  rows: Record<string, SearchSpaceRow>,
+  hyperparams: HyperparamMeta[],
+): string {
+  const result: Record<string, { choices?: unknown[]; low?: number; high?: number }> = {};
+  for (const meta of hyperparams) {
+    const row = rows[meta.key];
+    if (!row?.enabled) continue;
+    if (meta.kind === 'categorical') {
+      if (row.categoricalChoices.length > 0) result[meta.key] = { choices: row.categoricalChoices };
+      continue;
+    }
+    if (row.mode === 'choices') {
+      const numbers = row.choicesText
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean)
+        .map(Number)
+        .filter(n => !Number.isNaN(n));
+      if (numbers.length > 0) result[meta.key] = { choices: numbers };
+    } else {
+      const low = Number(row.low);
+      const high = Number(row.high);
+      if (!Number.isNaN(low) && !Number.isNaN(high)) result[meta.key] = { low, high };
+    }
+  }
+  return JSON.stringify(result);
+}
+
+interface SearchSpaceBuilderFieldProps {
+  title: string;
+  description?: string;
+  architecture: unknown;
+  value: unknown;
+  onChange: (value: unknown) => void;
+}
+
+/**
+ * Click-only replacement for a hand-typed Search space JSON string — one
+ * row per DL hyperparameter train.py actually reads for the current
+ * architecture (mlp vs lstm), each a checkbox ("search this?") plus either
+ * a Range (low/high) or Choices (comma list / checkboxes for `optimizer`)
+ * input. Still round-trips through the same `searchSpaceJson` string field
+ * underneath (train.py/hpo_runner.py never change), so this is UI-only.
+ */
+function SearchSpaceBuilderField({
+  title,
+  description,
+  architecture,
+  value,
+  onChange,
+}: SearchSpaceBuilderFieldProps): JSX.Element {
+  const hyperparams = architecture === 'lstm' ? LSTM_HYPERPARAMS : MLP_HYPERPARAMS;
+  const [rows, setRows] = useState<Record<string, SearchSpaceRow>>(() =>
+    parseSearchSpaceJson(typeof value === 'string' ? value : '{}', hyperparams),
+  );
+
+  const updateRow = (key: string, patch: Partial<SearchSpaceRow>) => {
+    const next = { ...rows, [key]: { ...(rows[key] ?? emptyRow()), ...patch } };
+    setRows(next);
+    onChange(serializeSearchSpace(next, hyperparams));
+  };
+
+  return (
+    <Box>
+      <Typography variant="subtitle2" style={{ marginBottom: 4 }}>
+        {title}
+      </Typography>
+      <Table size="small">
+        <TableHead>
+          <TableRow>
+            <TableCell padding="checkbox" />
+            <TableCell>Hyperparameter</TableCell>
+            <TableCell>Search over</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {hyperparams.map(meta => {
+            const row = rows[meta.key] ?? emptyRow();
+            return (
+              <TableRow key={meta.key}>
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    size="small"
+                    checked={row.enabled}
+                    onChange={e => updateRow(meta.key, { enabled: e.target.checked })}
+                  />
+                </TableCell>
+                <TableCell>{meta.label}</TableCell>
+                <TableCell>
+                  {!row.enabled ? (
+                    <Typography variant="body2" color="textSecondary">
+                      Fixed at the value from Architecture &amp; Task
+                    </Typography>
+                  ) : meta.kind === 'categorical' ? (
+                    <Box display="flex" style={{ gap: 12 }}>
+                      {(meta.categoricalOptions ?? []).map(option => (
+                        <FormControlLabel
+                          key={option}
+                          control={
+                            <Checkbox
+                              size="small"
+                              checked={row.categoricalChoices.includes(option)}
+                              onChange={e =>
+                                updateRow(meta.key, {
+                                  categoricalChoices: e.target.checked
+                                    ? [...row.categoricalChoices, option]
+                                    : row.categoricalChoices.filter(o => o !== option),
+                                })
+                              }
+                            />
+                          }
+                          label={option}
+                        />
+                      ))}
+                    </Box>
+                  ) : (
+                    <Box display="flex" alignItems="flex-start" style={{ gap: 8 }}>
+                      <TextField
+                        select
+                        variant="outlined"
+                        size="small"
+                        value={row.mode}
+                        onChange={e => updateRow(meta.key, { mode: e.target.value as 'range' | 'choices' })}
+                        style={{ minWidth: 110 }}
+                      >
+                        <MenuItem value="range">Range</MenuItem>
+                        <MenuItem value="choices">Choices</MenuItem>
+                      </TextField>
+                      {row.mode === 'range' ? (
+                        <>
+                          <TextField
+                            variant="outlined"
+                            size="small"
+                            label="Low"
+                            value={row.low}
+                            onChange={e => updateRow(meta.key, { low: e.target.value })}
+                            style={{ width: 100 }}
+                          />
+                          <TextField
+                            variant="outlined"
+                            size="small"
+                            label="High"
+                            value={row.high}
+                            onChange={e => updateRow(meta.key, { high: e.target.value })}
+                            style={{ width: 100 }}
+                          />
+                        </>
+                      ) : (
+                        <TextField
+                          variant="outlined"
+                          size="small"
+                          label="Comma-separated values"
+                          placeholder="e.g. 16, 32, 64"
+                          value={row.choicesText}
+                          onChange={e => updateRow(meta.key, { choicesText: e.target.value })}
+                          fullWidth
+                        />
+                      )}
+                    </Box>
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+      {description && (
+        <Typography variant="caption" color="textSecondary" style={{ display: 'block', marginTop: 4 }}>
+          {description}
+        </Typography>
+      )}
+    </Box>
+  );
+}
+
 /**
  * The set of values a resolved (post-`allOf`) property schema currently
  * allows, or `null` if it isn't constrained to a fixed set at all — covers
@@ -773,6 +1266,7 @@ function StepLayout(
   const datasets = useDatasets();
   const dataSources = groupDatasetsBySource(datasets).map(([source]) => source);
   const models = useModels();
+  const availableFeatures = useAvailableFeatures();
 
   // Three kinds of stale formData this step's own branching
   // (modelCategory/algorithmFamily/architecture) can produce, none of
@@ -856,6 +1350,22 @@ function StepLayout(
     }
   });
 
+  // Auto-fills `modelVersion` with the latest known version the moment
+  // `modelName` changes to a NEW value (Evaluate & Deploy Model's
+  // modelNamePicker field) — a no-op everywhere else, since it only fires
+  // when the schema actually declares a `modelVersion` property. Only
+  // reacts to modelName actually changing (tracked via the ref), so it
+  // never stomps on a version the user deliberately edited afterwards to
+  // target an older release.
+  const previousModelName = useRef<unknown>(undefined);
+  useEffect(() => {
+    if (!properties.modelVersion || models.length === 0) return;
+    if (data.modelName === previousModelName.current) return;
+    previousModelName.current = data.modelName;
+    const match = models.find(m => m.name === data.modelName);
+    if (match) onChange({ ...data, modelVersion: match.version });
+  });
+
   const renderField = (
     name: string,
     width: GridSize = 12,
@@ -865,15 +1375,52 @@ function StepLayout(
     dataSourcePicker?: boolean,
     datasetValidation?: boolean,
     baseModelPicker?: boolean,
+    lockedDisplay?: boolean,
+    featureNamesPicker?: boolean,
+    searchSpaceBuilder?: boolean,
+    modelNamePicker?: boolean,
+    modelVersionCheck?: boolean,
   ) => {
     const fieldSchema = properties[name];
     if (!fieldSchema) return null;
     // A `const`-only property has nothing for the user to choose (its
     // value is fully pinned by whichever branch is active — see
     // train-track-register's `architecture: {const: sklearn}` for
-    // modelCategory=traditional-ml) — showing an input for it is always
-    // pointless, so skip it regardless of which group listed it.
-    if (fieldSchema.const !== undefined) return null;
+    // modelCategory=traditional-ml) — showing an editable input for it is
+    // always pointless. Most const fields skip entirely; `lockedDisplay`
+    // opt-in shows a disabled field with the forced value instead, for
+    // the few where hiding it would read as the choice having vanished
+    // rather than having been made for the user (e.g. taskType).
+    if (fieldSchema.const !== undefined) {
+      if (!lockedDisplay) return null;
+      // `displayTitle` isn't a real JSON Schema keyword — just a plain
+      // string this template's own allOf branches can set alongside
+      // `const` when the wire value (what train.py actually needs, e.g.
+      // "regression") shouldn't also be the label shown here (e.g.
+      // "Time-series forecasting" — still literally trains as regression,
+      // see train-track-register's finance-operations taskType branch).
+      // Falls back to the raw const when a branch doesn't set one.
+      const displayTitle = (fieldSchema as { displayTitle?: unknown }).displayTitle;
+      return (
+        <Grid item xs={12} md={width} key={name}>
+          <TextField
+            variant="outlined"
+            fullWidth
+            // readOnly, not `disabled` — disabled fades the text out
+            // (this needs to stay legible, it's a value being reported to
+            // the user, not a field that merely doesn't apply right now).
+            InputProps={{ readOnly: true }}
+            label={typeof fieldSchema.title === 'string' ? fieldSchema.title : name}
+            value={typeof displayTitle === 'string' ? displayTitle : String(fieldSchema.const)}
+            helperText={
+              typeof fieldSchema.description === 'string'
+                ? fieldSchema.description
+                : 'Set automatically — not editable here.'
+            }
+          />
+        </Grid>
+      );
+    }
     if (baseModelPicker && models.length > 0) {
       return (
         <Grid item xs={12} md={width} key={name}>
@@ -887,6 +1434,49 @@ function StepLayout(
             onChange={value => onChange({ ...data, [name]: value })}
           />
         </Grid>
+      );
+    }
+    if (modelNamePicker && models.length > 0) {
+      const modelNames = Array.from(new Set(models.map(m => m.name)));
+      return (
+        <Grid item xs={12} md={width} key={name}>
+          <ModelNamePickerField
+            name={name}
+            title={typeof fieldSchema.title === 'string' ? fieldSchema.title : name}
+            description={typeof fieldSchema.description === 'string' ? fieldSchema.description : undefined}
+            required={requiredFields.has(name)}
+            modelNames={modelNames}
+            value={data[name]}
+            onChange={value => onChange({ ...data, [name]: value })}
+          />
+        </Grid>
+      );
+    }
+    if (modelVersionCheck) {
+      const field = (
+        <Grid item xs={12} md={width} key={`${name}-input`}>
+          <SchemaField
+            schema={fieldSchema}
+            uiSchema={(uiSchema as Record<string, unknown>)[name] ?? {}}
+            formData={data[name] as any}
+            onChange={(value: unknown) => onChange({ ...data, [name]: value })}
+            idSchema={(idSchema as Record<string, unknown>)[name] as any}
+            name={name}
+            required={requiredFields.has(name)}
+            registry={registry}
+            errorSchema={errorSchema?.[name]}
+            onBlur={() => {}}
+            onFocus={() => {}}
+          />
+        </Grid>
+      );
+      return (
+        <Fragment key={name}>
+          {field}
+          <Grid item xs={12}>
+            <ModelVersionCheckPanel modelName={data.modelName} modelVersion={data[name]} />
+          </Grid>
+        </Fragment>
       );
     }
     if (dataSourcePicker && dataSources.length > 0) {
@@ -912,6 +1502,12 @@ function StepLayout(
       let scopedDatasets = properties.dataSource
         ? datasets.filter(d => d.source === data.dataSource)
         : datasets;
+      // Excludes the recsys/ sample data (data/recsys/ locally, same
+      // prefix convention in the S3 bucket) — interactions/item-feature
+      // tables with no target column, unusable by train.py/train_dl.py
+      // and only ever meant for recommend-train-register's own
+      // interactionsUri field, which doesn't go through this picker.
+      scopedDatasets = scopedDatasets.filter(d => !/^recsys\//i.test(d.name));
       // Further scoped to whatever file type `architecture` (set in an
       // earlier step, e.g. train-track-register's Architecture & Task)
       // can actually read — cv needs a .zip of images (ImageFolder),
@@ -922,6 +1518,25 @@ function StepLayout(
       if (typeof data.architecture === 'string') {
         const wantsZip = data.architecture === 'cv';
         scopedDatasets = scopedDatasets.filter(d => d.name.toLowerCase().endsWith('.zip') === wantsZip);
+      }
+      // Further scoped to the one data/<...>-<useCase>/ directory built
+      // for this use case (see data/README.md's per-use-case layout) —
+      // matched by useCase alone (folder suffix), not a
+      // `${taskType}-${useCase}` prefix: the folder's own label prefix is
+      // cosmetic (e.g. time-series-forecasting-revenue-forecast even
+      // though taskType itself is still "regression" underneath — see
+      // train-track-register's businessDomain-keyed taskType consts), so
+      // requiring it to match taskType exactly broke the moment those two
+      // diverged. useCase is already 1:1 with exactly one directory
+      // regardless of its prefix, so this turns "every sklearn CSV in the
+      // repo" into "the one dataset actually built for this run" without
+      // that fragility. Guarded by `matching.length > 0` so a future use
+      // case without a matching directory yet fails open to the wider
+      // (architecture-filtered) list instead of showing nothing.
+      if (typeof data.useCase === 'string' && data.useCase.length > 0) {
+        const suffix = `-${data.useCase}`;
+        const matching = scopedDatasets.filter(d => (d.name.split('/')[0] ?? '').endsWith(suffix));
+        if (matching.length > 0) scopedDatasets = matching;
       }
       const picker = (
         <Grid item xs={12} md={width} key={`${name}-picker`}>
@@ -956,6 +1571,35 @@ function StepLayout(
             </Grid>
           )}
         </Fragment>
+      );
+    }
+    if (searchSpaceBuilder) {
+      return (
+        <Grid item xs={12} key={name}>
+          <SearchSpaceBuilderField
+            title={typeof fieldSchema.title === 'string' ? fieldSchema.title : name}
+            description={typeof fieldSchema.description === 'string' ? fieldSchema.description : undefined}
+            architecture={data.architecture}
+            value={data[name]}
+            onChange={value => onChange({ ...data, [name]: value })}
+          />
+        </Grid>
+      );
+    }
+    if (featureNamesPicker && availableFeatures.length > 0) {
+      return (
+        <Grid item xs={12} md={width} key={name}>
+          <ColumnPickerField
+            name={name}
+            title={typeof fieldSchema.title === 'string' ? fieldSchema.title : name}
+            description={typeof fieldSchema.description === 'string' ? fieldSchema.description : undefined}
+            required={requiredFields.has(name)}
+            mode="multi"
+            columns={availableFeatures}
+            value={data[name]}
+            onChange={value => onChange({ ...data, [name]: value })}
+          />
+        </Grid>
       );
     }
     if (columnPicker && datasetColumns.length > 0) {
@@ -1035,6 +1679,11 @@ function StepLayout(
           dataSourcePicker,
           datasetValidation,
           baseModelPicker,
+          lockedDisplay,
+          featureNamesPicker,
+          searchSpaceBuilder,
+          modelNamePicker,
+          modelVersionCheck,
         } = normalizeField(entry);
         return renderField(
           name,
@@ -1045,6 +1694,11 @@ function StepLayout(
           dataSourcePicker,
           datasetValidation,
           baseModelPicker,
+          lockedDisplay,
+          featureNamesPicker,
+          searchSpaceBuilder,
+          modelNamePicker,
+          modelVersionCheck,
         );
       })}
     </Grid>

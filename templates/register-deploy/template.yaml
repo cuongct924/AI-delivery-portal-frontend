@@ -29,11 +29,14 @@ spec:
         modelName:
           title: Model name
           type: string
-          description: E.g. "fraud-detection"
+          description: Pick a model registered via Train → Track → Register.
         modelVersion:
           title: Version
           type: string
-          description: E.g. "3" — the MLflow Model Registry version number
+          description: >
+            MLflow Model Registry version number. Defaults to the latest
+            version once you pick a model above — checked live below as
+            you type.
         deployStrategy:
           title: Deploy strategy
           type: string
@@ -83,8 +86,10 @@ spec:
             fields:
               - name: modelName
                 width: 6
+                modelNamePicker: true
               - name: modelVersion
                 width: 6
+                modelVersionCheck: true
           - title: Chiến lược deploy
             icon: tune
             fields:

@@ -20,6 +20,8 @@ spec:
         - owner
         - modelName
         - repoUrl
+        - businessDomain
+        - useCase
       properties:
         owner:
           title: Owning team
@@ -36,11 +38,85 @@ spec:
           type: string
           description: E.g. "fraud-detection"
           default: fraud-detection-demo
+        businessDomain:
+          title: Business domain
+          type: string
+          # Only domains with a real, working use case below (mock data +
+          # backend support) — one gets added here only once its useCase
+          # branch in the allOf below has somewhere real to point to.
+          oneOf:
+            - const: network-infrastructure
+              title: Network & Infrastructure
+            - const: fraud-risk
+              title: Fraud & Risk
+            - const: marketing-sales
+              title: Marketing & Sales
+            - const: finance-operations
+              title: Finance & Operations
+            - const: real-estate-construction
+              title: Real Estate & Construction
+          default: fraud-risk
+          description: >
+            Business context for this model — tags the Catalog entry for
+            search/filtering only, doesn't affect training config below.
+        useCase:
+          title: Use case
+          type: string
+          description: Specific problem this model solves — Catalog metadata only.
         repoUrl:
           title: Repository
           type: string
           description: Target repo for the Catalog entry PR.
           default: github.com?owner=cuongct924&repo=backstage-plugins
+      # useCase's options are narrowed per businessDomain — each domain
+      # above maps to exactly one real, working use case for now, so
+      # picking a domain always fully determines useCase's (single-item)
+      # list; StepLayoutField's own stale-value cleanup clears the old
+      # value automatically when the domain changes (same mechanism as
+      # algorithm clearing when algorithmFamily/taskType change). Flat
+      # `enum`, not `oneOf`-of-const — see algorithmFamily's narrowing
+      # branch in Architecture & Task for why oneOf breaks here.
+      allOf:
+        - if:
+            properties:
+              businessDomain:
+                const: network-infrastructure
+          then:
+            properties:
+              useCase:
+                enum: [network-anomaly-detection]
+        - if:
+            properties:
+              businessDomain:
+                const: fraud-risk
+          then:
+            properties:
+              useCase:
+                enum: [telco-fraud-detection]
+        - if:
+            properties:
+              businessDomain:
+                const: marketing-sales
+          then:
+            properties:
+              useCase:
+                enum: [customer-segmentation]
+        - if:
+            properties:
+              businessDomain:
+                const: finance-operations
+          then:
+            properties:
+              useCase:
+                enum: [revenue-forecast]
+        - if:
+            properties:
+              businessDomain:
+                const: real-estate-construction
+          then:
+            properties:
+              useCase:
+                enum: [house-price-prediction]
       # StepLayout is a custom Scaffolder field extension (see
       # packages/app-backstage/src/modules/scaffolder/) registered via
       # FormFieldBlueprint — renders this step's own unchanged properties
@@ -56,6 +132,10 @@ spec:
               - name: owner
                 width: 6
               - name: modelName
+                width: 6
+              - name: businessDomain
+                width: 6
+              - name: useCase
                 width: 6
               - repoUrl
 
@@ -98,11 +178,14 @@ spec:
         taskType:
           title: Task type
           type: string
-          enum: [classification, regression, clustering]
+          enum: [classification, regression, clustering, anomaly-detection]
           default: classification
           # Also decides which data columns need picking in the next
-          # Dataset step (e.g. Target column).
-          description: Narrows the Algorithm list below.
+          # Dataset step (e.g. Target column). This base enum/default only
+          # matters transiently — every businessDomain option below forces
+          # taskType to its own const, so this is really just the fallback
+          # shape before that resolves.
+          description: Set automatically from the use case chosen in General Information.
         # finetuneEnabled/baseModelUri are declared conditionally in the
         # allOf below, not here — only combos that support mode=finetune
         # get them, and StepLayoutField's own stale-value cleanup then
@@ -110,7 +193,9 @@ spec:
       ui:field: StepLayout
       ui:options:
         groups:
-          - title: Model Category & Task
+          # No longer "& Task" — taskType is const-forced by businessDomain
+          # (see the allOf below) and never renders here anymore.
+          - title: Model Category
             icon: apps
             fields:
               - name: modelCategory
@@ -123,8 +208,13 @@ spec:
                 width: 6
               - name: architecture
                 width: 6
+              # Shown disabled with its forced value (see the
+              # businessDomain-keyed const branches below) instead of the
+              # default silent skip for const fields — this one should
+              # read as "set for you", not as having disappeared.
               - name: taskType
                 width: 6
+                lockedDisplay: true
           # variant=optional -> light-gray surface, signaling "off by
           # default" the same way everywhere a toggleField is used.
           - title: Continue training from an existing model
@@ -211,7 +301,7 @@ spec:
                     - taskType
                   properties:
                     taskType:
-                      const: clustering
+                      enum: [clustering, anomaly-detection]
           then:
             properties:
               finetuneEnabled:
@@ -228,6 +318,69 @@ spec:
                 description: >
                   Reuses that model's own algorithm — your Algorithm
                   choice above (if any) is ignored while this is on.
+        # --- businessDomain (picked in General Information) fully
+        # determines taskType — each of the 5 domains there maps to
+        # exactly one working use case (see data/<taskType>-<useCase>/),
+        # so there's nothing left to choose here; forced via `const`,
+        # same mechanism as architecture: {const: sklearn} below. Once a
+        # domain is picked, Task type disappears instead of offering a
+        # choice that could contradict it (StepLayoutField's stale-value
+        # effect writes the const every render; renderField skips
+        # rendering any field that resolves to one).
+        - if:
+            properties:
+              businessDomain:
+                const: fraud-risk
+          then:
+            properties:
+              taskType:
+                const: classification
+        - if:
+            properties:
+              businessDomain:
+                const: real-estate-construction
+          then:
+            properties:
+              taskType:
+                const: regression
+        - if:
+            properties:
+              businessDomain:
+                const: marketing-sales
+          then:
+            properties:
+              taskType:
+                const: clustering
+        - if:
+            properties:
+              businessDomain:
+                const: network-infrastructure
+          then:
+            properties:
+              taskType:
+                const: anomaly-detection
+        - if:
+            properties:
+              businessDomain:
+                const: finance-operations
+          then:
+            properties:
+              taskType:
+                const: regression
+                # Shown as "Time-series forecasting" (displayTitle, see
+                # StepLayoutField's lockedDisplay rendering) — still
+                # literally trains as regression underneath (same
+                # algorithm_registry.py/metrics.py/gate.py as any other
+                # regression run, see the time-series-forecasting-
+                # revenue-forecast/ folder note in data/README.md); the
+                # only real difference is Time column below, which
+                # switches _split() to a chronological TimeSeriesSplit
+                # instead of a random holdout.
+                displayTitle: Time-series forecasting
+                description: >
+                  Forecasts over time — same regression algorithms
+                  underneath, set Time column below to split
+                  chronologically instead of randomly.
         # --- modelCategory narrows which architectures are selectable —
         # must come before the architecture-keyed branches below so the
         # dropdown is already filtered by the time the user reaches them.
@@ -262,21 +415,27 @@ spec:
                 # .fit()/.predict() API), differing only in the specific
                 # library, not the network architecture.
                 description: Narrows the Algorithm list below.
-        # XGBoost/LightGBM/CatBoost have no clustering algorithms in
-        # algorithm_registry.py — narrow to the only family that does
-        # before the user can even pick one of the other three.
+        # XGBoost/LightGBM/CatBoost have no clustering or anomaly-detection
+        # algorithms in algorithm_registry.py — narrow to the only family
+        # that does before the user can even pick one of the other three.
+        # Flat `enum`, not `oneOf`-of-const: RJSF concatenates `oneOf`
+        # arrays from multiple matching allOf branches instead of
+        # replacing them, so algorithmFamily's base 4-entry oneOf (scikit-
+        # learn/xgboost/lightgbm/catboost) plus this branch's own oneOf
+        # produced 2 duplicate "scikit-learn" entries and RJSF rejected
+        # the value as ambiguous — verified empirically (Error: "should
+        # not match multiple schemas in oneOf"). `enum` doesn't hit this;
+        # same reasoning as useCase/objectiveMetric elsewhere in this file.
         - if:
             properties:
               modelCategory:
                 const: traditional-ml
               taskType:
-                const: clustering
+                enum: [clustering, anomaly-detection]
           then:
             properties:
               algorithmFamily:
-                oneOf:
-                  - const: scikit-learn
-                    title: scikit-learn
+                enum: [scikit-learn]
         - if:
             properties:
               modelCategory:
@@ -310,10 +469,10 @@ spec:
                 title: Algorithm
                 type: string
                 description: >
-                  Options depend on the library and task type chosen
-                  above. Choose "Custom (BYOC)" — Dev-supplied training
-                  code instead of a registry algorithm; 3 more fields
-                  appear below when chosen.
+                  Options depend on the library above and the use case
+                  chosen in General Information. Choose "Custom (BYOC)" —
+                  Dev-supplied training code instead of a registry
+                  algorithm; 3 more fields appear below when chosen.
                 default: LogisticRegression
         # Every algorithmFamily-keyed branch below is anchored to BOTH
         # `required: [algorithmFamily]` AND an explicit
@@ -372,6 +531,20 @@ spec:
             properties:
               algorithm:
                 enum: [KMeans, DBSCAN, AgglomerativeClustering, GaussianMixture, custom]
+        - if:
+            required:
+              - algorithmFamily
+            properties:
+              modelCategory:
+                const: traditional-ml
+              algorithmFamily:
+                const: scikit-learn
+              taskType:
+                const: anomaly-detection
+          then:
+            properties:
+              algorithm:
+                enum: [IsolationForest, LocalOutlierFactor, custom]
         - if:
             required:
               - algorithmFamily
@@ -746,6 +919,32 @@ spec:
                   split (TimeSeriesSplit) instead of a random one, to avoid
                   leaking future rows into the training set.
 
+        # --- optional time-ordered split for non-lstm regression (e.g.
+        # revenue-forecast/traffic-forecast on sklearn/xgboost/mlp) —
+        # train.py's _split() already accepts time_column for ANY
+        # architecture, not just lstm (see infra/argo-workflows/
+        # training-image/train.py), this was just never exposed outside
+        # the lstm branch above. Optional, not required: plain regression
+        # works fine without it, this only matters for genuinely
+        # time-ordered data.
+        - if:
+            required:
+              - architecture
+            properties:
+              taskType:
+                const: regression
+              architecture:
+                not:
+                  const: lstm
+          then:
+            properties:
+              timeColumn:
+                title: Time column (optional)
+                type: string
+                description: >
+                  Set this for time-ordered data to use a chronological
+                  train/test split instead of a random one.
+
         # --- nlp's text column ---
         - if:
             required:
@@ -762,7 +961,8 @@ spec:
                 type: string
                 description: Column containing the text to classify.
 
-        # --- target column: any architecture except cv, task != clustering ---
+        # --- target column: any architecture except cv, task != clustering/
+        # anomaly-detection (the latter gets its own optional version below) ---
         - if:
             required:
               - architecture
@@ -784,12 +984,27 @@ spec:
                   regression, leave empty for clustering. Doesn't apply to
                   architecture=cv (class comes from the image folder name).
                 default: is_fraud
+        # --- anomaly-detection's target column is optional — IsolationForest/
+        # LocalOutlierFactor never train on it (train.py fits unsupervised
+        # either way); if set, it's only used to compute precision/recall/f1
+        # after the fact. No `required` here, unlike the branch above.
+        - if:
+            properties:
+              taskType:
+                const: anomaly-detection
+          then:
+            properties:
+              targetColumn:
+                title: Target column (optional)
+                type: string
+                description: >
+                  Label column for evaluation only, e.g. "is_anomaly" —
+                  precision/recall/f1 get computed against it if set.
+                  Leave empty for a purely unsupervised run.
+                default: is_anomaly
 
     # Both fields here default off (fixed / no Feast) — most runs skip
-    # both, so they share one step instead of two near-empty ones. No
-    # accordion widget exists for either group yet (would need a custom
-    # Scaffolder field extension); each still expands via if/then exactly
-    # like before, just side by side in the same step.
+    # both, so they share one step instead of two near-empty ones.
     - title: Advanced customization (optional)
       properties:
         searchStrategy:
@@ -798,18 +1013,48 @@ spec:
           enum: [fixed, grid, random, bayesian]
           default: fixed
           description: >
-            "fixed" (default) trains once with the values chosen in the
-            previous step, unchanged. "grid"/"random"/"bayesian" run
-            multiple trials instead — set Search space JSON below to say
-            which hyperparameters to search.
+            "fixed" trains once, unchanged. "grid"/"random"/"bayesian" run
+            multiple trials — configure the search below.
         useFeast:
           title: Enrich with Feast features
           type: boolean
           default: false
-          description: >
-            Merges precomputed features from the Feature Store
-            (infra/feature-store/) into datasetUri before training. Most
-            runs leave this off.
+          description: Merges precomputed Feature Store features into the dataset before training.
+      ui:field: StepLayout
+      ui:options:
+        groups:
+          - title: Hyperparameter Search
+            icon: tune
+            fields:
+              - name: searchStrategy
+                width: 6
+              # Only exists in the resolved schema once searchStrategy !=
+              # fixed — a subpanel (dashed, child-of-a-decision) rather
+              # than a sibling group, same convention as Algorithm's BYOC
+              # block above.
+              - subpanel:
+                  title: Search configuration
+                  fields:
+                    - name: objectiveMetric
+                      width: 6
+                    - name: objectiveDirection
+                      width: 6
+                    - name: numTrials
+                      width: 6
+                    - name: searchSpaceJson
+                      width: 12
+                      searchSpaceBuilder: true
+          - title: Feature enrichment (Feast)
+            icon: list
+            variant: optional
+            toggleField: useFeast
+            fields:
+              - name: entityIdColumn
+                width: 6
+                columnPicker: single
+              - name: featureNames
+                width: 6
+                featureNamesPicker: true
       allOf:
         - if:
             properties:
@@ -820,28 +1065,83 @@ spec:
               - objectiveMetric
             properties:
               searchSpaceJson:
-                title: Search space JSON
+                title: Search space
                 type: string
                 default: "{}"
-                description: >
-                  JSON object mapping hyperparameter name to either
-                  {"choices": [...]} or {"low": ..., "high": ...}, e.g.
-                  {"learning_rate": {"low": 0.0001, "high": 0.1}}. Any
-                  hyperparameter from the previous step not listed here
-                  stays fixed at its value.
+                description: Unchecked hyperparameters stay fixed at the value from Architecture & Task.
               objectiveMetric:
                 title: Objective metric
                 type: string
-                description: >
-                  Metric name to optimize across trials, e.g. "accuracy" or
-                  "mean_absolute_error" — must be one of the metrics this
-                  task type computes (see evaluations/gate.py
-                  TASK_TYPE_THRESHOLDS).
+                description: Metric to optimize across trials.
               objectiveDirection:
                 title: Objective direction
                 type: string
                 enum: [maximize, minimize]
                 default: maximize
+        # --- objectiveMetric's options: exactly the metrics
+        # evaluations/gate.py's TASK_TYPE_THRESHOLDS computes for the
+        # taskType chosen back in Architecture & Task, so there's no way
+        # to pick a metric this run will never produce. Re-checks
+        # searchStrategy too — without it, each branch below would inject
+        # `objectiveMetric` on its own regardless of searchStrategy (an
+        # `allOf` sibling's `then` merges independently of the base
+        # branch above), leaking the whole Search configuration subpanel
+        # into view even for "fixed".
+        - if:
+            properties:
+              searchStrategy:
+                enum: [grid, random, bayesian]
+              taskType:
+                const: classification
+          then:
+            properties:
+              objectiveMetric:
+                enum: [accuracy, precision, recall, f1]
+        - if:
+            properties:
+              searchStrategy:
+                enum: [grid, random, bayesian]
+              taskType:
+                const: regression
+          then:
+            properties:
+              objectiveMetric:
+                enum: [r2, mean_absolute_percentage_error]
+        - if:
+            properties:
+              searchStrategy:
+                enum: [grid, random, bayesian]
+              taskType:
+                const: clustering
+          then:
+            properties:
+              objectiveMetric:
+                enum: [silhouette_score]
+        # --- objectiveDirection follows the chosen metric automatically
+        # (every metric above is "higher is better" except MAPE) — forced
+        # via `const`, same mechanism as architecture: {const: sklearn}
+        # elsewhere, so once a metric is picked there's nothing left to
+        # choose and StepLayout's renderField skips the field entirely.
+        - if:
+            required:
+              - objectiveMetric
+            properties:
+              objectiveMetric:
+                const: mean_absolute_percentage_error
+          then:
+            properties:
+              objectiveDirection:
+                const: minimize
+        - if:
+            required:
+              - objectiveMetric
+            properties:
+              objectiveMetric:
+                enum: [accuracy, precision, recall, f1, r2, silhouette_score]
+          then:
+            properties:
+              objectiveDirection:
+                const: maximize
         - if:
             properties:
               searchStrategy:
@@ -866,17 +1166,13 @@ spec:
               entityIdColumn:
                 title: Entity id column
                 type: string
-                description: >
-                  Column identifying each row for the Feast lookup, e.g.
-                  "transaction_id".
+                description: Row identifier for the Feast lookup — pick the dataset column it's stored in.
               featureNames:
                 title: Feature names
                 type: array
                 items:
                   type: string
-                description: >
-                  Feast "<feature_view>:<feature>" references, e.g.
-                  "transaction_features:amount".
+                description: Pick from the features this Feast store actually has.
 
   steps:
     - id: enrich-features

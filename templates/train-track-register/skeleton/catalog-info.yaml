@@ -12,6 +12,11 @@ metadata:
     # No existing annotation-key convention for this — chosen to sit
     # alongside MlflowAdapter's mlflow.org/* tags.
     mlflow.org/model-version: ${{ values.modelVersion }}
+    # Catalog-only business metadata (Phase 1) — not forwarded to
+    # orchestration-api/MLflow yet, see train-track-register/template.yaml's
+    # businessDomain/useCase fields.
+    viettel.vn/business-domain: ${{ values.businessDomain }}
+    viettel.vn/use-case: ${{ values.useCase }}
 spec:
   type: ml-model
   owner: group:${{ values.owner }}
