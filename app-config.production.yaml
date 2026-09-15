@@ -214,6 +214,55 @@ catalog:
       rules:
         - allow: [Template]
 
+    # AI Delivery Portal — org data + example catalog entities (models/prompts
+    # the golden paths below produce) and their 8 golden path templates.
+    # Mirrors app-config.yaml's own locations list — missing here meant the
+    # Catalog never had ai-delivery-portal's Components/APIs/Resources or
+    # any of their partOf/providesApi/dependsOn relations at all in
+    # production, regardless of what catalog-entities/ai-delivery-entities.yaml
+    # itself declares: the Project overview page (ProjectContentsCard,
+    # ContainedCatalogGraphCard) rendered fully blank, not because those
+    # components have a rendering bug, but because there was nothing in
+    # the Catalog for them to render.
+    - type: file
+      target: /app/catalog-entities/ai-delivery-org.yaml
+      rules:
+        - allow: [User, Group]
+    - type: file
+      target: /app/catalog-entities/ai-delivery-entities.yaml
+    - type: file
+      target: /app/templates/train-track-register/template.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: /app/templates/register-deploy/template.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: /app/templates/register-external-run/template.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: /app/templates/recommend-train-register/template.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: /app/templates/setup-model-monitoring/template.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: /app/templates/deploy-llm/template.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: /app/templates/llm-draft-register/template.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: /app/templates/llm-evaluate-deploy/template.yaml
+      rules:
+        - allow: [Template]
+
 # AI Delivery Portal — orchestration-api Custom Scaffolder Actions base URL
 # (packages/backend/src/actions/mlopsActions.ts), services/orchestration-api
 # in the separate backend repo. Optional: unset falls back to
