@@ -108,6 +108,21 @@ backend:
     origin: ${BACKSTAGE_BASE_URL}
     methods: [GET, HEAD, PATCH, POST, PUT, DELETE]
     credentials: true
+  # Without this, catalog-entities/ai-delivery-entities.yaml's
+  # orchestration-api-openapi API entity's `$text: http://localhost:8000/openapi.json`
+  # fails outright — Backstage's UrlReader rejects any host not explicitly
+  # allow-listed here, confirmed live ("NotAllowedError: Reading from
+  # 'http://localhost:8000/openapi.json' is not allowed"). localhost:8000
+  # is correct for this file (dev, `yarn start` on the host machine, where
+  # orchestration-api's docker-compose port is reachable at localhost) —
+  # NOT correct inside the k3d-deployed production pod, which needs
+  # host.docker.internal:8000 instead (verified: host.docker.internal
+  # doesn't resolve from the bare host, so one literal URL can't serve
+  # both — dev prioritized here per explicit choice; production's
+  # equivalent fix is a separate follow-up).
+  reading:
+    allow:
+      - host: localhost:8000
   # This is for local development only, it is not recommended to use this in production
   # The production database configuration is stored in app-config.production.yaml
   database:
