@@ -17921,6 +17921,7 @@ __metadata:
     "@immobiliarelabs/backstage-plugin-gitlab-backend": "npm:^6.13.0"
     "@openchoreo/backstage-plugin-openchoreo-portal-assistant-backend": "workspace:^"
     "@openchoreo/backstage-portal-backend": "workspace:^"
+    "@openchoreo/openchoreo-auth": "workspace:^"
     "@types/cookie-parser": "npm:1.4.8"
     "@types/express-session": "npm:1.18.2"
     app: "workspace:^"
