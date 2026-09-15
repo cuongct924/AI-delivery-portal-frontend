@@ -1117,6 +1117,26 @@ spec:
             properties:
               objectiveMetric:
                 enum: [silhouette_score]
+        # anomaly_rate is the only metric TASK_TYPE_THRESHOLDS gates on for
+        # this taskType (evaluations/gate.py) — precision/recall/f1 also
+        # get logged when targetColumn was set, but aren't gated on since
+        # they're not always present, so they're intentionally left out
+        # here too (an HPO objective this run might not produce would
+        # silently never improve). No objectiveDirection const below,
+        # unlike the other 3 branches: anomaly_rate has both a minimum and
+        # a maximum threshold (a sanity range, not "higher/lower is
+        # better"), so there's no single correct forced direction — stays
+        # on the base field's own enum/default (maximize).
+        - if:
+            properties:
+              searchStrategy:
+                enum: [grid, random, bayesian]
+              taskType:
+                const: anomaly-detection
+          then:
+            properties:
+              objectiveMetric:
+                enum: [anomaly_rate]
         # --- objectiveDirection follows the chosen metric automatically
         # (every metric above is "higher is better" except MAPE) — forced
         # via `const`, same mechanism as architecture: {const: sklearn}
@@ -1246,6 +1266,11 @@ spec:
           modelName: ${{ parameters.modelName }}
           modelVersion: ${{ steps['trigger-training'].output.modelVersion }}
           owner: ${{ parameters.owner }}
+          # skeleton/catalog-info.yaml reads these two (businessDomain/
+          # useCase) but nothing here ever forwarded them — every real run
+          # rendered those two annotations empty.
+          businessDomain: ${{ parameters.businessDomain }}
+          useCase: ${{ parameters.useCase }}
 
     - id: publish-catalog-pr
       name: "Open the catalog entry PR"
