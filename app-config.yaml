@@ -157,6 +157,18 @@ integrations:
 #   username: ${JENKINS_USERNAME}
 #   apiKey: ${JENKINS_API_KEY}
 
+# AI Delivery Portal — orchestration-api Custom Scaffolder Actions base URL
+# (packages/backend/src/actions/mlopsActions.ts), services/orchestration-api
+# in the separate backend repo. Optional: unset falls back to
+# mlopsActions.ts's own http://localhost:8000 default.
+# Not currently exposed as a real OpenChoreo Component on any cluster
+# (verified via `kubectl get components.openchoreo.dev -A` — no resources)
+# — set this to that Component's real Gateway-exposed URL once it is. Until
+# then, the http://localhost:8000 default already matches how it's actually
+# reached today (docker compose up in the backend repo).
+orchestrationApi:
+  baseUrl: ${ORCHESTRATION_API_URL}
+
 proxy:
   ### Example for how to add a proxy endpoint for the frontend.
   ### A typical reason to do this is to handle HTTPS and CORS for internal services.

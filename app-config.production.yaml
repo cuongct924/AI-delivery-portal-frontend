@@ -214,6 +214,16 @@ catalog:
       rules:
         - allow: [Template]
 
+# AI Delivery Portal — orchestration-api Custom Scaffolder Actions base URL
+# (packages/backend/src/actions/mlopsActions.ts), services/orchestration-api
+# in the separate backend repo. Optional: unset falls back to
+# mlopsActions.ts's own http://localhost:8000 default.
+# Not currently exposed as a real OpenChoreo Component on any cluster
+# (verified via `kubectl get components.openchoreo.dev -A` — no resources)
+# — set this to that Component's real Gateway-exposed URL once it is.
+orchestrationApi:
+  baseUrl: ${ORCHESTRATION_API_URL}
+
 openchoreo:
   # Environment variables are injected by Helm chart (see https://github.com/openchoreo/openchoreo install/helm/openchoreo/templates/backstage/deployment.yaml)
   # OPENCHOREO_API_URL: defaults to internal K8s service URL or set via backstage.openchoreoApi.url
