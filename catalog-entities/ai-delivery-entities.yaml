@@ -49,16 +49,37 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
-  name: golden-paths-server
+  name: llmops-golden-paths-server
   description: >
-    MCP server — the 6 LLMOps Lifecycle Golden Path actions, callable by
-    any MCP-compatible AI Agent, not just through this Portal's UI.
+    MCP server — the 6 LLMOps Lifecycle Golden Path actions (prompt/RAG
+    draft, evaluate, activate), callable by any MCP-compatible AI Agent,
+    not just through this Portal's UI. Renamed from golden-paths-server
+    for domain-naming symmetry with mlops-golden-paths-server.
 spec:
   type: service
   lifecycle: experimental
   owner: group:platform-team
   system: ai-delivery-portal
-  providesApis: [golden-paths-mcp]
+  providesApis: [llmops-golden-paths-mcp]
+  consumesApis: [orchestration-api-openapi]
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: mlops-golden-paths-server
+  description: >
+    MCP server — the 5 MLOps Lifecycle Golden Path actions
+    (validate_dataset, trigger_training, register_model, prepare_deploy,
+    prepare_llm_deploy), callable by any MCP-compatible AI Agent, not just
+    through this Portal's UI. Separate server (not folded into
+    llmops-golden-paths-server) so each domain has its own Thunder client
+    identity and mutate scope.
+spec:
+  type: service
+  lifecycle: experimental
+  owner: group:platform-team
+  system: ai-delivery-portal
+  providesApis: [mlops-golden-paths-mcp]
   consumesApis: [orchestration-api-openapi]
 ---
 apiVersion: backstage.io/v1alpha1
@@ -118,12 +139,12 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: API
 metadata:
-  name: golden-paths-mcp
+  name: llmops-golden-paths-mcp
   description: >
     LLMOps Lifecycle MCP tools: draft_prompt, evaluate_prompt,
     activate_prompt, rag_ingest, rag_evaluate, rag_activate.
   annotations:
-    mcp/endpoint: http://golden-paths-server:9002/mcp
+    mcp/endpoint: http://llmops-golden-paths-server:9002/mcp
     mcp/transport: streamable-http
 spec:
   type: mcp
@@ -131,10 +152,39 @@ spec:
   owner: group:platform-team
   system: ai-delivery-portal
   definition: |
-    MCP tools exposed by agents/mcp-servers/golden-paths-server/server.py.
+    MCP tools exposed by
+    agents/mcp-servers/llmops-golden-paths-server/server.py.
     activate_prompt/rag_activate are tagged destructive_hint=True — LLMOps
     activation is Instant with no PR-gate, so a calling Agent must treat
-    these as propose-then-confirm, never auto-executable.
+    these as propose-then-confirm, never auto-executable. The server
+    itself also enforces this (confirm param + Thunder token scope check,
+    not just a client-side convention) — see that file's README.md.
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: mlops-golden-paths-mcp
+  description: >
+    MLOps Lifecycle MCP tools: validate_dataset, trigger_training,
+    register_model, prepare_deploy, prepare_llm_deploy.
+  annotations:
+    mcp/endpoint: http://mlops-golden-paths-server:9004/mcp
+    mcp/transport: streamable-http
+spec:
+  type: mcp
+  lifecycle: experimental
+  owner: group:platform-team
+  system: ai-delivery-portal
+  definition: |
+    MCP tools exposed by
+    agents/mcp-servers/mlops-golden-paths-server/server.py.
+    validate_dataset is read-only. trigger_training/register_model/
+    prepare_deploy/prepare_llm_deploy are tagged destructive_hint=True —
+    real compute spend, a new registered model version, or production
+    traffic changes — so a calling Agent must treat these as
+    propose-then-confirm, never auto-executable. The server itself also
+    enforces this (confirm param + Thunder token scope check, not just a
+    client-side convention) — see that file's README.md.
 ---
 apiVersion: backstage.io/v1alpha1
 kind: API
@@ -202,9 +252,11 @@ metadata:
   name: mcp-chat
   description: >
     Portal-native chat UI (@backstage-community/plugin-mcp-chat) — talks to
-    the LiteLLM gateway and the golden-paths/observability MCP servers via
+    the LiteLLM gateway and the llmops-golden-paths/mlops-golden-paths/
+    observability MCP servers via
     services/orchestration-api/routers/chat.py, using the "mlops"/"k8s"
-    prompts below as its system prompt per persona.
+    prompts below as its system prompt per persona (tool list filtered per
+    persona server-side — persona_tool_scope.py).
 spec:
   type: service
   lifecycle: experimental
