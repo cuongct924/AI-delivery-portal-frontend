@@ -148,6 +148,16 @@ auth:
       dangerouslyAllowOutsideDevelopment: ${BACKSTAGE_GUEST_DANGEROUSLY_ALLOW_OUTSIDE_DEVELOPMENT}
 
 catalog:
+  # Without this, a `type: file` location with no `rules:` sub-block falls
+  # back to Backstage's built-in default allow-list, which excludes
+  # System — confirmed live: catalog-entities/ai-delivery-entities.yaml's
+  # `system:default/ai-delivery-portal` was rejected ("is not of an
+  # allowed kind for that location") while its Component/API/Resource
+  # entities in the same file loaded fine. Mirrors app-config.yaml's own
+  # top-level rules.
+  rules:
+    - allow:
+        [Component, System, API, Resource, Location, User, Group, Environment]
   locations:
     # Placeholder groups for Backstage entity owner references
     - type: file
