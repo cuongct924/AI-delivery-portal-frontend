@@ -1,6 +1,6 @@
 import { createPortalApp } from '@openchoreo/backstage-portal-app';
 import { stepLayoutFieldModule } from './modules/scaffolder/stepLayoutFieldModule';
-import { mlopsOverlayModule } from './modules/mlops-overlay';
+import { mlopsModelRegistryModule } from './modules/mlops-model-registry';
 
 // AI Delivery Portal customizations, layered on top of the stock OpenChoreo
 // portal via createPortalApp's own extension point — see
@@ -15,5 +15,5 @@ import { mlopsOverlayModule } from './modules/mlops-overlay';
 // home/ (portal-app has its own Home), auth/openchoreoAuthModule (portal-app
 // already ships real openchoreo-auth sign-in).
 export default createPortalApp({
-  features: [stepLayoutFieldModule, mlopsOverlayModule],
+  features: [stepLayoutFieldModule, mlopsModelRegistryModule],
 }).createRoot();

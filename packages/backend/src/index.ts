@@ -46,4 +46,10 @@ backend.add(
 // Lifecycle). See packages/backend/src/actions/mlopsActions.ts.
 backend.add(import('./actions'));
 
+// AI Delivery Portal — Model Registry Catalog tab's backend (forwards
+// GET /models to orchestration-api). See
+// packages/backend/src/mlopsModelRegistry/ and
+// packages/app/src/modules/mlops-model-registry/.
+backend.add(import('./mlopsModelRegistry'));
+
 backend.start();
