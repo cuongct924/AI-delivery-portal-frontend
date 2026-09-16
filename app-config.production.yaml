@@ -283,6 +283,20 @@ catalog:
 orchestrationApi:
   baseUrl: ${ORCHESTRATION_API_URL}
 
+# Proxies browser-side picker calls (packages/app/src/modules/scaffolder/
+# StepLayoutField.tsx's useDatasets/useModels/usePrompts/useRagCollections/
+# useLlmModels/etc.) through the Backstage backend to orchestration-api —
+# same gap class as ffa65c2d's Catalog locations, just for this key
+# instead: app-config.local.yaml has always had this endpoint, but it was
+# never carried over here, so every picker built on it (not just the
+# LLMOps ones) silently fell back to its plain free-text field in
+# production. Target must match orchestrationApi.baseUrl above.
+proxy:
+  endpoints:
+    '/orchestration-api':
+      target: ${ORCHESTRATION_API_URL}
+      changeOrigin: true
+
 openchoreo:
   # Environment variables are injected by Helm chart (see https://github.com/openchoreo/openchoreo install/helm/openchoreo/templates/backstage/deployment.yaml)
   # OPENCHOREO_API_URL: defaults to internal K8s service URL or set via backstage.openchoreoApi.url
