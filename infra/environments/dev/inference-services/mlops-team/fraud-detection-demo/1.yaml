@@ -1,0 +1,15 @@
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: fraud-detection-demo
+  labels:
+    version: "1"
+spec:
+  predictor:
+    
+    canaryTrafficPercent: 90
+    
+    model:
+      modelFormat:
+        name: mlflow
+      storageUri: models:/fraud-detection-demo/1
