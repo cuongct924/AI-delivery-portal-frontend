@@ -16,6 +16,11 @@ import {
   IncidentSummary,
   FinOpsReportSummary,
   FinOpsReportDetailed,
+  DoraGranularity,
+  DoraMetricName,
+  DoraMetricsResponse,
+  DoraDeploymentsResponse,
+  DoraSearchScope,
   CostItem,
   CostRecommendationItem,
 } from '../types';
@@ -27,7 +32,18 @@ import {
   PlatformLogsResponse,
 } from '../components/PlatformLogs/types';
 import { EventsResponse } from '../components/RuntimeEvents/types';
+import {
+  AuditLogFilterValuesRequest,
+  AuditLogFilterValuesResponse,
+  AuditLogsQueryRequest,
+  AuditLogsResponse,
+} from '../components/AuditLogs/types';
 import { ObserverUrlCache } from './ObserverUrlCache';
+import {
+  AuditFilterValuesNotSupportedError,
+  AuditLogsForbiddenError,
+  AuditLogsNotSupportedError,
+} from './AuditLogsErrors';
 
 export interface ObservabilityApi {
   getRuntimeLogs(
@@ -220,6 +236,26 @@ export interface ObservabilityApi {
     namespaceName: string,
   ): Promise<FinOpsReportDetailed>;
 
+  getDoraMetrics(
+    scope: DoraSearchScope,
+    options: {
+      startTime: string;
+      endTime: string;
+      granularity?: DoraGranularity;
+      metrics?: DoraMetricName[];
+    },
+  ): Promise<DoraMetricsResponse>;
+
+  getDoraDeployments(
+    scope: DoraSearchScope,
+    options: {
+      startTime: string;
+      endTime: string;
+      limit?: number;
+      sortOrder?: 'asc' | 'desc';
+    },
+  ): Promise<DoraDeploymentsResponse>;
+
   getCosts(
     namespaceName: string,
     environmentName: string,
@@ -242,6 +278,20 @@ export interface ObservabilityApi {
       endTime?: string;
     },
   ): Promise<{ items: CostRecommendationItem[] }>;
+
+  /**
+   * Queries the audit trail. Cluster-scoped: the observer evaluates
+   * `auditlogs:view` before reading any of the tenancy filters in the body.
+   */
+  queryAuditLogs(request: AuditLogsQueryRequest): Promise<AuditLogsResponse>;
+
+  /**
+   * Lists the distinct values one audit filter takes under a query — what a
+   * filter picker is populated from. One filter per request, by design.
+   */
+  queryAuditLogFilterValues(
+    request: AuditLogFilterValuesRequest,
+  ): Promise<AuditLogFilterValuesResponse>;
 }
 
 export const observabilityApiRef = createApiRef<ObservabilityApi>({
@@ -1208,6 +1258,86 @@ export class ObservabilityClient implements ObservabilityApi {
     return data;
   }
 
+  async getDoraMetrics(
+    scope: DoraSearchScope,
+    options: {
+      startTime: string;
+      endTime: string;
+      granularity?: DoraGranularity;
+      metrics?: DoraMetricName[];
+    },
+  ): Promise<DoraMetricsResponse> {
+    // Environment-specific slices resolve through that environment; wider scopes
+    // resolve at namespace level (empty environment).
+    const { observerUrl } = await this.urlCache.resolveUrls(
+      scope.namespace,
+      scope.environment ?? '',
+    );
+
+    const response = await this.fetchApi.fetch(
+      `${observerUrl}/api/v1alpha1/delivery-insights/dora/query`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...DIRECT_HEADER },
+        body: JSON.stringify({
+          searchScope: scope,
+          startTime: options.startTime,
+          endTime: options.endTime,
+          granularity: options.granularity ?? 'daily',
+          ...(options.metrics?.length ? { metrics: options.metrics } : {}),
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      const error = await this.parseError(response);
+      throw new Error(
+        error || `Failed to fetch DORA metrics: ${response.statusText}`,
+      );
+    }
+
+    return response.json();
+  }
+
+  async getDoraDeployments(
+    scope: DoraSearchScope,
+    options: {
+      startTime: string;
+      endTime: string;
+      limit?: number;
+      sortOrder?: 'asc' | 'desc';
+    },
+  ): Promise<DoraDeploymentsResponse> {
+    const { observerUrl } = await this.urlCache.resolveUrls(
+      scope.namespace,
+      scope.environment ?? '',
+    );
+
+    const response = await this.fetchApi.fetch(
+      `${observerUrl}/api/v1alpha1/delivery-insights/dora/deployments/query`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...DIRECT_HEADER },
+        body: JSON.stringify({
+          searchScope: scope,
+          startTime: options.startTime,
+          endTime: options.endTime,
+          limit: options.limit ?? 100,
+          sortOrder: options.sortOrder ?? 'desc',
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      const error = await this.parseError(response);
+      throw new Error(
+        error || `Failed to fetch deployments: ${response.statusText}`,
+      );
+    }
+
+    return response.json();
+  }
+
   async getCosts(
     namespaceName: string,
     environmentName: string,
@@ -1315,6 +1445,92 @@ export class ObservabilityClient implements ObservabilityApi {
         recommendation: normalizeProfile(item.recommendation),
       })),
     };
+  }
+
+  async queryAuditLogs(
+    request: AuditLogsQueryRequest,
+  ): Promise<AuditLogsResponse> {
+    const { observerUrl } = await this.urlCache.resolvePlatformUrls();
+
+    const response = await this.fetchApi.fetch(
+      `${observerUrl}/api/v1alpha1/audit-logs/query`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...DIRECT_HEADER },
+        body: JSON.stringify(request),
+      },
+    );
+
+    if (!response.ok) {
+      throw await this.parseAuditError(
+        response,
+        'Failed to query the audit trail',
+      );
+    }
+
+    return response.json();
+  }
+
+  async queryAuditLogFilterValues(
+    request: AuditLogFilterValuesRequest,
+  ): Promise<AuditLogFilterValuesResponse> {
+    const { observerUrl } = await this.urlCache.resolvePlatformUrls();
+
+    const response = await this.fetchApi.fetch(
+      `${observerUrl}/api/v1alpha1/audit-logs/filter-values`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...DIRECT_HEADER },
+        body: JSON.stringify(request),
+      },
+    );
+
+    if (!response.ok) {
+      const error = await this.parseAuditError(
+        response,
+        'Failed to list audit log filter values',
+      );
+      // An adapter can serve the records and aggregate nothing, so this 501
+      // means "no pick list for this filter" rather than "no audit trail".
+      if (error instanceof AuditLogsNotSupportedError) {
+        throw new AuditFilterValuesNotSupportedError(error.message);
+      }
+      throw error;
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Turns an audit error response into the specific error the UI can act on.
+   * `parseError` flattens to a string, which loses the status separating "there
+   * is no trail here" from "you may not read it".
+   */
+  private async parseAuditError(
+    response: Response,
+    fallback: string,
+  ): Promise<Error> {
+    let body: { errorCode?: string; message?: string; error?: string } = {};
+    try {
+      const parsed = await response.json();
+      // A body of JSON `null` parses without throwing, and reading through it
+      // would lose the status the caller acts on.
+      if (parsed && typeof parsed === 'object') body = parsed;
+    } catch {
+      // A non-JSON body (a gateway error page) leaves the status to speak.
+    }
+    const message =
+      body.message ||
+      body.error ||
+      `${fallback}: ${response.status} ${response.statusText}`;
+
+    if (response.status === 501) {
+      return new AuditLogsNotSupportedError(message);
+    }
+    if (response.status === 403) {
+      return new AuditLogsForbiddenError(message);
+    }
+    return new Error(message);
   }
 
   private async parseError(response: Response): Promise<string> {
