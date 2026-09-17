@@ -111,6 +111,14 @@ interface RecordDeployResponse {
   readonly pr_url: string;
 }
 
+/** Response body of `POST {baseUrl}/models/{name}/promote`. */
+interface PromoteResponse {
+  readonly project: string;
+  readonly component: string;
+  readonly environments: Record<string, string | null>;
+  readonly prod_pending_approval: boolean;
+}
+
 interface ActionDeps {
   readonly config: Config;
   /**
@@ -655,6 +663,20 @@ export function createPrepareDeployManifestAction({ config, tokenService }: Acti
               description: 'pr-gated (default) opens a PR; instant deploys directly, no PR',
             })
             .optional(),
+        action: z =>
+          z
+            .enum(['deploy', 'rollback'], {
+              description:
+                'rollback overrides trafficStrategy/trafficPercent/releaseStrategy server-side (instant, 100% cutover, no PR) — this template only sends the other 3 fields at all when action=deploy',
+            })
+            .optional(),
+        enablePredictionLogging: z =>
+          z
+            .boolean({
+              description:
+                'Tags the model version so a future drift-monitoring Golden Path knows this deploy opted in — does not itself intercept traffic, see IPredictionLogAdapter',
+            })
+            .optional(),
       },
       output: {
         filePath: z => z.string({ description: 'Workspace-relative path the manifest was written to' }),
@@ -676,6 +698,8 @@ export function createPrepareDeployManifestAction({ config, tokenService }: Acti
         traffic_strategy: ctx.input.trafficStrategy,
         traffic_percent: ctx.input.trafficPercent,
         release_strategy: ctx.input.releaseStrategy,
+        action: ctx.input.action,
+        enable_prediction_logging: ctx.input.enablePredictionLogging,
       }, tokenService);
       const absolutePath = path.join(ctx.workspacePath, fileName);
       await fs.mkdir(path.dirname(absolutePath), { recursive: true });
@@ -741,6 +765,19 @@ export function createPrepareLlmDeployManifestAction({ config, tokenService }: A
               description: 'pr-gated (default) opens a PR; instant deploys directly, no PR',
             })
             .optional(),
+        environment: z =>
+          z
+            .enum(['dev', 'staging', 'prod'], {
+              description: 'Target environment — instant only allowed on dev (backend guardrail)',
+            })
+            .optional(),
+        hfTokenSecretRef: z =>
+          z
+            .string({
+              description:
+                'K8s Secret name holding the HF token, never the token itself — required when the model is gated',
+            })
+            .optional(),
       },
       output: {
         filePath: z => z.string({ description: 'Workspace-relative path the manifest was written to' }),
@@ -767,6 +804,8 @@ export function createPrepareLlmDeployManifestAction({ config, tokenService }: A
         traffic_strategy: ctx.input.trafficStrategy,
         traffic_percent: ctx.input.trafficPercent,
         release_strategy: ctx.input.releaseStrategy,
+        environment: ctx.input.environment,
+        hf_token_secret_ref: ctx.input.hfTokenSecretRef,
       }, tokenService);
       const absolutePath = path.join(ctx.workspacePath, fileName);
       await fs.mkdir(path.dirname(absolutePath), { recursive: true });
@@ -811,6 +850,96 @@ export function createRecordDeployAction({ config, tokenService }: ActionDeps) {
         pr_url: ctx.input.prUrl,
       }, tokenService);
       ctx.output('recorded', true);
+    },
+  });
+}
+
+/**
+ * `orchestration:promote-model` — the *only* real path that reaches
+ * OpenChoreoPromotionAdapter.promote() (adapters/openchoreo_promotion_adapter.py):
+ * a Dev running this Golden Path template themselves. That's the whole
+ * "manual approval" gate for a staging/prod promotion — no agent/MCP tool
+ * calls this action or the endpoint behind it.
+ */
+export function createPromoteModelAction({ config, tokenService }: ActionDeps) {
+  return createTemplateAction({
+    id: 'orchestration:promote-model',
+    description: 'Promotes the model currently bound in the source environment to the next one.',
+    schema: {
+      input: {
+        modelName: z => z.string({ description: 'Registered model name' }),
+        targetEnvironment: z =>
+          z.enum(['staging', 'production'], {
+            description: 'staging promotes from development; production promotes from staging',
+          }),
+      },
+      output: {
+        environments: z =>
+          z.record(z.string(), z.string().nullable(), {
+            description: 'Release bound in each environment after the promotion',
+          }),
+        prodPendingApproval: z =>
+          z.boolean({ description: 'True when staging is ahead of production' }),
+      },
+    },
+    async handler(ctx) {
+      const baseUrl = getBaseUrl(config);
+      const { environments, prod_pending_approval: prodPendingApproval } =
+        await postJson<PromoteResponse>(
+          `${baseUrl}/models/${ctx.input.modelName}/promote`,
+          { target_environment: ctx.input.targetEnvironment },
+          tokenService,
+        );
+      ctx.logger.info(
+        `Promoted "${ctx.input.modelName}" to ${ctx.input.targetEnvironment}`,
+      );
+      ctx.output('environments', environments);
+      ctx.output('prodPendingApproval', prodPendingApproval);
+    },
+  });
+}
+
+/**
+ * `orchestration:rollback-promotion` — the staging/prod counterpart to
+ * action=rollback (which only ever touches dev). Undoes the last
+ * promote()/rollback-promotion() for one environment via
+ * adapters/openchoreo_promotion_adapter.py's annotation-based one-level
+ * undo — see that module's docstring.
+ */
+export function createRollbackPromotionAction({ config, tokenService }: ActionDeps) {
+  return createTemplateAction({
+    id: 'orchestration:rollback-promotion',
+    description: 'Undoes the last promotion for one environment, moving it back to what was bound there before.',
+    schema: {
+      input: {
+        modelName: z => z.string({ description: 'Registered model name' }),
+        environment: z =>
+          z.enum(['staging', 'production'], {
+            description: 'Which environment to roll back',
+          }),
+      },
+      output: {
+        environments: z =>
+          z.record(z.string(), z.string().nullable(), {
+            description: 'Release bound in each environment after the rollback',
+          }),
+        prodPendingApproval: z =>
+          z.boolean({ description: 'True when staging is ahead of production' }),
+      },
+    },
+    async handler(ctx) {
+      const baseUrl = getBaseUrl(config);
+      const { environments, prod_pending_approval: prodPendingApproval } =
+        await postJson<PromoteResponse>(
+          `${baseUrl}/models/${ctx.input.modelName}/promote-rollback`,
+          { environment: ctx.input.environment },
+          tokenService,
+        );
+      ctx.logger.info(
+        `Rolled back "${ctx.input.modelName}"'s promotion in ${ctx.input.environment}`,
+      );
+      ctx.output('environments', environments);
+      ctx.output('prodPendingApproval', prodPendingApproval);
     },
   });
 }
@@ -1102,14 +1231,6 @@ interface ActivatePromptResponse {
   readonly active_version: string;
 }
 
-function parseEvalCasesJson(evalCasesJson: string): unknown {
-  try {
-    return JSON.parse(evalCasesJson);
-  } catch (err) {
-    throw new Error(`evalCasesJson is not valid JSON: ${err}`);
-  }
-}
-
 /**
  * `orchestration:rag-ingest` — chunks and embeds documents into a Qdrant
  * collection, registering a new (inactive) RAG index version.
@@ -1166,8 +1287,10 @@ export function createRagEvaluateAction({ config, tokenService }: ActionDeps) {
       input: {
         collection: z => z.string({ description: 'Qdrant collection name' }),
         indexVersion: z => z.string({ description: 'RAG index version to evaluate' }),
-        evalCasesJson: z =>
-          z.string({ description: 'JSON array of {"question": "..."} objects' }),
+        evalCases: z =>
+          z.array(z.string(), {
+            description: 'Questions to run through the LLM judge',
+          }),
         model: z =>
           z
             .string({
@@ -1192,11 +1315,10 @@ export function createRagEvaluateAction({ config, tokenService }: ActionDeps) {
     },
     async handler(ctx) {
       const baseUrl = getBaseUrl(config);
-      const evalCases = parseEvalCasesJson(ctx.input.evalCasesJson);
       const result = await postJson<RagEvaluateResponse>(`${baseUrl}/rag/evaluate`, {
         collection: ctx.input.collection,
         index_version: ctx.input.indexVersion,
-        eval_cases: evalCases,
+        eval_cases: ctx.input.evalCases.map(question => ({ question })),
         model: ctx.input.model,
       }, tokenService);
       ctx.logger.info(
@@ -1282,8 +1404,10 @@ export function createEvaluatePromptAction({ config, tokenService }: ActionDeps)
       input: {
         name: z => z.string({ description: 'Persona key' }),
         version: z => z.string({ description: 'Prompt version to evaluate' }),
-        evalCasesJson: z =>
-          z.string({ description: 'JSON array of {"question": "..."} objects' }),
+        evalCases: z =>
+          z.array(z.string(), {
+            description: 'Questions to run through the LLM judge',
+          }),
         model: z =>
           z
             .string({
@@ -1308,12 +1432,11 @@ export function createEvaluatePromptAction({ config, tokenService }: ActionDeps)
     },
     async handler(ctx) {
       const baseUrl = getBaseUrl(config);
-      const evalCases = parseEvalCasesJson(ctx.input.evalCasesJson);
       const result = await postJson<EvaluatePromptResponse>(
         `${baseUrl}/prompts/${encodeURIComponent(ctx.input.name)}/evaluate`,
         {
           version: ctx.input.version,
-          eval_cases: evalCases,
+          eval_cases: ctx.input.evalCases.map(question => ({ question })),
           model: ctx.input.model,
         },
         tokenService,

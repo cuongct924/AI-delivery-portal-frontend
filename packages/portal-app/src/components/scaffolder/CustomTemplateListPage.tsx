@@ -113,6 +113,27 @@ const KNOWN_CARD_TYPES = [
   ...PLATFORM_TYPES,
 ];
 
+// AI Delivery Workflows — the MLOps/LLMOps golden paths all declare
+// spec.type: service (nothing distinguishes them from a bare microservice
+// template at the type level, unlike Platform Resources above), so they're
+// pulled into their own section by metadata.name instead of by type. Order
+// here is on-screen order within each lane, mirroring PLATFORM_TYPES.
+const MLOPS_TEMPLATE_NAMES = [
+  'train-track-register',
+  'recommend-train-register',
+  'register-deploy',
+  'setup-model-monitoring',
+];
+const LLMOPS_TEMPLATE_NAMES = [
+  'llm-draft-register',
+  'llm-evaluate-deploy',
+  'deploy-llm',
+];
+const AI_WORKFLOW_TEMPLATE_NAMES = [
+  ...MLOPS_TEMPLATE_NAMES,
+  ...LLMOPS_TEMPLATE_NAMES,
+];
+
 const RegisterExistingButton = ({ to }: { to: string | undefined }) => {
   const { allowed } = usePermission({
     permission: catalogEntityCreatePermission,
@@ -287,8 +308,27 @@ const TemplateListContent = (props: TemplateListPageProps) => {
         ),
     [templates],
   );
+  const mlopsTemplates = useMemo(
+    () =>
+      MLOPS_TEMPLATE_NAMES.map(name =>
+        templates.find(t => t.metadata.name === name),
+      ).filter((t): t is TemplateEntityV1beta3 => Boolean(t)),
+    [templates],
+  );
+  const llmopsTemplates = useMemo(
+    () =>
+      LLMOPS_TEMPLATE_NAMES.map(name =>
+        templates.find(t => t.metadata.name === name),
+      ).filter((t): t is TemplateEntityV1beta3 => Boolean(t)),
+    [templates],
+  );
   const otherTemplates = useMemo(
-    () => templates.filter(t => !KNOWN_CARD_TYPES.includes(t.spec?.type)),
+    () =>
+      templates.filter(
+        t =>
+          !KNOWN_CARD_TYPES.includes(t.spec?.type) &&
+          !AI_WORKFLOW_TEMPLATE_NAMES.includes(t.metadata.name),
+      ),
     [templates],
   );
 
@@ -768,6 +808,39 @@ const TemplateListContent = (props: TemplateListPageProps) => {
                 <TemplateCardSkeletons count={3} />
               ) : (
                 renderTemplateCards(platformTemplates)
+              )}
+            </Grid>
+          </>
+        )}
+
+        {/* AI Delivery Workflows — its own top-level section (sectionTitle,
+            same weight as "Other Templates" below) rather than a subtitle
+            nested under "Create an OpenChoreo Resource", so it reads as
+            clearly separate from Application Resources / Platform Resources
+            above instead of as another card row inside that group. */}
+        {(loading || mlopsTemplates.length > 0 || llmopsTemplates.length > 0) && (
+          <>
+            <Typography className={classes.sectionTitle}>
+              AI Delivery Workflows
+            </Typography>
+            <Typography className={classes.sectionSubtitle}>
+              MLOps — model lifecycle
+            </Typography>
+            <Grid container spacing={3}>
+              {loading ? (
+                <TemplateCardSkeletons count={4} />
+              ) : (
+                renderTemplateCards(mlopsTemplates)
+              )}
+            </Grid>
+            <Typography className={classes.sectionSubtitle}>
+              LLMOps — prompt &amp; RAG lifecycle
+            </Typography>
+            <Grid container spacing={3}>
+              {loading ? (
+                <TemplateCardSkeletons count={3} />
+              ) : (
+                renderTemplateCards(llmopsTemplates)
               )}
             </Grid>
           </>

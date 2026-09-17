@@ -1,3 +1,8 @@
 export { mlopsModelRegistryModule } from './mlopsModelRegistryModule';
 export { modelRegistryApiRef } from './ModelRegistryApi';
-export type { ModelRegistryApi, ModelSummary } from './ModelRegistryApi';
+export type {
+  ModelRegistryApi,
+  ModelSummary,
+  DeployStatus,
+  ModelVersionSummary,
+} from './ModelRegistryApi';

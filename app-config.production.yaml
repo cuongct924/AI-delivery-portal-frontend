@@ -225,7 +225,7 @@ catalog:
         - allow: [Template]
 
     # AI Delivery Portal — org data + example catalog entities (models/prompts
-    # the golden paths below produce) and their 8 golden path templates.
+    # the golden paths below produce) and their 7 golden path templates.
     # Mirrors app-config.yaml's own locations list — missing here meant the
     # Catalog never had ai-delivery-portal's Components/APIs/Resources or
     # any of their partOf/providesApi/dependsOn relations at all in
@@ -246,10 +246,6 @@ catalog:
         - allow: [Template]
     - type: file
       target: /app/templates/register-deploy/template.yaml
-      rules:
-        - allow: [Template]
-    - type: file
-      target: /app/templates/register-external-run/template.yaml
       rules:
         - allow: [Template]
     - type: file

@@ -4,8 +4,7 @@ metadata:
   name: register-deploy
   title: "Evaluate & Deploy Model"
   description: >
-    Evaluates a registered model version and deploys it via your chosen
-    strategy if it passes.
+    Deploy, roll back, or promote a model version — pick `action` below.
   tags:
     - mlops
 
@@ -13,75 +12,186 @@ spec:
   owner: user:guest
   type: service
 
-  # Single step (+ Backstage's auto-generated Review) — 6 fields is not
-  # near-empty enough to warrant splitting across multiple stops the way
-  # train-track-register's old 7-step version was, so this only adds the
-  # same StepLayout grouping (see
-  # packages/app-backstage/src/modules/scaffolder/) that template uses:
-  # 3 titled panels instead of 6 fields stacked full-width in a row, same
-  # Gestalt/semantic-border rules, no change to field names or `steps:`.
   parameters:
     - title: Model to deploy
       required:
+        - action
         - modelName
-        - modelVersion
       properties:
+        action:
+          title: Action
+          type: string
+          enum: [deploy, rollback, promote, promote-rollback]
+          default: deploy
+          # Rendered as a row of cards (StepLayoutField's actionPicker),
+          # each with its own one-line caption — this text is a fallback
+          # for anything reading the raw schema, not what a Dev sees.
+          description: What to do.
         modelName:
           title: Model name
           type: string
           description: Pick a model registered via Train → Track → Register.
-        modelVersion:
-          title: Version
+        # deploySummary is declared here (not just inside the Summary
+        # group's ui:options entry) because renderField/isRenderable both
+        # require the named property to exist in `schema.properties` —
+        # see StepLayoutField's summaryField flag doc comment. Its own
+        # value is never read (not required, never referenced by `steps:`
+        # below) — DeploySummaryPanel computes and displays a sentence
+        # from the OTHER fields' values instead.
+        deploySummary:
+          title: Summary
           type: string
-          description: >
-            MLflow Model Registry version number. Defaults to the latest
-            version once you pick a model above — checked live below as
-            you type.
-        deployStrategy:
-          title: Deploy strategy
-          type: string
-          enum: [direct, canary, ab, blue-green]
-          default: direct
-          description: >
-            Direct replaces 100% of traffic immediately — always valid,
-            including a model's first deploy. Canary/A-B/Blue-Green all
-            use the same KServe canaryTrafficPercent mechanism (they only
-            differ in what percent to start at) and REQUIRE a prior
-            deploy of this model to already exist — orchestration-api
-            rejects them otherwise with a clear error.
-        trafficPercent:
-          title: Traffic percent
-          type: integer
-          description: >
-            Required unless deployStrategy is Direct. Canary: start low
-            (e.g. 10) and increase manually over time by re-running this
-            template with a higher value. A-B: a fixed percent held for
-            comparison. Blue-Green: 0 to stage dark (no traffic yet) or
-            100 to cut over immediately.
-        releaseStrategy:
-          title: Release strategy
-          type: string
-          enum: [pr-gated, instant]
-          default: pr-gated
-          description: >
-            PR-gated (default) opens a PR against repoUrl — merging it is
-            what actually deploys, via ArgoCD's automated sync. Instant
-            calls orchestration-api directly, no PR/Git involved — repoUrl
-            is unused in this case.
-        repoUrl:
-          title: Repository
-          type: string
-          description: >
-            Target GitOps repo for the deploy manifest PR — required when
-            releaseStrategy is pr-gated, in the format
-            github.com?owner=<org>&repo=<repo> (same shape
-            publish:github:pull-request expects). No RepoUrlPicker field
-            extension is confirmed available in this repo's frontend, so
-            this is a plain string field.
+          readOnly: true
+          description: Computed automatically — nothing to fill in.
+        # modelVersion/enablePredictionLogging/deployStrategy/
+        # releaseStrategy/trafficPercent/repoUrl/targetEnvironment are all
+        # declared conditionally in the allOf below, gated on `action` —
+        # same "only exists where it applies" mechanism as
+        # train-track-register's finetuneEnabled/baseModelUri. Whichever
+        # of these don't apply to the chosen action don't exist in the
+        # resolved schema at all, so StepLayoutField renders none of
+        # them — the form really shrinks per action, not merely
+        # hide-but-still-submit fields the backend then ignores.
+      allOf:
+        - if:
+            required: [action]
+            properties:
+              action:
+                enum: [deploy, rollback]
+          then:
+            required:
+              - modelVersion
+            properties:
+              modelVersion:
+                title: Version
+                type: string
+                description: >
+                  Registered versions for this model. For rollback, the
+                  version to roll back *to*.
+              # Only meaningful for deploy/rollback — promote never calls
+              # prepare-deploy-manifest, so there's no tag call for this
+              # to control.
+              enablePredictionLogging:
+                title: Log predictions for drift monitoring
+                type: boolean
+                default: true
+                description: >
+                  Tags this version for future drift monitoring. Log calls
+                  yourself via POST /models/{name}/predictions/log.
+        - if:
+            required: [action]
+            properties:
+              action:
+                const: promote
+          then:
+            required:
+              - targetEnvironment
+            properties:
+              targetEnvironment:
+                title: Promote to
+                type: string
+                enum: [staging, production]
+                description: >
+                  staging ← development, production ← staging. Fails
+                  clearly if the source has nothing bound yet.
+        - if:
+            required: [action]
+            properties:
+              action:
+                const: promote-rollback
+          then:
+            required:
+              - rollbackEnvironment
+            properties:
+              rollbackEnvironment:
+                title: Roll back which environment
+                type: string
+                enum: [staging, production]
+                description: >
+                  Moves this environment back to its release before the
+                  last promote. Fails clearly if there's nothing to undo.
+        - if:
+            required: [action]
+            properties:
+              action:
+                const: deploy
+          then:
+            required:
+              - deployStrategy
+              - releaseStrategy
+            properties:
+              deployStrategy:
+                title: Deploy strategy
+                type: string
+                enum: [direct, canary, ab, blue-green]
+                default: direct
+                description: >
+                  Direct = full cutover now, always valid.
+                  Canary/A-B/Blue-Green need a prior deploy of this model.
+              releaseStrategy:
+                title: Release strategy
+                type: string
+                enum: [pr-gated, instant]
+                default: instant
+                description: >
+                  Instant deploys now, no PR. PR-gated opens a PR for
+                  review; merging it deploys automatically (a local
+                  watcher applies it — see
+                  scripts/watch-and-apply-workload.sh in the backend repo).
+            allOf:
+              - if:
+                  required: [deployStrategy]
+                  properties:
+                    deployStrategy:
+                      const: blue-green
+                then:
+                  required:
+                    - trafficPercent
+                  properties:
+                    trafficPercent:
+                      title: Traffic percent
+                      type: integer
+                      enum: [0, 100]
+                      description: 0 = staged dark, 100 = cutover now.
+              - if:
+                  required: [deployStrategy]
+                  properties:
+                    deployStrategy:
+                      enum: [canary, ab]
+                then:
+                  required:
+                    - trafficPercent
+                  properties:
+                    trafficPercent:
+                      title: Traffic percent
+                      type: integer
+                      enum: [5, 10, 25, 50, 75, 90]
+                      default: 10
+                      description: >
+                        Canary: start low, raise later. A-B: fixed split
+                        for comparison. See "Version comparison" below.
+              - if:
+                  required: [releaseStrategy]
+                  properties:
+                    releaseStrategy:
+                      const: pr-gated
+                then:
+                  required:
+                    - repoUrl
+                  properties:
+                    repoUrl:
+                      title: Repository
+                      type: string
+                      description: "PR target repo: github.com?owner=<org>&repo=<repo>."
       ui:field: StepLayout
       ui:options:
         groups:
-          - title: Model cần deploy
+          - title: Action
+            icon: bolt
+            fields:
+              - name: action
+                actionPicker: true
+          - title: Model
             icon: apps
             fields:
               - name: modelName
@@ -89,22 +199,48 @@ spec:
                 modelNamePicker: true
               - name: modelVersion
                 width: 6
+                modelVersionPicker: true
                 modelVersionCheck: true
-          - title: Chiến lược deploy
+          - title: Deploy strategy
             icon: tune
             fields:
               - deployStrategy
-              - trafficPercent
-          - title: Phát hành
+              - name: trafficPercent
+                versionComparison: true
+          - title: Release
             icon: function
             fields:
               - releaseStrategy
               - repoUrl
+          - title: Promotion
+            icon: trending_up
+            fields:
+              - name: targetEnvironment
+                promotionPreview: true
+              - name: rollbackEnvironment
+                rollbackPreview: true
+          - title: Monitoring
+            icon: query_stats
+            fields:
+              - enablePredictionLogging
+          - title: Summary
+            icon: list
+            fields:
+              - name: deploySummary
+                summaryField: true
 
   steps:
     - id: policy-check
       name: "Run the Evaluate Gate"
       action: orchestration:policy-check
+      # Only a plain deploy re-runs the gate. Rollback is a production
+      # emergency rolling back to a version that already passed it once —
+      # re-gating here would defeat the entire point of rollback being
+      # fast, and could even block the rollback outright if thresholds
+      # changed since. Promote doesn't take a modelVersion at all — it
+      # moves whatever's already bound in the source environment (already
+      # gated when IT was deployed) forward, nothing new to gate here.
+      if: ${{ parameters.action === 'deploy' }}
       input:
         modelName: ${{ parameters.modelName }}
         modelVersion: ${{ parameters.modelVersion }}
@@ -112,47 +248,107 @@ spec:
     - id: prepare-manifest
       name: "Render the InferenceService manifest / deploy"
       action: orchestration:prepare-deploy-manifest
+      if: ${{ parameters.action === 'deploy' or parameters.action === 'rollback' }}
       input:
         modelName: ${{ parameters.modelName }}
         modelVersion: ${{ parameters.modelVersion }}
+        action: ${{ parameters.action }}
+        # deployStrategy/releaseStrategy/trafficPercent don't exist as
+        # parameters at all for a rollback (see the allOf gate above) —
+        # sending `undefined` here is fine either way: the backend
+        # ignores all 3 and forces blue-green/100%/instant itself when
+        # action=rollback, exactly so this template never has to get that
+        # combination right.
         trafficStrategy: ${{ parameters.deployStrategy }}
         trafficPercent: ${{ parameters.trafficPercent }}
         releaseStrategy: ${{ parameters.releaseStrategy }}
+        enablePredictionLogging: ${{ parameters.enablePredictionLogging }}
 
     - id: publish-pr
       name: "Open the deploy PR"
       action: publish:github:pull-request
-      if: ${{ parameters.releaseStrategy === 'pr-gated' }}
+      # Only a plain deploy can open a PR — rollback is always instant,
+      # promote never renders a manifest at all.
+      if: ${{ parameters.action === 'deploy' and parameters.releaseStrategy === 'pr-gated' }}
       input:
         repoUrl: ${{ parameters.repoUrl }}
         branchName: deploy-${{ parameters.modelName }}-${{ parameters.modelVersion }}
         title: "Deploy ${{ parameters.modelName }}:${{ parameters.modelVersion }}"
         description: >
-          Adds the KServe InferenceService manifest for
-          **${{ parameters.modelName }}** version **${{ parameters.modelVersion }}**
-          (Evaluate Gate passed, deployStrategy=${{ parameters.deployStrategy }}).
-          ArgoCD (infra/argocd/applicationset-inference-services-dev.yaml) watches this
-          path with automated sync — merging this PR deploys the model,
-          no manual `kubectl apply` needed (assumes
-          scripts/setup-kserve-argocd-local.sh has been run).
-        sourcePath: infra/environments/dev/inference-services/mlops-team
-        targetPath: infra/environments/dev/inference-services/mlops-team
+          Deploy manifest for **${{ parameters.modelName }}** version
+          **${{ parameters.modelVersion }}** (Evaluate Gate passed,
+          deployStrategy=${{ parameters.deployStrategy }}). Merging this
+          deploys it — scripts/watch-and-apply-workload.sh applies it the
+          moment it lands on `main` (must be running; see that script's
+          own header for why this is a local poller, not a GitHub Actions
+          workflow).
+        # A wider source/targetPath than any one manifest's actual file —
+        # orchestration:prepare-deploy-manifest picks the real path
+        # server-side (infra/openchoreo/telco-fraud-detection/
+        # workload-serving.yaml today; infra/environments/dev/
+        # inference-services/... for the legacy, non-OpenChoreo backend)
+        # and writes exactly one file there, nothing else — this template
+        # can't know which without duplicating that backend-mode decision
+        # here, so it just carries forward whatever landed under infra/.
+        sourcePath: infra
+        targetPath: infra
 
     - id: record-deploy
       name: "Record the deploy"
       action: orchestration:record-deploy
+      if: ${{ parameters.action === 'deploy' or parameters.action === 'rollback' }}
       input:
         modelName: ${{ parameters.modelName }}
         modelVersion: ${{ parameters.modelVersion }}
-        prUrl: ${{ parameters.releaseStrategy === 'pr-gated' and steps['publish-pr'].output.remoteUrl or '' }}
+        prUrl: ${{ parameters.action === 'deploy' and parameters.releaseStrategy === 'pr-gated' and steps['publish-pr'].output.remoteUrl or '' }}
+
+    - id: promote
+      name: "Promote the release"
+      action: orchestration:promote-model
+      # The only real path that reaches OpenChoreoPromotionAdapter.promote()
+      # — running this template yourself, with action=promote, *is* the
+      # manual-approval gate. See that adapter's module docstring.
+      if: ${{ parameters.action === 'promote' }}
+      input:
+        modelName: ${{ parameters.modelName }}
+        targetEnvironment: ${{ parameters.targetEnvironment }}
+
+    - id: promote-rollback
+      name: "Roll back the last promotion"
+      action: orchestration:rollback-promotion
+      if: ${{ parameters.action === 'promote-rollback' }}
+      input:
+        modelName: ${{ parameters.modelName }}
+        environment: ${{ parameters.rollbackEnvironment }}
 
   output:
-    links:
-      - title: View sync status in ArgoCD
-        url: http://localhost:32748
     text:
       - title: Result
         content: |
+          {% if parameters.action === 'rollback' %}
+          Rolled back **${{ parameters.modelName }}** to version
+          **${{ parameters.modelVersion }}** — instant, 100% cutover, no PR.
+          Check status with
+          `kubectl get inferenceservice ${{ parameters.modelName }} -o yaml`.
+          {% elif parameters.action === 'promote' %}
+          Promoted **${{ parameters.modelName }}** to
+          **${{ parameters.targetEnvironment }}**.
+
+          Release bound per environment:
+          `${{ steps['promote'].output.environments }}`
+
+          {% if steps['promote'].output.prodPendingApproval %}
+          Staging is now ahead of production — run this template again
+          with **promote** and **production** selected when you're ready
+          to promote it the rest of the way.
+          {% endif %}
+          {% elif parameters.action === 'promote-rollback' %}
+          Rolled back **${{ parameters.modelName }}**'s promotion in
+          **${{ parameters.rollbackEnvironment }}** — one step back.
+
+          Release bound per environment:
+          `${{ steps['promote-rollback'].output.environments }}`
+          {% else %}
           Evaluate Gate passed for **${{ parameters.modelName }}** version
           **${{ parameters.modelVersion }}**
           (deployStrategy=${{ parameters.deployStrategy }}, releaseStrategy=${{ parameters.releaseStrategy }}).
@@ -160,13 +356,25 @@ spec:
           {% if parameters.releaseStrategy === 'pr-gated' %}
           Deploy PR opened: ${{ steps['publish-pr'].output.remoteUrl }}
 
-          It contains `infra/environments/dev/inference-services/mlops-team/${{ parameters.modelName }}/${{ parameters.modelVersion }}.yaml`.
-          Once merged, ArgoCD (infra/argocd/README.md) picks it up
-          automatically — by default within ~3 minutes, or run
-          `argocd app sync inference-services-dev-mlops-team` to sync
-          immediately. Promotion to staging/prod is Kargo's job, not this
-          Portal's — see infra/kargo/README.md.
+          Merging it deploys automatically —
+          `scripts/watch-and-apply-workload.sh` (backend repo) applies it
+          the moment it lands on `main`, as long as that script is
+          running. Once it's live in development, run this template again
+          with **promote** to move it to staging/production.
           {% else %}
           Deployed immediately — no PR opened. Check status with
           `kubectl get inferenceservice ${{ parameters.modelName }} -o yaml`.
+          {% endif %}
+
+          {% if parameters.enablePredictionLogging %}
+          **Next step:** prediction logging is enabled for this version —
+          have whatever calls the deployed endpoint also call
+          `POST /models/${{ parameters.modelName }}/predictions/log` with
+          the same version. "Set Up Model Monitoring" already exists as a
+          Golden Path for drift checks, but it currently takes a static
+          `productionDataUri` CSV, not these logged predictions yet —
+          export enough of them from `GET /models/${{ parameters.modelName }}/predictions`
+          once you have a batch worth comparing, then run that template
+          against the export.
+          {% endif %}
           {% endif %}

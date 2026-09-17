@@ -22,6 +22,13 @@ import AppsIcon from '@material-ui/icons/Apps';
 import TuneIcon from '@material-ui/icons/Tune';
 import FunctionsIcon from '@material-ui/icons/Functions';
 import FilterListIcon from '@material-ui/icons/FilterList';
+import FlashOnIcon from '@material-ui/icons/FlashOn';
+import ShowChartIcon from '@material-ui/icons/ShowChart';
+import TrendingUpIcon from '@material-ui/icons/TrendingUp';
+import UndoIcon from '@material-ui/icons/Undo';
+import RestoreIcon from '@material-ui/icons/Restore';
+import CheckCircleIcon from '@material-ui/icons/CheckCircle';
+import CancelIcon from '@material-ui/icons/Cancel';
 import { configApiRef, discoveryApiRef, fetchApiRef, useApi } from '@backstage/core-plugin-api';
 import type { FieldExtensionComponentProps } from '@backstage/plugin-scaffolder-react';
 import { openChoreoAuthApiRef } from '@openchoreo/backstage-plugin';
@@ -95,16 +102,145 @@ interface GroupField {
    */
   modelNamePicker?: boolean;
   /**
+   * Replaces a plain enum `<select>` with a row of selectable cards (icon
+   * + label + one-line caption per choice) — see ActionPickerField.
+   * Built for Evaluate & Deploy Model's `action` field: 4 enum values with
+   * genuinely different meanings (deploy/rollback/promote/promote-rollback)
+   * read poorly as a dropdown + one dense paragraph underneath (a Dev has
+   * to read all 4 explanations to find the one they want); a row of cards
+   * lets them scan labels first and only read the 1-2 captions that look
+   * relevant. Options are hardcoded to `action`'s own 4 values, same
+   * "specific beats a speculative abstraction" call as
+   * DeploySummaryPanel/ModelVersionCheckPanel's own hardcoded field names.
+   */
+  actionPicker?: boolean;
+  /**
+   * Dropdown of the sibling `modelName`'s ACTUALLY REGISTERED versions
+   * (GET /models/{name}/versions) instead of a free-text version number —
+   * removes the invalid-version class structurally, rather than only
+   * catching it after the fact. Falls back to the plain field while
+   * `modelName` is empty, loading, or has no known versions yet.
+   */
+  modelVersionPicker?: boolean;
+  /**
    * Live GET /models/{name}/{version}/summary lookup below this field —
    * the frontend half of this session's policy-check 404 fix: instead of
    * only finding out a model:version doesn't exist after the whole
    * wizard submits and the training/deploy workflow fails, this surfaces
    * it (task_type + metrics if found, a clear "not found" if not) the
-   * moment both `modelName` and this field have values. Advisory only —
-   * same non-blocking contract as datasetValidation above, not a hard
-   * gate on "Next".
+   * moment both `modelName` and this field have values. Redundant once
+   * `modelVersionPicker` is also set (a version picked from the dropdown
+   * already exists), but still useful there as a data-driven confirmation
+   * — shows the version's real metrics before the user commits to it.
+   * Advisory only — same non-blocking contract as datasetValidation
+   * above, not a hard gate on "Next".
    */
   modelVersionCheck?: boolean;
+  /**
+   * Live comparison panel below this field: the sibling `modelVersion`'s
+   * metrics (reuses useModelVersionCheck — see that hook) side by side
+   * with whatever's *currently deployed* right now (GET
+   * /models/{name}/deploy-status -> live_version -> GET
+   * /models/{name}/{live_version}/summary). Meant for Evaluate & Deploy
+   * Model's trafficPercent field — Canary/A-B ask the Dev to type a
+   * percent with nothing to compare it against; this gives the same
+   * accuracy/latency numbers a Dev would otherwise have to look up
+   * separately before the number they type means anything. Renders
+   * nothing extra when there's no prior deploy to compare against (a
+   * first deploy has nothing to compare).
+   */
+  versionComparison?: boolean;
+  /**
+   * Live preview panel below this field: what's bound in each OpenChoreo
+   * environment right now (GET /models/{name}/promotion-status), and which
+   * release the sibling `targetEnvironment`'s current value would move
+   * where. Meant for Evaluate & Deploy Model's action=promote branch — a
+   * promotion has no prior manifest/version fields to show a
+   * DeploySummaryPanel-style recap from, so this fetches the one piece of
+   * state that makes "here's what you're about to approve" true before
+   * submit, not just after.
+   */
+  promotionPreview?: boolean;
+  /**
+   * Same live GET /models/{name}/promotion-status table as
+   * `promotionPreview`, without the "will move X into Y" sentence — meant
+   * for the action=promote-rollback branch's `rollbackEnvironment` field.
+   * See PromotionPreviewPanel's `mode` prop doc comment for why that
+   * sentence doesn't apply to a rollback.
+   */
+  rollbackPreview?: boolean;
+  /**
+   * Replaces this field's own (never-edited) value with a computed,
+   * one-sentence plain-language recap of the step's other fields (see
+   * DeploySummaryPanel) — meant for a dedicated read-only property placed
+   * last in the step, right before Backstage's own Review step. Ignores
+   * whatever the field's own schema/value is; only its group placement
+   * matters.
+   */
+  summaryField?: boolean;
+  /**
+   * Dropdown of drafted persona keys (GET /prompts) instead of a free-text
+   * field — Evaluate & Activate Prompt / RAG Version's `promptName`, so a
+   * Dev doesn't have to copy it by hand from Draft Prompt's own output
+   * text. Falls back to the plain field while loading/empty, same
+   * convention as modelNamePicker — including when the backend doesn't
+   * expose GET /prompts yet (orchestration-api, a separate repo).
+   */
+  promptNamePicker?: boolean;
+  /**
+   * Dropdown of the sibling `promptName`'s actually-drafted versions (GET
+   * /prompts/{name}/versions) instead of a free-text version number — same
+   * "remove the invalid-value class structurally" reasoning as
+   * modelVersionPicker. Falls back to the plain field while `promptName`
+   * is empty, loading, or has no known versions yet.
+   */
+  promptVersionPicker?: boolean;
+  /**
+   * Dropdown of drafted RAG collection names (GET /rag/collections)
+   * instead of a free-text field — the RAG-index equivalent of
+   * promptNamePicker, for Evaluate & Activate Prompt / RAG Version's
+   * `collectionName`. Same fallback contract.
+   */
+  ragCollectionPicker?: boolean;
+  /**
+   * Dropdown of the sibling `collectionName`'s actually-ingested index
+   * versions (GET /rag/collections/{name}/versions) instead of a free-text
+   * version number — the RAG-index equivalent of modelVersionPicker. Same
+   * fallback contract.
+   */
+  ragIndexVersionPicker?: boolean;
+  /**
+   * Dropdown of model_names configured in litellm-config.yaml (GET
+   * /llm-models) instead of a free-text field a typo can silently break —
+   * Evaluate & Activate Prompt / RAG Version's `model` (LLM judge). Same
+   * fallback contract as the pickers above.
+   */
+  llmModelPicker?: boolean;
+  /**
+   * Live GET /llm-deploy/validate-model lookup below this field — the
+   * frontend half of deploy-llm's gated-model guardrail: surfaces whether
+   * the typed `huggingFaceModelId` exists and whether it is gated
+   * (`is_gated=true` means the `hfTokenSecretRef` field becomes required
+   * server-side). Advisory only — same non-blocking contract as
+   * modelVersionCheck above, not a hard gate on "Next".
+   */
+  huggingFaceModelValidator?: boolean;
+  /**
+   * Live GET /llm-deploy/gpu-recommendation panel below this field — reads
+   * the sibling `huggingFaceModelId`'s param count (via
+   * useHuggingFaceModelInfo) plus this step's `quantization`/`gpuType` to
+   * suggest a GPU type/count. Advisory only; never overwrites what the Dev
+   * typed.
+   */
+  gpuRecommendationPanel?: boolean;
+  /**
+   * Live GET /llm-deploy/rollout-eligibility gate below this field — reports
+   * whether `modelName` has a prior deploy (`has_prior_deploy`). Canary /
+   * A-B / Blue-Green require one; without it the backend rejects the
+   * submit, so this surfaces that before the whole wizard runs. Advisory
+   * only, same fail-quiet contract as every other live panel here.
+   */
+  rolloutEligibilityGate?: boolean;
 }
 
 /**
@@ -125,6 +261,14 @@ const GROUP_ICONS = {
   tune: TuneIcon,
   function: FunctionsIcon,
   list: FilterListIcon,
+  // "bolt"/"query_stats" were already used by templates/register-deploy's
+  // Action/Monitoring groups before these 2 entries existed — silently
+  // rendering no icon (GROUP_ICONS[group.icon] === undefined) since
+  // group.icon comes from YAML, not something tsc could catch. Fixed
+  // while adding "trending_up" for the new Promotion group.
+  bolt: FlashOnIcon,
+  query_stats: ShowChartIcon,
+  trending_up: TrendingUpIcon,
 } as const;
 
 interface StepLayoutGroup {
@@ -202,6 +346,26 @@ function useOpenChoreoAuthHeaders(): () => Promise<HeadersInit> {
 }
 
 /**
+ * Coerces any list-endpoint body to a string array — accepts a bare JSON
+ * array (`["a","b"]`, like GET /models returns) as well as a wrapped object
+ * (`{names:[...]}`, `{versions:[...]}`, `{columns:[...]}`, `{features:[...]}`,
+ * `{datasets:[...]}`, `{models:[...]}`). A 200 with an unexpected shape (or
+ * a proxy error page that still parses) degrades to `[]` instead of pushing
+ * `undefined` into state and white-screening the whole wizard on the next
+ * `something.length` read in renderField.
+ */
+function toStringList(body: unknown): string[] {
+  if (Array.isArray(body)) return body.map(String);
+  if (body && typeof body === 'object') {
+    const obj = body as Record<string, unknown>;
+    for (const key of ['names', 'versions', 'columns', 'features', 'datasets', 'models']) {
+      if (Array.isArray(obj[key])) return (obj[key] as unknown[]).map(String);
+    }
+  }
+  return [];
+}
+
+/**
  * Fetches the current dataset's column names via orchestration-api
  * (GET /datasets/columns) whenever `datasetUri` is a non-empty string.
  * Returns `[]` (never throws into the caller) while unset, loading, or on
@@ -230,8 +394,8 @@ function useDatasetColumns(datasetUri: unknown): string[] {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       })
-      .then((body: { columns: string[] }) => {
-        if (!cancelled) setColumns(body.columns);
+      .then((body: unknown) => {
+        if (!cancelled) setColumns(toStringList(body));
       })
       .catch(() => {
         if (!cancelled) setColumns([]);
@@ -297,8 +461,17 @@ function useDatasets(): DatasetInfo[] {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       })
-      .then((body: { datasets: DatasetInfo[] }) => {
-        if (!cancelled) setDatasets(body.datasets);
+      .then((body: unknown) => {
+        // GET /datasets returns {datasets:[...]}; coerce defensively so a
+        // shape change degrades to "show the plain text field" ([]) instead
+        // of crashing groupDatasetsBySource/renderField on undefined.
+        if (!cancelled) {
+          const list =
+            Array.isArray(body) || !body || typeof body !== 'object'
+              ? []
+              : (body as { datasets?: unknown }).datasets;
+          setDatasets(Array.isArray(list) ? (list as DatasetInfo[]) : []);
+        }
       })
       .catch(() => {
         if (!cancelled) setDatasets([]);
@@ -336,8 +509,16 @@ function useModels(): RegisteredModel[] {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       })
-      .then((body: RegisteredModel[]) => {
-        if (!cancelled) setModels(body);
+      .then((body: unknown) => {
+        // GET /models returns a bare array today; accept a wrapped
+        // {models:[...]} too so either shape keeps the pickers working.
+        if (!cancelled) {
+          const list =
+            Array.isArray(body) || !body || typeof body !== 'object'
+              ? body
+              : (body as { models?: unknown }).models;
+          setModels(Array.isArray(list) ? (list as RegisteredModel[]) : []);
+        }
       })
       .catch(() => {
         if (!cancelled) setModels([]);
@@ -371,8 +552,8 @@ function useAvailableFeatures(): string[] {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       })
-      .then((body: { features: string[] }) => {
-        if (!cancelled) setFeatures(body.features);
+      .then((body: unknown) => {
+        if (!cancelled) setFeatures(toStringList(body));
       })
       .catch(() => {
         if (!cancelled) setFeatures([]);
@@ -383,6 +564,439 @@ function useAvailableFeatures(): string[] {
   }, [discoveryApi, fetch, getAuthHeaders]);
 
   return features;
+}
+
+/**
+ * Fetches every ACTUALLY REGISTERED version of `modelName` (GET
+ * /models/{name}/versions), newest first — for the Evaluate & Deploy Model
+ * template's `modelVersionPicker` field, so the version dropdown can never
+ * offer a version that doesn't exist. Re-fetches whenever `modelName`
+ * changes; returns `[]` (never throws) while `modelName` is empty,
+ * mid-fetch, or on failure, same fail-open contract as useModels above.
+ */
+function useModelVersions(modelName: unknown): string[] {
+  const discoveryApi = useApi(discoveryApiRef);
+  const { fetch } = useApi(fetchApiRef);
+  const getAuthHeaders = useOpenChoreoAuthHeaders();
+  const [versions, setVersions] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (typeof modelName !== 'string' || !modelName) {
+      setVersions([]);
+      return undefined;
+    }
+    let cancelled = false;
+    Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
+      .then(([proxyUrl, headers]) =>
+        fetch(`${proxyUrl}/orchestration-api/models/${encodeURIComponent(modelName)}/versions`, {
+          headers,
+        }),
+      )
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((body: unknown) => {
+        if (!cancelled) setVersions(toStringList(body));
+      })
+      .catch(() => {
+        if (!cancelled) setVersions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [discoveryApi, fetch, modelName, getAuthHeaders]);
+
+  return versions;
+}
+
+/**
+ * Shared "fetch a flat name list once on mount" hook for the Prompt/RAG
+ * collection/LLM model pickers below — same fail-open contract as
+ * useModels/useAvailableFeatures: `[]` while loading, on failure, or if
+ * the endpoint doesn't exist yet. orchestration-api (a separate repo)
+ * doesn't expose GET /prompts, GET /rag/collections, or GET /llm-models
+ * yet — every picker built on this hook just falls back to its plain
+ * field until it does, same as any other picker with nothing loaded.
+ */
+function useNameList(path: string): string[] {
+  const discoveryApi = useApi(discoveryApiRef);
+  const { fetch } = useApi(fetchApiRef);
+  const getAuthHeaders = useOpenChoreoAuthHeaders();
+  const [names, setNames] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
+      .then(([proxyUrl, headers]) => fetch(`${proxyUrl}/orchestration-api${path}`, { headers }))
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((body: unknown) => {
+        if (!cancelled) setNames(toStringList(body));
+      })
+      .catch(() => {
+        if (!cancelled) setNames([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [discoveryApi, fetch, getAuthHeaders, path]);
+
+  return names;
+}
+
+/** Drafted persona keys (GET /prompts) — see the promptNamePicker GroupField flag's own doc comment. */
+function usePrompts(): string[] {
+  return useNameList('/prompts');
+}
+
+/** Drafted RAG collection names (GET /rag/collections) — see the ragCollectionPicker GroupField flag's own doc comment. */
+function useRagCollections(): string[] {
+  return useNameList('/rag/collections');
+}
+
+/** Judge/serving model_names configured in litellm-config.yaml (GET /llm-models) — see the llmModelPicker GroupField flag's own doc comment. */
+function useLlmModels(): string[] {
+  return useNameList('/llm-models');
+}
+
+interface HuggingFaceModelInfo {
+  modelId: string;
+  exists: boolean;
+  isGated: boolean;
+  paramCountBillion: number | null;
+  /** Architecture hints feeding GET /llm-deploy/gpu-recommendation — the
+   * backend falls back to generic 7B-class defaults when any of these is
+   * null, so every field is optional here. */
+  maxContextLength: number | null;
+  numLayers: number | null;
+  hiddenSize: number | null;
+  numAttentionHeads: number | null;
+  numKeyValueHeads: number | null;
+}
+
+function toNullableNumber(value: unknown): number | null {
+  return typeof value === 'number' && !Number.isNaN(value) ? value : null;
+}
+
+type HuggingFaceModelInfoState =
+  | { status: 'empty' }
+  | { status: 'loading' }
+  | { status: 'found'; info: HuggingFaceModelInfo }
+  | { status: 'not_found'; message: string };
+
+/**
+ * Live GET /llm-deploy/validate-model lookup — mirrors useModelVersionCheck's
+ * own debounced, fail-quiet contract exactly. Only a clean 404 counts as
+ * "not found"; any other failure folds back to 'empty' so the form never
+ * blocks on a preview fetch. Field names are read defensively (is_gated /
+ * isGated, param_count_billion / paramCountBillion) so a backend field rename
+ * degrades to "unknown" instead of crashing.
+ */
+function useHuggingFaceModelInfo(modelId: unknown): HuggingFaceModelInfoState {
+  const discoveryApi = useApi(discoveryApiRef);
+  const { fetch } = useApi(fetchApiRef);
+  const getAuthHeaders = useOpenChoreoAuthHeaders();
+  const [state, setState] = useState<HuggingFaceModelInfoState>({ status: 'empty' });
+
+  useEffect(() => {
+    if (typeof modelId !== 'string' || !modelId) {
+      setState({ status: 'empty' });
+      return undefined;
+    }
+    setState({ status: 'loading' });
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
+        .then(([proxyUrl, headers]) =>
+          fetch(
+            `${proxyUrl}/orchestration-api/llm-deploy/validate-model?huggingface_model_id=${encodeURIComponent(modelId)}`,
+            { headers },
+          ),
+        )
+        .then(async res => {
+          if (res.status === 404) {
+            const body = await res.json().catch(() => ({ detail: undefined }));
+            if (!cancelled) {
+              setState({
+                status: 'not_found',
+                message:
+                  typeof (body as { detail?: unknown }).detail === 'string'
+                    ? (body as { detail: string }).detail
+                    : `HuggingFace model ${modelId} not found`,
+              });
+            }
+            return;
+          }
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const body = ((await res.json()) ?? {}) as Record<string, unknown>;
+          if (cancelled) return;
+          // The backend answers exists:false (200) for an unknown id instead
+          // of 404 — surface that the same way as a clean 404 above.
+          if (body.exists === false) {
+            setState({
+              status: 'not_found',
+              message: `HuggingFace model ${modelId} not found`,
+            });
+            return;
+          }
+          const rawGated = body.is_gated ?? body.isGated ?? body.gated;
+          const rawParams = body.param_count_billion ?? body.paramCountBillion ?? body.params_billion;
+          setState({
+            status: 'found',
+            info: {
+              modelId,
+              exists: true,
+              isGated: rawGated === true,
+              paramCountBillion: toNullableNumber(rawParams),
+              maxContextLength: toNullableNumber(body.max_context_length),
+              numLayers: toNullableNumber(body.num_layers),
+              hiddenSize: toNullableNumber(body.hidden_size),
+              numAttentionHeads: toNullableNumber(body.num_attention_heads),
+              numKeyValueHeads: toNullableNumber(body.num_key_value_heads),
+            },
+          });
+        })
+        .catch(() => {
+          if (!cancelled) setState({ status: 'empty' });
+        });
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [discoveryApi, fetch, modelId, getAuthHeaders]);
+
+  return state;
+}
+
+interface GpuRecommendation {
+  /** VRAM the weights + KV cache need, per the backend estimator. */
+  vramNeededGb: number | null;
+  /** Cheapest fitting gpuType/gpuCount — null when nothing fits at up to
+   * 8-way tensor parallelism (backend `recommended: null`). */
+  gpuType: string | null;
+  gpuCount: number | null;
+}
+
+type GpuRecommendationState =
+  | { status: 'empty' }
+  | { status: 'loading' }
+  | { status: 'found'; recommendation: GpuRecommendation };
+
+interface GpuArchHints {
+  maxContextLength?: unknown;
+  numLayers?: unknown;
+  hiddenSize?: unknown;
+  numAttentionHeads?: unknown;
+  numKeyValueHeads?: unknown;
+}
+
+/**
+ * Live GET /llm-deploy/gpu-recommendation lookup — same debounced, fail-quiet
+ * contract as useHuggingFaceModelInfo above. Matches the real backend shape
+ * (routers/llm_serving.py `GpuRecommendationResponse`): `param_count_billion`
+ * is REQUIRED server-side (a 422 without it folds back to 'empty' here, same
+ * as any other fetch failure), `recommended` carries the cheapest fitting
+ * gpuType/gpuCount and is null when nothing fits. Architecture hints come
+ * from GET /llm-deploy/validate-model when the caller has them; the backend
+ * substitutes generic 7B-class defaults for whatever is missing. Advisory
+ * only — the caller never writes the recommendation back into formData.
+ */
+function useGpuRecommendation(
+  paramCountBillion: unknown,
+  quantization: unknown,
+  hints: GpuArchHints = {},
+): GpuRecommendationState {
+  const discoveryApi = useApi(discoveryApiRef);
+  const { fetch } = useApi(fetchApiRef);
+  const getAuthHeaders = useOpenChoreoAuthHeaders();
+  const [state, setState] = useState<GpuRecommendationState>({ status: 'empty' });
+  const { maxContextLength, numLayers, hiddenSize, numAttentionHeads, numKeyValueHeads } = hints;
+
+  useEffect(() => {
+    if (typeof paramCountBillion !== 'number') {
+      setState({ status: 'empty' });
+      return undefined;
+    }
+    setState({ status: 'loading' });
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams();
+      params.set('param_count_billion', String(paramCountBillion));
+      if (typeof quantization === 'string' && quantization) params.set('quantization', quantization);
+      const numericHint = (value: unknown, key: string) => {
+        if (typeof value === 'number' && !Number.isNaN(value)) params.set(key, String(value));
+      };
+      numericHint(maxContextLength, 'max_context_length');
+      numericHint(numLayers, 'num_layers');
+      numericHint(hiddenSize, 'hidden_size');
+      numericHint(numAttentionHeads, 'num_attention_heads');
+      numericHint(numKeyValueHeads, 'num_key_value_heads');
+      Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
+        .then(([proxyUrl, headers]) =>
+          fetch(`${proxyUrl}/orchestration-api/llm-deploy/gpu-recommendation?${params.toString()}`, {
+            headers,
+          }),
+        )
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json() as Promise<Record<string, unknown>>;
+        })
+        .then(body => {
+          if (cancelled) return;
+          const safe = (body ?? {}) as Record<string, unknown>;
+          const recommended =
+            safe.recommended && typeof safe.recommended === 'object'
+              ? (safe.recommended as Record<string, unknown>)
+              : null;
+          const rawCount = recommended?.gpu_count;
+          setState({
+            status: 'found',
+            recommendation: {
+              vramNeededGb: toNullableNumber(safe.vram_needed_gb),
+              gpuType:
+                recommended && typeof recommended.gpu_type === 'string'
+                  ? recommended.gpu_type
+                  : null,
+              gpuCount:
+                typeof rawCount === 'number'
+                  ? rawCount
+                  : Number(rawCount) || null,
+            },
+          });
+        })
+        .catch(() => {
+          if (!cancelled) setState({ status: 'empty' });
+        });
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [
+    discoveryApi,
+    fetch,
+    paramCountBillion,
+    quantization,
+    maxContextLength,
+    numLayers,
+    hiddenSize,
+    numAttentionHeads,
+    numKeyValueHeads,
+    getAuthHeaders,
+  ]);
+
+  return state;
+}
+
+type RolloutEligibilityState =
+  | { status: 'empty' }
+  | { status: 'loading' }
+  | { status: 'found'; hasPriorDeploy: boolean };
+
+/**
+ * Live GET /llm-deploy/rollout-eligibility lookup — reports whether `modelName`
+ * already has a deploy to roll from. Same fail-quiet contract as the hooks
+ * above: empty modelName / fetch failure renders nothing, the real gate stays
+ * the backend's own rejection at submit time.
+ */
+function useRolloutEligibility(modelName: unknown): RolloutEligibilityState {
+  const discoveryApi = useApi(discoveryApiRef);
+  const { fetch } = useApi(fetchApiRef);
+  const getAuthHeaders = useOpenChoreoAuthHeaders();
+  const [state, setState] = useState<RolloutEligibilityState>({ status: 'empty' });
+
+  useEffect(() => {
+    if (typeof modelName !== 'string' || !modelName) {
+      setState({ status: 'empty' });
+      return undefined;
+    }
+    setState({ status: 'loading' });
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
+        .then(([proxyUrl, headers]) =>
+          fetch(
+            `${proxyUrl}/orchestration-api/llm-deploy/rollout-eligibility?model_name=${encodeURIComponent(modelName)}`,
+            { headers },
+          ),
+        )
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json() as Promise<Record<string, unknown>>;
+        })
+        .then(body => {
+          if (cancelled) return;
+          const safe = (body ?? {}) as Record<string, unknown>;
+          const raw = safe.has_prior_deploy ?? safe.hasPriorDeploy ?? safe.eligible;
+          setState({ status: 'found', hasPriorDeploy: raw === true });
+        })
+        .catch(() => {
+          if (!cancelled) setState({ status: 'empty' });
+        });
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [discoveryApi, fetch, modelName, getAuthHeaders]);
+
+  return state;
+}
+
+/**
+ * Shared "fetch a dependent version list once `name` is set" hook for
+ * promptVersionPicker/ragIndexVersionPicker below — mirrors
+ * useModelVersions' own shape and fail-open contract exactly, just
+ * parameterized by which name the versions belong to.
+ */
+function useVersionList(basePath: string, name: unknown): string[] {
+  const discoveryApi = useApi(discoveryApiRef);
+  const { fetch } = useApi(fetchApiRef);
+  const getAuthHeaders = useOpenChoreoAuthHeaders();
+  const [versions, setVersions] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (typeof name !== 'string' || !name) {
+      setVersions([]);
+      return undefined;
+    }
+    let cancelled = false;
+    Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
+      .then(([proxyUrl, headers]) =>
+        fetch(`${proxyUrl}/orchestration-api${basePath}/${encodeURIComponent(name)}/versions`, {
+          headers,
+        }),
+      )
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((body: unknown) => {
+        if (!cancelled) setVersions(toStringList(body));
+      })
+      .catch(() => {
+        if (!cancelled) setVersions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [discoveryApi, fetch, name, getAuthHeaders, basePath]);
+
+  return versions;
+}
+
+/** Drafted versions of one persona (GET /prompts/{name}/versions) — see the promptVersionPicker GroupField flag's own doc comment. */
+function usePromptVersions(promptName: unknown): string[] {
+  return useVersionList('/prompts', promptName);
+}
+
+/** Ingested versions of one RAG collection (GET /rag/collections/{name}/versions) — see the ragIndexVersionPicker GroupField flag's own doc comment. */
+function useRagIndexVersions(collectionName: unknown): string[] {
+  return useVersionList('/rag/collections', collectionName);
 }
 
 interface DatasetPreview {
@@ -422,8 +1036,14 @@ function useDatasetPreview(datasetUri: unknown): DatasetPreview | null {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       })
-      .then((body: DatasetPreview) => {
-        if (!cancelled) setPreview(body);
+      .then((body: unknown) => {
+        if (!cancelled) {
+          const obj = (body ?? {}) as Partial<DatasetPreview>;
+          setPreview({
+            columns: Array.isArray(obj.columns) ? obj.columns.map(String) : [],
+            rows: Array.isArray(obj.rows) ? (obj.rows as Record<string, unknown>[]) : [],
+          });
+        }
       })
       .catch(() => {
         if (!cancelled) setPreview(null);
@@ -546,8 +1166,12 @@ function useDatasetValidation(
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           return res.json();
         })
-        .then((body: DatasetValidationResult[]) => {
-          if (!cancelled) setResults(body);
+        .then((body: unknown) => {
+          if (!cancelled) {
+            setResults(
+              Array.isArray(body) ? (body as DatasetValidationResult[]) : null,
+            );
+          }
         })
         .catch(() => {
           if (!cancelled) setResults(null);
@@ -736,6 +1360,86 @@ function BaseModelPickerField({
   );
 }
 
+interface ActionOption {
+  value: string;
+  label: string;
+  caption: string;
+  Icon: typeof FlashOnIcon;
+}
+
+/** Evaluate & Deploy Model's own 4 `action` values — see the GroupField.actionPicker doc comment for why these are hardcoded here rather than read from the field's schema. */
+const ACTION_OPTIONS: ActionOption[] = [
+  { value: 'deploy', label: 'Deploy', caption: 'Evaluate and release a new version', Icon: FlashOnIcon },
+  { value: 'rollback', label: 'Rollback', caption: 'Instant cutover to an older version (dev)', Icon: UndoIcon },
+  {
+    value: 'promote',
+    label: 'Promote',
+    caption: 'Move a release to the next environment',
+    Icon: TrendingUpIcon,
+  },
+  {
+    value: 'promote-rollback',
+    label: 'Promote rollback',
+    caption: 'Undo the last promotion (staging/prod)',
+    Icon: RestoreIcon,
+  },
+];
+
+/**
+ * A row of selectable cards replacing `action`'s plain enum `<select>` —
+ * see GroupField.actionPicker's doc comment for why. "Selected" is shown
+ * with a darker border + bold label, never a colored background/border
+ * (packages/app/src/modules/theme/colors.ts's own rule: brand red never
+ * appears on peer choice cards like "Choose" among equal template cards —
+ * these 4 action cards are exactly that shape).
+ */
+function ActionPickerField({
+  value,
+  onChange,
+}: {
+  value: unknown;
+  onChange: (value: string) => void;
+}): JSX.Element {
+  return (
+    <Grid container spacing={1}>
+      {ACTION_OPTIONS.map(option => {
+        const selected = value === option.value;
+        return (
+          <Grid item xs={12} sm={6} key={option.value}>
+            <Card
+              onClick={() => onChange(option.value)}
+              style={{
+                cursor: 'pointer',
+                border: `${selected ? 2 : 1}px solid ${selected ? NEUTRAL.textPrimary : NEUTRAL.border}`,
+                backgroundColor: selected ? NEUTRAL.paper : NEUTRAL.background,
+              }}
+              elevation={0}
+            >
+              <CardContent style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: 12 }}>
+                <option.Icon
+                  style={{
+                    fontSize: 20,
+                    marginTop: 2,
+                    color: selected ? NEUTRAL.textPrimary : NEUTRAL.textSecondary,
+                  }}
+                />
+                <Box>
+                  <Typography variant="body2" style={{ fontWeight: selected ? 700 : 500 }}>
+                    {option.label}
+                  </Typography>
+                  <Typography variant="caption" style={{ color: NEUTRAL.textSecondary }}>
+                    {option.caption}
+                  </Typography>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+        );
+      })}
+    </Grid>
+  );
+}
+
 interface ModelNamePickerFieldProps {
   name: string;
   title: string;
@@ -771,6 +1475,98 @@ function ModelNamePickerField({
       {modelNames.map(modelName => (
         <MenuItem key={modelName} value={modelName}>
           {modelName}
+        </MenuItem>
+      ))}
+    </TextField>
+  );
+}
+
+interface ModelVersionPickerFieldProps {
+  name: string;
+  title: string;
+  description?: string;
+  required: boolean;
+  versions: string[];
+  value: unknown;
+  onChange: (value: unknown) => void;
+}
+
+/** Select of the sibling modelName's actually-registered versions (GET /models/{name}/versions) — see the modelVersionPicker GroupField flag. */
+function ModelVersionPickerField({
+  name,
+  title,
+  description,
+  required,
+  versions,
+  value,
+  onChange,
+}: ModelVersionPickerFieldProps): JSX.Element {
+  const selected = typeof value === 'string' ? value : '';
+  return (
+    <TextField
+      select
+      fullWidth
+      variant="outlined"
+      label={`${title}${required ? '*' : ''}`}
+      helperText={description}
+      value={selected}
+      onChange={e => onChange(e.target.value)}
+      name={name}
+    >
+      {versions.map(version => (
+        <MenuItem key={version} value={version}>
+          v{version}
+        </MenuItem>
+      ))}
+    </TextField>
+  );
+}
+
+interface OptionPickerFieldProps {
+  name: string;
+  title: string;
+  description?: string;
+  required: boolean;
+  options: string[];
+  /** e.g. prefixing versions with "v" — ModelVersionPickerField's own formatting, inlined here so this one component covers both the name-only and version-list shapes below. */
+  formatOption?: (option: string) => string;
+  value: unknown;
+  onChange: (value: unknown) => void;
+}
+
+/**
+ * Generic dropdown of a fetched string list — shared by the Prompt/RAG/LLM
+ * model pickers (promptNamePicker, promptVersionPicker, ragCollectionPicker,
+ * ragIndexVersionPicker, llmModelPicker). ModelNamePickerField/
+ * ModelVersionPickerField above predate this and stay as they are rather
+ * than being folded in, to avoid touching already-proven fields for a
+ * stylistic consolidation.
+ */
+function OptionPickerField({
+  name,
+  title,
+  description,
+  required,
+  options,
+  formatOption,
+  value,
+  onChange,
+}: OptionPickerFieldProps): JSX.Element {
+  const selected = typeof value === 'string' ? value : '';
+  return (
+    <TextField
+      select
+      fullWidth
+      variant="outlined"
+      label={`${title}${required ? '*' : ''}`}
+      helperText={description}
+      value={selected}
+      onChange={e => onChange(e.target.value)}
+      name={name}
+    >
+      {options.map(option => (
+        <MenuItem key={option} value={option}>
+          {formatOption ? formatOption(option) : option}
         </MenuItem>
       ))}
     </TextField>
@@ -843,8 +1639,20 @@ function useModelVersionCheck(modelName: unknown, modelVersion: unknown): ModelV
             return;
           }
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const summary: ModelVersionSummary = await res.json();
-          if (!cancelled) setState({ status: 'found', summary });
+          const summary = ((await res.json()) ?? {}) as Partial<ModelVersionSummary>;
+          if (!cancelled) {
+            setState({
+              status: 'found',
+              summary: {
+                name: typeof summary.name === 'string' ? summary.name : String(modelName),
+                version: typeof summary.version === 'string' ? summary.version : String(modelVersion),
+                task_type: typeof summary.task_type === 'string' ? summary.task_type : null,
+                metrics:
+                  summary.metrics && typeof summary.metrics === 'object' ? summary.metrics : {},
+                tags: summary.tags && typeof summary.tags === 'object' ? summary.tags : {},
+              },
+            });
+          }
         })
         .catch(() => {
           if (!cancelled) setState({ status: 'empty' });
@@ -859,13 +1667,188 @@ function useModelVersionCheck(modelName: unknown, modelVersion: unknown): ModelV
   return state;
 }
 
-/** Color-coded early-warning panel for Evaluate & Deploy Model's modelName/modelVersion pair — see useModelVersionCheck. Renders nothing until both fields are filled in. */
-function ModelVersionCheckPanel({
+interface GateThresholdCheck {
+  metric: string;
+  minimum: number | null;
+  maximum: number | null;
+}
+
+interface GateResult {
+  passed: boolean;
+  metrics: Record<string, number>;
+  thresholds: GateThresholdCheck[];
+}
+
+type GatePreviewState =
+  | { status: 'empty' }
+  | { status: 'loading' }
+  | { status: 'found'; gate: GateResult }
+  | { status: 'unavailable' };
+
+/**
+ * Live GET /models/{name}/{version}/gate-preview lookup — same debounced,
+ * fail-quiet contract as useModelVersionCheck. Read-only preview of what
+ * the "Run the Evaluate Gate" step would compute; no tag-writing side
+ * effect (see that endpoint's own docstring, it's a separate read-only
+ * route from POST /policy-check). 'unavailable' covers every non-preview
+ * case (no task_type tag yet, any fetch failure) — the real gate step
+ * still runs at submit time and reports the actual reason, this is
+ * advisory only.
+ */
+function useGatePreview(modelName: unknown, modelVersion: unknown): GatePreviewState {
+  const discoveryApi = useApi(discoveryApiRef);
+  const { fetch } = useApi(fetchApiRef);
+  const getAuthHeaders = useOpenChoreoAuthHeaders();
+  const [state, setState] = useState<GatePreviewState>({ status: 'empty' });
+
+  useEffect(() => {
+    if (
+      typeof modelName !== 'string' ||
+      !modelName ||
+      typeof modelVersion !== 'string' ||
+      !modelVersion
+    ) {
+      setState({ status: 'empty' });
+      return undefined;
+    }
+    setState({ status: 'loading' });
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
+        .then(([proxyUrl, headers]) =>
+          fetch(
+            `${proxyUrl}/orchestration-api/models/${encodeURIComponent(modelName)}/${encodeURIComponent(modelVersion)}/gate-preview`,
+            { headers },
+          ),
+        )
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json() as Promise<Partial<GateResult>>;
+        })
+        .then(gate => {
+          if (cancelled) return;
+          // A 200 with a missing thresholds array would white-screen
+          // GatePreviewPanel's thresholds.map — coerce instead.
+          setState({
+            status: 'found',
+            gate: {
+              passed: (gate ?? {}).passed === true,
+              metrics: (gate ?? {}).metrics && typeof (gate as GateResult).metrics === 'object'
+                ? (gate as GateResult).metrics
+                : {},
+              thresholds: Array.isArray((gate ?? {}).thresholds)
+                ? (gate as GateResult).thresholds
+                : [],
+            },
+          });
+        })
+        .catch(() => {
+          if (!cancelled) setState({ status: 'unavailable' });
+        });
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [discoveryApi, fetch, modelName, modelVersion, getAuthHeaders]);
+
+  return state;
+}
+
+/** One metric's pass/fail row — icon + value + the bound it's checked against. */
+function GateThresholdRow({
+  threshold,
+  value,
+}: {
+  threshold: GateThresholdCheck;
+  value: number | undefined;
+}): JSX.Element {
+  const met =
+    value !== undefined &&
+    (threshold.minimum === null || value >= threshold.minimum) &&
+    (threshold.maximum === null || value <= threshold.maximum);
+  const bound =
+    threshold.minimum !== null
+      ? `≥ ${threshold.minimum}`
+      : threshold.maximum !== null
+        ? `≤ ${threshold.maximum}`
+        : '';
+  return (
+    <Box display="flex" alignItems="center" style={{ gap: 6 }}>
+      {met ? (
+        <CheckCircleIcon style={{ fontSize: 16, color: STATUS.success, flexShrink: 0 }} />
+      ) : (
+        <CancelIcon style={{ fontSize: 16, color: STATUS.error, flexShrink: 0 }} />
+      )}
+      <Typography variant="body2">
+        {threshold.metric}: {value ?? '—'}{' '}
+        <span style={{ color: NEUTRAL.textSecondary }}>({bound})</span>
+      </Typography>
+    </Box>
+  );
+}
+
+/**
+ * Evaluate Gate pass/fail preview, one row per threshold — see
+ * useGatePreview. Renders nothing while loading/empty/unavailable so it
+ * never crowds the form with a panel that has nothing useful to say yet.
+ */
+function GatePreviewPanel({
   modelName,
   modelVersion,
 }: {
   modelName: unknown;
   modelVersion: unknown;
+}): JSX.Element | null {
+  const state = useGatePreview(modelName, modelVersion);
+  if (state.status !== 'found') return null;
+  const { gate } = state;
+  return (
+    <Box
+      style={{
+        border: `1px solid ${NEUTRAL.border}`,
+        borderRadius: 4,
+        padding: 12,
+        marginTop: 8,
+      }}
+    >
+      <Chip
+        label={gate.passed ? 'Evaluate Gate: would PASS' : 'Evaluate Gate: would FAIL'}
+        size="small"
+        style={{
+          backgroundColor: gate.passed ? STATUS.success : STATUS.error,
+          color: '#FFF',
+          marginBottom: 8,
+        }}
+      />
+      {gate.thresholds.map(threshold => (
+        <GateThresholdRow
+          key={threshold.metric}
+          threshold={threshold}
+          value={gate.metrics[threshold.metric]}
+        />
+      ))}
+    </Box>
+  );
+}
+
+/**
+ * Color-coded early-warning panel for Evaluate & Deploy Model's
+ * modelName/modelVersion pair — see useModelVersionCheck. Renders nothing
+ * until both fields are filled in. Also shows GatePreviewPanel below the
+ * metrics line, except for a rollback — action=rollback never re-runs the
+ * Evaluate Gate at all (see prepare_deploy_manifest's own comment on
+ * that), so previewing it there would suggest a check that doesn't
+ * actually happen.
+ */
+function ModelVersionCheckPanel({
+  modelName,
+  modelVersion,
+  action,
+}: {
+  modelName: unknown;
+  modelVersion: unknown;
+  action?: unknown;
 }): JSX.Element | null {
   const state = useModelVersionCheck(modelName, modelVersion);
   if (state.status === 'empty') return null;
@@ -893,16 +1876,519 @@ function ModelVersionCheckPanel({
     .map(([k, v]) => `${k}=${v}`)
     .join(', ');
   return (
+    <>
+      <Box display="flex" alignItems="flex-start" style={{ gap: 8 }}>
+        <Chip
+          label="Found"
+          size="small"
+          style={{ backgroundColor: STATUS.success, color: '#FFF', flexShrink: 0 }}
+        />
+        <Typography variant="body2">
+          {summary.task_type ? `task_type: ${summary.task_type}` : 'no task_type tag set'}
+          {metricsText && ` — ${metricsText}`}
+        </Typography>
+      </Box>
+      {action !== 'rollback' && (
+        <GatePreviewPanel modelName={modelName} modelVersion={modelVersion} />
+      )}
+    </>
+  );
+}
+
+/**
+ * Live HuggingFace model check for deploy-llm's `huggingFaceModelId` field —
+ * see useHuggingFaceModelInfo. Tells the Dev whether the typed id resolves
+ * and whether it is gated (gated => `hfTokenSecretRef` becomes required
+ * server-side). Advisory only; the real check stays the backend's own
+ * validation at submit time.
+ */
+function HuggingFaceModelValidatorPanel({ modelId }: { modelId: unknown }): JSX.Element | null {
+  const state = useHuggingFaceModelInfo(modelId);
+  if (state.status === 'empty' || state.status === 'loading') return null;
+  if (state.status === 'not_found') {
+    return (
+      <Box display="flex" alignItems="flex-start" style={{ gap: 8 }}>
+        <Chip
+          label="Not found"
+          size="small"
+          style={{ backgroundColor: STATUS.error, color: '#FFF', flexShrink: 0 }}
+        />
+        <Typography variant="body2">{state.message}</Typography>
+      </Box>
+    );
+  }
+  const { info } = state;
+  return (
     <Box display="flex" alignItems="flex-start" style={{ gap: 8 }}>
       <Chip
-        label="Found"
+        label={info.isGated ? 'Gated' : 'Public'}
         size="small"
-        style={{ backgroundColor: STATUS.success, color: '#FFF', flexShrink: 0 }}
+        style={{
+          backgroundColor: info.isGated ? STATUS.warning : STATUS.success,
+          color: '#FFF',
+          flexShrink: 0,
+        }}
       />
       <Typography variant="body2">
-        {summary.task_type ? `task_type: ${summary.task_type}` : 'no task_type tag set'}
-        {metricsText && ` — ${metricsText}`}
+        {info.modelId}
+        {info.paramCountBillion !== null && ` — ~${info.paramCountBillion}B params`}
+        {info.isGated
+          ? ' — gated model: fill hfTokenSecretRef (Secret name, not the token).'
+          : ' — public model: no HF token needed.'}
       </Typography>
+    </Box>
+  );
+}
+
+/**
+ * GPU suggestion for deploy-llm's compute fields — reads the param count +
+ * architecture hints from useHuggingFaceModelInfo plus the step's
+ * quantization/maxContextLength, then surfaces GET
+ * /llm-deploy/gpu-recommendation's cheapest fitting gpuType/gpuCount (or its
+ * explicit "nothing fits" case). Never writes back into formData; the Dev
+ * still picks explicitly.
+ */
+function GpuRecommendationPanel({
+  modelId,
+  quantization,
+  maxContextLength,
+}: {
+  modelId: unknown;
+  quantization: unknown;
+  maxContextLength: unknown;
+}): JSX.Element | null {
+  const hfState = useHuggingFaceModelInfo(modelId);
+  const info = hfState.status === 'found' ? hfState.info : undefined;
+  const recState = useGpuRecommendation(info?.paramCountBillion, quantization, {
+    maxContextLength:
+      typeof maxContextLength === 'number' ? maxContextLength : info?.maxContextLength,
+    numLayers: info?.numLayers,
+    hiddenSize: info?.hiddenSize,
+    numAttentionHeads: info?.numAttentionHeads,
+    numKeyValueHeads: info?.numKeyValueHeads,
+  });
+  if (recState.status !== 'found') return null;
+  const { recommendation } = recState;
+  const vramText =
+    recommendation.vramNeededGb !== null ? `needs ~${recommendation.vramNeededGb} GB VRAM` : null;
+  if (!recommendation.gpuType || !recommendation.gpuCount) {
+    return (
+      <Box display="flex" alignItems="flex-start" style={{ gap: 8 }}>
+        <Chip
+          label="No fit"
+          size="small"
+          style={{ backgroundColor: STATUS.error, color: '#FFF', flexShrink: 0 }}
+        />
+        <Typography variant="body2">
+          No GPU configuration fits at up to 8-way tensor parallelism
+          {vramText ? ` (${vramText})` : ''} — pick a smaller model or a larger
+          quantization before submitting.
+        </Typography>
+      </Box>
+    );
+  }
+  return (
+    <Box style={{ border: `1px solid ${NEUTRAL.border}`, borderRadius: 4, padding: 12 }}>
+      <Typography variant="body2" style={{ fontWeight: 600, marginBottom: 4 }}>
+        Suggested GPU — {recommendation.gpuType} x{recommendation.gpuCount}
+      </Typography>
+      {vramText && (
+        <Typography variant="body2" style={{ color: NEUTRAL.textSecondary }}>
+          {vramText} (weights + KV cache estimate).
+        </Typography>
+      )}
+    </Box>
+  );
+}
+
+/**
+ * Rollout gate for deploy-llm's `deployStrategy` field — see
+ * useRolloutEligibility. When there is no prior deploy, canary / a-b /
+ * blue-green will be rejected server-side, so this warns before submit
+ * instead of after the whole wizard runs.
+ */
+function RolloutEligibilityGatePanel({ modelName }: { modelName: unknown }): JSX.Element | null {
+  const state = useRolloutEligibility(modelName);
+  if (state.status !== 'found') return null;
+  return (
+    <Box display="flex" alignItems="flex-start" style={{ gap: 8 }}>
+      <Chip
+        label={state.hasPriorDeploy ? 'Prior deploy found' : 'First deploy'}
+        size="small"
+        style={{
+          backgroundColor: state.hasPriorDeploy ? STATUS.success : STATUS.warning,
+          color: '#FFF',
+          flexShrink: 0,
+        }}
+      />
+      <Typography variant="body2">
+        {state.hasPriorDeploy
+          ? 'Canary / A-B / Blue-Green are available — a prior deploy exists to roll from.'
+          : 'No prior deploy yet — keep Direct; canary / a-b / blue-green will be rejected.'}
+      </Typography>
+    </Box>
+  );
+}
+
+type LiveVersionState =
+  | { status: 'loading' }
+  | { status: 'none' }
+  | { status: 'found'; summary: ModelVersionSummary };
+
+/**
+ * Whatever's actually live right now for `modelName` — GET
+ * /models/{name}/deploy-status for the live version number, then GET
+ * /models/{name}/{live_version}/summary for its metrics. `status: 'none'`
+ * covers both "nothing deployed yet" and any fetch failure — same
+ * fail-quiet contract as useModelVersionCheck, this is an advisory
+ * comparison, never a gate.
+ */
+function useCurrentLiveVersionSummary(modelName: unknown): LiveVersionState {
+  const discoveryApi = useApi(discoveryApiRef);
+  const { fetch } = useApi(fetchApiRef);
+  const getAuthHeaders = useOpenChoreoAuthHeaders();
+  const [state, setState] = useState<LiveVersionState>({ status: 'loading' });
+
+  useEffect(() => {
+    if (typeof modelName !== 'string' || !modelName) {
+      setState({ status: 'none' });
+      return undefined;
+    }
+    setState({ status: 'loading' });
+    let cancelled = false;
+    Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
+      .then(([proxyUrl, headers]) =>
+        fetch(`${proxyUrl}/orchestration-api/models/${encodeURIComponent(modelName)}/deploy-status`, {
+          headers,
+        }).then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json() as Promise<Partial<{ deployed: boolean; live_version: string | null }>>;
+        }).then(deployStatus => {
+          if (!deployStatus || !deployStatus.deployed || !deployStatus.live_version) {
+            return null;
+          }
+          return fetch(
+            `${proxyUrl}/orchestration-api/models/${encodeURIComponent(modelName)}/${encodeURIComponent(deployStatus.live_version)}/summary`,
+            { headers },
+          ).then(res => {
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.json() as Promise<ModelVersionSummary>;
+          });
+        }),
+      )
+      .then(summary => {
+        if (cancelled) return;
+        setState(summary ? { status: 'found', summary } : { status: 'none' });
+      })
+      .catch(() => {
+        if (!cancelled) setState({ status: 'none' });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [discoveryApi, fetch, modelName, getAuthHeaders]);
+
+  return state;
+}
+
+/**
+ * Side-by-side accuracy/latency-style metrics for the currently-live
+ * version vs. the version about to be deployed — see the
+ * GroupField.versionComparison doc comment for why (a Canary/A-B traffic
+ * percent otherwise has nothing to compare against). Renders nothing when
+ * there's no prior deploy, no new-version data yet, or both point at the
+ * same version (comparing a version to itself is not useful).
+ */
+function VersionComparisonPanel({
+  modelName,
+  newVersion,
+}: {
+  modelName: unknown;
+  newVersion: unknown;
+}): JSX.Element | null {
+  const live = useCurrentLiveVersionSummary(modelName);
+  const incoming = useModelVersionCheck(modelName, newVersion);
+
+  if (live.status !== 'found' || incoming.status !== 'found') return null;
+  if (live.summary.version === incoming.summary.version) return null;
+
+  const metricNames = Array.from(
+    new Set([...Object.keys(live.summary.metrics), ...Object.keys(incoming.summary.metrics)]),
+  );
+  if (metricNames.length === 0) return null;
+
+  return (
+    <Box style={{ border: `1px solid ${NEUTRAL.border}`, borderRadius: 4, padding: 12 }}>
+      <Typography variant="body2" style={{ fontWeight: 600, marginBottom: 8 }}>
+        Live (v{live.summary.version}) vs. new (v{incoming.summary.version})
+      </Typography>
+      <Grid container spacing={1}>
+        {metricNames.map(metric => (
+          <Fragment key={metric}>
+            <Grid item xs={4}>
+              <Typography variant="body2" style={{ color: NEUTRAL.textSecondary }}>
+                {metric}
+              </Typography>
+            </Grid>
+            <Grid item xs={4}>
+              <Typography variant="body2">{live.summary.metrics[metric] ?? '—'}</Typography>
+            </Grid>
+            <Grid item xs={4}>
+              <Typography variant="body2">{incoming.summary.metrics[metric] ?? '—'}</Typography>
+            </Grid>
+          </Fragment>
+        ))}
+      </Grid>
+    </Box>
+  );
+}
+
+interface PromotionStatus {
+  project: string;
+  component: string;
+  environments: Record<string, string | null>;
+  prod_pending_approval: boolean;
+}
+
+type PromotionStatusState =
+  | { status: 'loading' }
+  | { status: 'none' }
+  | { status: 'found'; data: PromotionStatus };
+
+const PROMOTION_SOURCE_ENVIRONMENT: Record<string, string> = {
+  staging: 'development',
+  production: 'staging',
+};
+
+/**
+ * Live GET /models/{name}/promotion-status lookup — same fail-quiet
+ * contract as useModelVersionCheck/useCurrentLiveVersionSummary (a 404 for
+ * a model outside the one real scoped project, per
+ * routers/models.py's get_promotion_status, folds into 'none' same as any
+ * other fetch failure — this panel is advisory, the real check is
+ * orchestration:promote-model's own 404/400).
+ */
+function usePromotionStatus(modelName: unknown): PromotionStatusState {
+  const discoveryApi = useApi(discoveryApiRef);
+  const { fetch } = useApi(fetchApiRef);
+  const getAuthHeaders = useOpenChoreoAuthHeaders();
+  const [state, setState] = useState<PromotionStatusState>({ status: 'loading' });
+
+  useEffect(() => {
+    if (typeof modelName !== 'string' || !modelName) {
+      setState({ status: 'none' });
+      return undefined;
+    }
+    setState({ status: 'loading' });
+    let cancelled = false;
+    Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
+      .then(([proxyUrl, headers]) =>
+        fetch(
+          `${proxyUrl}/orchestration-api/models/${encodeURIComponent(modelName)}/promotion-status`,
+          { headers },
+        ),
+      )
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json() as Promise<Partial<PromotionStatus>>;
+      })
+      .then(data => {
+        if (cancelled) return;
+        // A 200 without an environments map would crash the panel's
+        // per-environment reads — coerce instead of trusting the shape.
+        setState({
+          status: 'found',
+          data: {
+            project: typeof data?.project === 'string' ? data.project : '',
+            component: typeof data?.component === 'string' ? data.component : '',
+            environments:
+              data?.environments && typeof data.environments === 'object'
+                ? (data.environments as Record<string, string | null>)
+                : {},
+            prod_pending_approval: data?.prod_pending_approval === true,
+          },
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setState({ status: 'none' });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [discoveryApi, fetch, modelName, getAuthHeaders]);
+
+  return state;
+}
+
+/**
+ * Shows exactly what a promote submit is about to do — release bound per
+ * environment today, and which one moves where. An "approval" that only
+ * tells the Dev what happened *after* they submit isn't a real approval;
+ * this is the "see it before you approve it" half of that. Release names
+ * are OpenChoreo ProjectRelease identifiers (e.g.
+ * "telco-fraud-detection-6d675ddbf6"), not MLflow version numbers — there
+ * is no adapter-side mapping from one to the other yet (see
+ * adapters/openchoreo_promotion_adapter.py), so this shows the real
+ * identifier rather than inventing a "v3"-style label this data can't
+ * actually back.
+ */
+function PromotionPreviewPanel({
+  modelName,
+  targetEnvironment,
+  mode = 'promote',
+}: {
+  modelName: unknown;
+  targetEnvironment: unknown;
+  /** 'rollback' skips the "will move X into Y" sentence below the table —
+   * that framing (source environment -> target) only describes what
+   * promote does. A rollback swaps `targetEnvironment` back to whatever
+   * was there before, which this table's per-environment values don't
+   * predict (the "previous" pointer isn't exposed by GET
+   * /models/{name}/promotion-status — see
+   * adapters/openchoreo_promotion_adapter.py's annotation-based undo).
+   * The table itself (what's bound right now) is still useful context
+   * for deciding which environment to roll back. */
+  mode?: 'promote' | 'rollback';
+}): JSX.Element | null {
+  const state = usePromotionStatus(modelName);
+  if (state.status !== 'found') return null;
+  if (typeof targetEnvironment !== 'string' || !targetEnvironment) return null;
+
+  const sourceEnvironment = mode === 'promote' ? PROMOTION_SOURCE_ENVIRONMENT[targetEnvironment] : undefined;
+  const sourceRelease = sourceEnvironment ? state.data.environments[sourceEnvironment] : undefined;
+  const targetRelease = state.data.environments[targetEnvironment];
+
+  return (
+    <Box style={{ border: `1px solid ${NEUTRAL.border}`, borderRadius: 4, padding: 12 }}>
+      <Typography variant="body2" style={{ fontWeight: 600, marginBottom: 8 }}>
+        Release bound per environment today
+      </Typography>
+      <Grid container spacing={1}>
+        {(['development', 'staging', 'production'] as const).map(env => (
+          <Fragment key={env}>
+            <Grid item xs={4}>
+              <Typography variant="body2" style={{ color: NEUTRAL.textSecondary }}>
+                {env}
+              </Typography>
+            </Grid>
+            <Grid item xs={8}>
+              <Typography variant="body2">{state.data.environments[env] ?? '(none yet)'}</Typography>
+            </Grid>
+          </Fragment>
+        ))}
+      </Grid>
+      {sourceEnvironment && (
+        <Typography variant="body2" style={{ marginTop: 8 }}>
+          {sourceRelease ? (
+            <>
+              Will move <strong>{sourceRelease}</strong> from {sourceEnvironment} into{' '}
+              {targetEnvironment}
+              {targetRelease ? `, replacing ${targetRelease}` : ''}.
+            </>
+          ) : (
+            <>
+              Nothing bound in {sourceEnvironment} yet — submitting will fail until something is.
+            </>
+          )}
+        </Typography>
+      )}
+    </Box>
+  );
+}
+
+const DEPLOY_STRATEGY_LABELS: Record<string, string> = {
+  direct: 'Direct',
+  canary: 'Canary',
+  ab: 'A/B',
+  'blue-green': 'Blue-Green',
+};
+
+/**
+ * Read-only, computed one-sentence recap of Evaluate & Deploy Model's own
+ * fields (e.g. "Will deploy fraud-detection v3, Canary strategy starting
+ * at 10%, released via a PR to github.com/org/repo.") — plugs into a
+ * `summaryField: true` GroupField placed last, right before Backstage's
+ * own Review step, so the user confirms in plain language instead of
+ * re-reading each field's raw value. Hardcodes this template's own field
+ * names (modelName/modelVersion/deployStrategy/trafficPercent/
+ * releaseStrategy/repoUrl/targetEnvironment) rather than a generic
+ * template-string DSL — same "specific beats a speculative abstraction"
+ * call as ModelVersionCheckPanel's own hardcoded `data.modelName`
+ * reference above; nothing else in this template needs a computed
+ * summary yet. `action` picks which of the 3 sentence shapes to render —
+ * rollback and promote don't touch deployStrategy/releaseStrategy at all,
+ * so reusing the deploy sentence for them would be actively wrong, not
+ * just imprecise.
+ */
+function DeploySummaryPanel({ data }: { data: Record<string, unknown> }): JSX.Element {
+  const modelName =
+    typeof data.modelName === 'string' && data.modelName ? data.modelName : '(model not chosen yet)';
+  const modelVersion =
+    typeof data.modelVersion === 'string' && data.modelVersion
+      ? `v${data.modelVersion}`
+      : '(version not chosen yet)';
+  const action = typeof data.action === 'string' ? data.action : 'deploy';
+
+  let sentence: JSX.Element;
+  if (action === 'rollback') {
+    sentence = (
+      <>
+        Will roll back <strong>{modelName}</strong> to <strong>{modelVersion}</strong> — instant,
+        100% cutover, no PR.
+      </>
+    );
+  } else if (action === 'promote') {
+    const targetEnvironment =
+      typeof data.targetEnvironment === 'string' && data.targetEnvironment
+        ? data.targetEnvironment
+        : '(environment not chosen yet)';
+    sentence = (
+      <>
+        Will promote <strong>{modelName}</strong>&apos;s currently-bound release to{' '}
+        <strong>{targetEnvironment}</strong>.
+      </>
+    );
+  } else if (action === 'promote-rollback') {
+    const rollbackEnvironment =
+      typeof data.rollbackEnvironment === 'string' && data.rollbackEnvironment
+        ? data.rollbackEnvironment
+        : '(environment not chosen yet)';
+    sentence = (
+      <>
+        Will undo the last promotion to <strong>{rollbackEnvironment}</strong> for{' '}
+        <strong>{modelName}</strong>, one step back.
+      </>
+    );
+  } else {
+    const deployStrategy = typeof data.deployStrategy === 'string' ? data.deployStrategy : 'direct';
+    const strategyLabel = DEPLOY_STRATEGY_LABELS[deployStrategy] ?? deployStrategy;
+    const trafficPercent = typeof data.trafficPercent === 'number' ? data.trafficPercent : undefined;
+    let percentSuffix = '';
+    if (deployStrategy === 'blue-green' && trafficPercent !== undefined) {
+      percentSuffix = ` (${trafficPercent === 100 ? 'cutting over immediately' : 'staged dark, no traffic yet'})`;
+    } else if ((deployStrategy === 'canary' || deployStrategy === 'ab') && trafficPercent !== undefined) {
+      percentSuffix = ` starting at ${trafficPercent}%`;
+    }
+    const releaseStrategy = typeof data.releaseStrategy === 'string' ? data.releaseStrategy : 'pr-gated';
+    const repoUrl = typeof data.repoUrl === 'string' && data.repoUrl ? data.repoUrl : undefined;
+    const releaseText =
+      releaseStrategy === 'pr-gated' ? `via a PR${repoUrl ? ` to ${repoUrl}` : ''}` : 'instantly, with no PR';
+    sentence = (
+      <>
+        Will deploy <strong>{modelName}</strong> <strong>{modelVersion}</strong>, {strategyLabel}{' '}
+        strategy{percentSuffix}, released {releaseText}.
+      </>
+    );
+  }
+
+  return (
+    <Box
+      border={1}
+      borderColor={NEUTRAL.border}
+      borderRadius={4}
+      style={{ padding: 16, backgroundColor: NEUTRAL.background }}
+    >
+      <Typography variant="body1">{sentence}</Typography>
     </Box>
   );
 }
@@ -1267,6 +2753,12 @@ function StepLayout(
   const dataSources = groupDatasetsBySource(datasets).map(([source]) => source);
   const models = useModels();
   const availableFeatures = useAvailableFeatures();
+  const modelVersions = useModelVersions(data.modelName);
+  const promptNames = usePrompts();
+  const promptVersions = usePromptVersions(data.promptName);
+  const ragCollections = useRagCollections();
+  const ragIndexVersions = useRagIndexVersions(data.collectionName);
+  const llmModels = useLlmModels();
 
   // Three kinds of stale formData this step's own branching
   // (modelCategory/algorithmFamily/architecture) can produce, none of
@@ -1350,20 +2842,29 @@ function StepLayout(
     }
   });
 
-  // Auto-fills `modelVersion` with the latest known version the moment
-  // `modelName` changes to a NEW value (Evaluate & Deploy Model's
-  // modelNamePicker field) — a no-op everywhere else, since it only fires
-  // when the schema actually declares a `modelVersion` property. Only
-  // reacts to modelName actually changing (tracked via the ref), so it
-  // never stomps on a version the user deliberately edited afterwards to
-  // target an older release.
-  const previousModelName = useRef<unknown>(undefined);
+  // Keeps `modelVersion` in sync with `modelName` (Evaluate & Deploy
+  // Model's modelNamePicker/modelVersionPicker pair) — a no-op everywhere
+  // else, since it only fires when the schema actually declares a
+  // `modelVersion` property. The moment modelName changes to something
+  // NEW, clears the stale version immediately (it almost certainly
+  // doesn't belong to the new model) rather than leaving a wrong value
+  // visible while useModelVersions' fetch for the new name is still in
+  // flight. Once that fetch resolves — modelName unchanged since the
+  // previous render, `modelVersions` now populated, no version chosen
+  // yet — defaults to the latest one. Never overwrites a version the user
+  // already picked/edited for the CURRENT modelName, so switching to an
+  // older release on purpose sticks.
+  const previousModelNameForVersion = useRef<unknown>(undefined);
   useEffect(() => {
-    if (!properties.modelVersion || models.length === 0) return;
-    if (data.modelName === previousModelName.current) return;
-    previousModelName.current = data.modelName;
-    const match = models.find(m => m.name === data.modelName);
-    if (match) onChange({ ...data, modelVersion: match.version });
+    if (!properties.modelVersion) return;
+    if (data.modelName !== previousModelNameForVersion.current) {
+      previousModelNameForVersion.current = data.modelName;
+      if (data.modelVersion !== undefined) onChange({ ...data, modelVersion: undefined });
+      return;
+    }
+    if (modelVersions.length > 0 && !data.modelVersion) {
+      onChange({ ...data, modelVersion: modelVersions[0] });
+    }
   });
 
   const renderField = (
@@ -1379,10 +2880,41 @@ function StepLayout(
     featureNamesPicker?: boolean,
     searchSpaceBuilder?: boolean,
     modelNamePicker?: boolean,
+    modelVersionPicker?: boolean,
     modelVersionCheck?: boolean,
+    summaryField?: boolean,
+    versionComparison?: boolean,
+    promotionPreview?: boolean,
+    rollbackPreview?: boolean,
+    actionPicker?: boolean,
+    promptNamePicker?: boolean,
+    promptVersionPicker?: boolean,
+    ragCollectionPicker?: boolean,
+    ragIndexVersionPicker?: boolean,
+    llmModelPicker?: boolean,
+    huggingFaceModelValidator?: boolean,
+    gpuRecommendationPanel?: boolean,
+    rolloutEligibilityGate?: boolean,
   ) => {
     const fieldSchema = properties[name];
     if (!fieldSchema) return null;
+    if (actionPicker) {
+      return (
+        <Grid item xs={12} key={name}>
+          <ActionPickerField
+            value={data[name]}
+            onChange={value => onChange({ ...data, [name]: value })}
+          />
+        </Grid>
+      );
+    }
+    if (summaryField) {
+      return (
+        <Grid item xs={12} key={name}>
+          <DeploySummaryPanel data={data} />
+        </Grid>
+      );
+    }
     // A `const`-only property has nothing for the user to choose (its
     // value is fully pinned by whichever branch is active — see
     // train-track-register's `architecture: {const: sklearn}` for
@@ -1452,7 +2984,53 @@ function StepLayout(
         </Grid>
       );
     }
-    if (modelVersionCheck) {
+    if (modelVersionPicker || modelVersionCheck) {
+      const widget =
+        modelVersionPicker && modelVersions.length > 0 ? (
+          <ModelVersionPickerField
+            name={name}
+            title={typeof fieldSchema.title === 'string' ? fieldSchema.title : name}
+            description={typeof fieldSchema.description === 'string' ? fieldSchema.description : undefined}
+            required={requiredFields.has(name)}
+            versions={modelVersions}
+            value={data[name]}
+            onChange={value => onChange({ ...data, [name]: value })}
+          />
+        ) : (
+          <SchemaField
+            schema={fieldSchema}
+            uiSchema={(uiSchema as Record<string, unknown>)[name] ?? {}}
+            formData={data[name] as any}
+            onChange={(value: unknown) => onChange({ ...data, [name]: value })}
+            idSchema={(idSchema as Record<string, unknown>)[name] as any}
+            name={name}
+            required={requiredFields.has(name)}
+            registry={registry}
+            errorSchema={errorSchema?.[name]}
+            onBlur={() => {}}
+            onFocus={() => {}}
+          />
+        );
+      const field = (
+        <Grid item xs={12} md={width} key={`${name}-input`}>
+          {widget}
+        </Grid>
+      );
+      if (!modelVersionCheck) return <Fragment key={name}>{field}</Fragment>;
+      return (
+        <Fragment key={name}>
+          {field}
+          <Grid item xs={12}>
+            <ModelVersionCheckPanel
+              modelName={data.modelName}
+              modelVersion={data[name]}
+              action={data.action}
+            />
+          </Grid>
+        </Fragment>
+      );
+    }
+    if (versionComparison) {
       const field = (
         <Grid item xs={12} md={width} key={`${name}-input`}>
           <SchemaField
@@ -1474,8 +3052,182 @@ function StepLayout(
         <Fragment key={name}>
           {field}
           <Grid item xs={12}>
-            <ModelVersionCheckPanel modelName={data.modelName} modelVersion={data[name]} />
+            <VersionComparisonPanel modelName={data.modelName} newVersion={data.modelVersion} />
           </Grid>
+        </Fragment>
+      );
+    }
+    if (promotionPreview) {
+      const field = (
+        <Grid item xs={12} md={width} key={`${name}-input`}>
+          <SchemaField
+            schema={fieldSchema}
+            uiSchema={(uiSchema as Record<string, unknown>)[name] ?? {}}
+            formData={data[name] as any}
+            onChange={(value: unknown) => onChange({ ...data, [name]: value })}
+            idSchema={(idSchema as Record<string, unknown>)[name] as any}
+            name={name}
+            required={requiredFields.has(name)}
+            registry={registry}
+            errorSchema={errorSchema?.[name]}
+            onBlur={() => {}}
+            onFocus={() => {}}
+          />
+        </Grid>
+      );
+      return (
+        <Fragment key={name}>
+          {field}
+          <Grid item xs={12}>
+            <PromotionPreviewPanel modelName={data.modelName} targetEnvironment={data[name]} />
+          </Grid>
+        </Fragment>
+      );
+    }
+    if (rollbackPreview) {
+      const field = (
+        <Grid item xs={12} md={width} key={`${name}-input`}>
+          <SchemaField
+            schema={fieldSchema}
+            uiSchema={(uiSchema as Record<string, unknown>)[name] ?? {}}
+            formData={data[name] as any}
+            onChange={(value: unknown) => onChange({ ...data, [name]: value })}
+            idSchema={(idSchema as Record<string, unknown>)[name] as any}
+            name={name}
+            required={requiredFields.has(name)}
+            registry={registry}
+            errorSchema={errorSchema?.[name]}
+            onBlur={() => {}}
+            onFocus={() => {}}
+          />
+        </Grid>
+      );
+      return (
+        <Fragment key={name}>
+          {field}
+          <Grid item xs={12}>
+            <PromotionPreviewPanel modelName={data.modelName} targetEnvironment={data[name]} mode="rollback" />
+          </Grid>
+        </Fragment>
+      );
+    }
+    if (promptNamePicker && promptNames.length > 0) {
+      return (
+        <Grid item xs={12} md={width} key={name}>
+          <OptionPickerField
+            name={name}
+            title={typeof fieldSchema.title === 'string' ? fieldSchema.title : name}
+            description={typeof fieldSchema.description === 'string' ? fieldSchema.description : undefined}
+            required={requiredFields.has(name)}
+            options={promptNames}
+            value={data[name]}
+            onChange={value => onChange({ ...data, [name]: value })}
+          />
+        </Grid>
+      );
+    }
+    if (promptVersionPicker && promptVersions.length > 0) {
+      return (
+        <Grid item xs={12} md={width} key={name}>
+          <OptionPickerField
+            name={name}
+            title={typeof fieldSchema.title === 'string' ? fieldSchema.title : name}
+            description={typeof fieldSchema.description === 'string' ? fieldSchema.description : undefined}
+            required={requiredFields.has(name)}
+            options={promptVersions}
+            formatOption={version => `v${version}`}
+            value={data[name]}
+            onChange={value => onChange({ ...data, [name]: value })}
+          />
+        </Grid>
+      );
+    }
+    if (ragCollectionPicker && ragCollections.length > 0) {
+      return (
+        <Grid item xs={12} md={width} key={name}>
+          <OptionPickerField
+            name={name}
+            title={typeof fieldSchema.title === 'string' ? fieldSchema.title : name}
+            description={typeof fieldSchema.description === 'string' ? fieldSchema.description : undefined}
+            required={requiredFields.has(name)}
+            options={ragCollections}
+            value={data[name]}
+            onChange={value => onChange({ ...data, [name]: value })}
+          />
+        </Grid>
+      );
+    }
+    if (ragIndexVersionPicker && ragIndexVersions.length > 0) {
+      return (
+        <Grid item xs={12} md={width} key={name}>
+          <OptionPickerField
+            name={name}
+            title={typeof fieldSchema.title === 'string' ? fieldSchema.title : name}
+            description={typeof fieldSchema.description === 'string' ? fieldSchema.description : undefined}
+            required={requiredFields.has(name)}
+            options={ragIndexVersions}
+            formatOption={version => `v${version}`}
+            value={data[name]}
+            onChange={value => onChange({ ...data, [name]: value })}
+          />
+        </Grid>
+      );
+    }
+    if (llmModelPicker && llmModels.length > 0) {
+      return (
+        <Grid item xs={12} md={width} key={name}>
+          <OptionPickerField
+            name={name}
+            title={typeof fieldSchema.title === 'string' ? fieldSchema.title : name}
+            description={typeof fieldSchema.description === 'string' ? fieldSchema.description : undefined}
+            required={requiredFields.has(name)}
+            options={llmModels}
+            value={data[name]}
+            onChange={value => onChange({ ...data, [name]: value })}
+          />
+        </Grid>
+      );
+    }
+    if (huggingFaceModelValidator || gpuRecommendationPanel || rolloutEligibilityGate) {
+      const field = (
+        <Grid item xs={12} md={width} key={`${name}-input`}>
+          <SchemaField
+            schema={fieldSchema}
+            uiSchema={(uiSchema as Record<string, unknown>)[name] ?? {}}
+            formData={data[name] as any}
+            onChange={(value: unknown) => onChange({ ...data, [name]: value })}
+            idSchema={(idSchema as Record<string, unknown>)[name] as any}
+            name={name}
+            required={requiredFields.has(name)}
+            registry={registry}
+            errorSchema={errorSchema?.[name]}
+            onBlur={() => {}}
+            onFocus={() => {}}
+          />
+        </Grid>
+      );
+      return (
+        <Fragment key={name}>
+          {field}
+          {huggingFaceModelValidator && (
+            <Grid item xs={12}>
+              <HuggingFaceModelValidatorPanel modelId={data[name]} />
+            </Grid>
+          )}
+          {gpuRecommendationPanel && (
+            <Grid item xs={12}>
+              <GpuRecommendationPanel
+                modelId={data.huggingFaceModelId}
+                quantization={data.quantization}
+                maxContextLength={data.maxContextLength}
+              />
+            </Grid>
+          )}
+          {rolloutEligibilityGate && (
+            <Grid item xs={12}>
+              <RolloutEligibilityGatePanel modelName={data.modelName} />
+            </Grid>
+          )}
         </Fragment>
       );
     }
@@ -1502,12 +3254,14 @@ function StepLayout(
       let scopedDatasets = properties.dataSource
         ? datasets.filter(d => d.source === data.dataSource)
         : datasets;
-      // Excludes the recsys/ sample data (data/recsys/ locally, same
-      // prefix convention in the S3 bucket) — interactions/item-feature
-      // tables with no target column, unusable by train.py/train_dl.py
-      // and only ever meant for recommend-train-register's own
-      // interactionsUri field, which doesn't go through this picker.
-      scopedDatasets = scopedDatasets.filter(d => !/^recsys\//i.test(d.name));
+      // Excludes the RecSys sample data (data/ranking-package-recommendation-
+      // ranking/ locally, same prefix convention in the S3 bucket) — a
+      // learning-to-rank table with no target column, unusable by
+      // train.py/train_dl.py and only ever meant for
+      // recommend-train-register's own interactionsUri field, which doesn't
+      // go through this picker. Matches `recsys/` too for any checkout still
+      // on the older layout.
+      scopedDatasets = scopedDatasets.filter(d => !/^(recsys\/|ranking-)/i.test(d.name));
       // Further scoped to whatever file type `architecture` (set in an
       // earlier step, e.g. train-track-register's Architecture & Task)
       // can actually read — cv needs a .zip of images (ImageFolder),
@@ -1683,7 +3437,21 @@ function StepLayout(
           featureNamesPicker,
           searchSpaceBuilder,
           modelNamePicker,
+          modelVersionPicker,
           modelVersionCheck,
+          summaryField,
+          versionComparison,
+          promotionPreview,
+          rollbackPreview,
+          actionPicker,
+          promptNamePicker,
+          promptVersionPicker,
+          ragCollectionPicker,
+          ragIndexVersionPicker,
+          llmModelPicker,
+          huggingFaceModelValidator,
+          gpuRecommendationPanel,
+          rolloutEligibilityGate,
         } = normalizeField(entry);
         return renderField(
           name,
@@ -1698,7 +3466,21 @@ function StepLayout(
           featureNamesPicker,
           searchSpaceBuilder,
           modelNamePicker,
+          modelVersionPicker,
           modelVersionCheck,
+          summaryField,
+          versionComparison,
+          promotionPreview,
+          rollbackPreview,
+          actionPicker,
+          promptNamePicker,
+          promptVersionPicker,
+          ragCollectionPicker,
+          ragIndexVersionPicker,
+          llmModelPicker,
+          huggingFaceModelValidator,
+          gpuRecommendationPanel,
+          rolloutEligibilityGate,
         );
       })}
     </Grid>

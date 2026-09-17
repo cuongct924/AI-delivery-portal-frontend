@@ -10,11 +10,13 @@ import {
   createPolicyCheckAction,
   createPrepareDeployManifestAction,
   createPrepareLlmDeployManifestAction,
+  createPromoteModelAction,
   createRagActivateAction,
   createRagEvaluateAction,
   createRagIngestAction,
   createRecordDeployAction,
   createRegisterModelAction,
+  createRollbackPromotionAction,
   createTriggerRecTrainingAction,
   createTriggerTrainingAction,
   createValidateDatasetAction,
@@ -702,6 +704,54 @@ describe('orchestration:prepare-llm-deploy-manifest', () => {
 
     await fs.rm(workspacePath, { recursive: true, force: true });
   });
+
+  it('forwards environment and hfTokenSecretRef as snake_case', async () => {
+    const workspacePath = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'mlops-actions-test-'),
+    );
+    const fileName = 'infra/environments/dev/inference-services/llmops-team/llama-3-8b/llm.yaml';
+    const fetchMock = mockFetchResponses([
+      {
+        ok: true,
+        body: { file_name: fileName, content: 'kind: InferenceService\n', deployed: false },
+      },
+    ]);
+    const action = createPrepareLlmDeployManifestAction({ config });
+    const { ctx } = createMockContext<typeof action>(
+      {
+        modelName: 'llama-3-8b',
+        huggingFaceModelId: 'meta-llama/Llama-3.1-8B-Instruct',
+        gpuType: 'H100',
+        environment: 'dev',
+        hfTokenSecretRef: 'hf-token-llmops',
+      },
+      workspacePath,
+    );
+
+    await action.handler(ctx);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BASE_URL}/llm-deploy/prepare`,
+      expect.objectContaining({
+        body: JSON.stringify({
+          model_name: 'llama-3-8b',
+          huggingface_model_id: 'meta-llama/Llama-3.1-8B-Instruct',
+          runtime: undefined,
+          gpu_type: 'H100',
+          gpu_count: undefined,
+          quantization: undefined,
+          max_context_length: undefined,
+          traffic_strategy: undefined,
+          traffic_percent: undefined,
+          release_strategy: undefined,
+          environment: 'dev',
+          hf_token_secret_ref: 'hf-token-llmops',
+        }),
+      }),
+    );
+
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
 });
 
 describe('orchestration:record-deploy', () => {
@@ -767,6 +817,101 @@ describe('orchestration:record-deploy', () => {
         }),
       }),
     );
+  });
+});
+
+describe('orchestration:promote-model', () => {
+  it('posts targetEnvironment and outputs the resulting environments map', async () => {
+    const fetchMock = mockFetchResponses([
+      {
+        ok: true,
+        body: {
+          project: 'telco-fraud-detection',
+          component: 'serving',
+          environments: { development: 'rel-1', staging: 'rel-1', production: null },
+          prod_pending_approval: true,
+        },
+      },
+    ]);
+    const action = createPromoteModelAction({ config });
+    const { ctx, outputs } = createMockContext<typeof action>(
+      { modelName: 'fraud-detection', targetEnvironment: 'staging' },
+      '/tmp/workspace',
+    );
+
+    await action.handler(ctx);
+
+    expect(outputs.environments).toEqual({
+      development: 'rel-1',
+      staging: 'rel-1',
+      production: null,
+    });
+    expect(outputs.prodPendingApproval).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BASE_URL}/models/fraud-detection/promote`,
+      expect.objectContaining({
+        body: JSON.stringify({ target_environment: 'staging' }),
+      }),
+    );
+  });
+
+  it('propagates the error orchestration-api raises for an invalid promotion', async () => {
+    mockFetchResponses([
+      { ok: false, body: "nothing to promote — 'staging' has no release yet" },
+    ]);
+    const action = createPromoteModelAction({ config });
+    const { ctx } = createMockContext<typeof action>(
+      { modelName: 'fraud-detection', targetEnvironment: 'production' },
+      '/tmp/workspace',
+    );
+
+    await expect(action.handler(ctx)).rejects.toThrow(/nothing to promote/);
+  });
+});
+
+describe('orchestration:rollback-promotion', () => {
+  it('posts the environment and outputs the resulting environments map', async () => {
+    const fetchMock = mockFetchResponses([
+      {
+        ok: true,
+        body: {
+          project: 'telco-fraud-detection',
+          component: 'serving',
+          environments: { development: 'rel-2', staging: 'rel-1', production: null },
+          prod_pending_approval: true,
+        },
+      },
+    ]);
+    const action = createRollbackPromotionAction({ config });
+    const { ctx, outputs } = createMockContext<typeof action>(
+      { modelName: 'fraud-detection', environment: 'staging' },
+      '/tmp/workspace',
+    );
+
+    await action.handler(ctx);
+
+    expect(outputs.environments).toEqual({
+      development: 'rel-2',
+      staging: 'rel-1',
+      production: null,
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BASE_URL}/models/fraud-detection/promote-rollback`,
+      expect.objectContaining({
+        body: JSON.stringify({ environment: 'staging' }),
+      }),
+    );
+  });
+
+  it('propagates the error orchestration-api raises when nothing to roll back to', async () => {
+    mockFetchResponses([{ ok: false, body: 'no prior release recorded' }]);
+    const action = createRollbackPromotionAction({ config });
+    const { ctx } = createMockContext<typeof action>(
+      { modelName: 'fraud-detection', environment: 'staging' },
+      '/tmp/workspace',
+    );
+
+    await expect(action.handler(ctx)).rejects.toThrow(/no prior release recorded/);
   });
 });
 
@@ -952,7 +1097,7 @@ describe('orchestration:rag-ingest', () => {
 });
 
 describe('orchestration:rag-evaluate', () => {
-  it('parses evalCasesJson and forwards model', async () => {
+  it('forwards evalCases and model', async () => {
     const fetchMock = mockFetchResponses([
       {
         ok: true,
@@ -964,7 +1109,7 @@ describe('orchestration:rag-evaluate', () => {
       {
         collection: 'smoke-test',
         indexVersion: '1',
-        evalCasesJson: '[{"question": "q1"}]',
+        evalCases: ['q1'],
         model: 'llama-3-8b-self-hosted',
       },
       '/tmp/workspace',
@@ -987,20 +1132,6 @@ describe('orchestration:rag-evaluate', () => {
         }),
       }),
     );
-  });
-
-  it('throws a clear error when evalCasesJson is not valid JSON', async () => {
-    const action = createRagEvaluateAction({ config });
-    const { ctx } = createMockContext<typeof action>(
-      {
-        collection: 'smoke-test',
-        indexVersion: '1',
-        evalCasesJson: 'not json',
-      },
-      '/tmp/workspace',
-    );
-
-    await expect(action.handler(ctx)).rejects.toThrow('evalCasesJson is not valid JSON');
   });
 });
 
@@ -1054,7 +1185,7 @@ describe('orchestration:draft-prompt', () => {
 });
 
 describe('orchestration:evaluate-prompt', () => {
-  it('parses evalCasesJson, forwards model, and calls the per-name endpoint', async () => {
+  it('forwards evalCases, model, and calls the per-name endpoint', async () => {
     const fetchMock = mockFetchResponses([
       {
         ok: true,
@@ -1066,7 +1197,7 @@ describe('orchestration:evaluate-prompt', () => {
       {
         name: 'mlops',
         version: '1',
-        evalCasesJson: '[{"question": "q1"}, {"question": "q2"}]',
+        evalCases: ['q1', 'q2'],
         model: 'llama-3-8b-self-hosted',
       },
       '/tmp/workspace',

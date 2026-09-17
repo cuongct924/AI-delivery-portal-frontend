@@ -2,7 +2,7 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: llm-evaluate-deploy
-  title: "Evaluate & Activate LLM Version"
+  title: "Evaluate & Activate Prompt / RAG Version"
   description: >
     Evaluates a drafted prompt or RAG index version with an LLM judge and
     activates it immediately if it passes.
@@ -17,40 +17,48 @@ spec:
     - title: What to evaluate
       required:
         - artifactKind
-        - evalCasesJson
+        - evalCases
       properties:
         artifactKind:
           title: Artifact kind
           type: string
-          enum: [prompt, rag-index]
-        promptName:
-          title: Persona key (artifactKind=prompt)
-          type: string
-        promptVersion:
-          title: Prompt version (artifactKind=prompt)
-          type: string
-        collectionName:
-          title: Qdrant collection (artifactKind=rag-index)
-          type: string
-        indexVersion:
-          title: RAG index version (artifactKind=rag-index)
-          type: string
-        evalCasesJson:
-          title: Eval cases (JSON)
-          type: string
+          oneOf:
+            - const: prompt
+              title: 'Prompt - a persona''s drafted system prompt version'
+            - const: rag-index
+              title: 'RAG Index - a Qdrant collection''s drafted index version'
           description: >
-            JSON array of {"question": "..."} objects, e.g.
-            [{"question": "How does IDP manage the model lifecycle?"}].
+            Choose which drafted artifact to evaluate and, if it passes,
+            activate.
+        evalCases:
+          title: Eval cases
+          type: array
+          items:
+            type: string
+          default:
+            - How does IDP manage the model lifecycle?
+          description: >
+            Questions to run through the LLM judge. Add one per line; no
+            JSON wrapper is needed.
         model:
-          title: Model
+          title: Judge model
           type: string
           default: claude-sonnet-5
           description: >
             Any model_name registered in infra/llm-gateways/litellm-config.yaml
             — including a self-hosted model deployed via the Serving LLM
             Golden Path, not just Claude.
+      # promptName/promptVersion and collectionName/indexVersion only exist
+      # in the resolved schema once artifactKind actually picks their
+      # branch — same fix as llm-draft-register's own Prompt/RAG Index
+      # panels, which previously stayed visible together regardless of
+      # artifactKind because their fields were declared unconditionally in
+      # the base `properties` above instead of gated behind this allOf.
+      # `required: [artifactKind]` on each `if` keeps neither panel showing
+      # before a choice is made.
       allOf:
         - if:
+            required: [artifactKind]
             properties:
               artifactKind:
                 const: prompt
@@ -58,7 +66,17 @@ spec:
             required:
               - promptName
               - promptVersion
+            properties:
+              promptName:
+                title: Persona key
+                type: string
+                description: The persona drafted in Golden Path #1 (Draft Prompt).
+              promptVersion:
+                title: Prompt version
+                type: string
+                description: The version number Golden Path #1's output reported.
         - if:
+            required: [artifactKind]
             properties:
               artifactKind:
                 const: rag-index
@@ -66,6 +84,46 @@ spec:
             required:
               - collectionName
               - indexVersion
+            properties:
+              collectionName:
+                title: Qdrant collection
+                type: string
+                description: The collection ingested in Golden Path #1 (Ingest RAG Index).
+              indexVersion:
+                title: RAG index version
+                type: string
+                description: The version number Golden Path #1's output reported.
+      # Same StepLayout field extension llm-draft-register/train-track-
+      # register use — only changes how this step looks, field names/values
+      # resolve exactly as before.
+      ui:field: StepLayout
+      ui:options:
+        groups:
+          - title: What to evaluate
+            fields:
+              - artifactKind
+          - title: 'Prompt (when Artifact kind = Prompt)'
+            fields:
+              - name: promptName
+                width: 6
+                promptNamePicker: true
+              - name: promptVersion
+                width: 6
+                promptVersionPicker: true
+          - title: 'RAG Index (when Artifact kind = RAG Index)'
+            fields:
+              - name: collectionName
+                width: 6
+                ragCollectionPicker: true
+              - name: indexVersion
+                width: 6
+                ragIndexVersionPicker: true
+          - title: Evaluation
+            fields:
+              - evalCases
+              - name: model
+                width: 6
+                llmModelPicker: true
 
   steps:
     - id: evaluate-prompt
@@ -75,7 +133,7 @@ spec:
       input:
         name: ${{ parameters.promptName }}
         version: ${{ parameters.promptVersion }}
-        evalCasesJson: ${{ parameters.evalCasesJson }}
+        evalCases: ${{ parameters.evalCases }}
         model: ${{ parameters.model }}
 
     - id: evaluate-rag
@@ -85,7 +143,7 @@ spec:
       input:
         collection: ${{ parameters.collectionName }}
         indexVersion: ${{ parameters.indexVersion }}
-        evalCasesJson: ${{ parameters.evalCasesJson }}
+        evalCases: ${{ parameters.evalCases }}
         model: ${{ parameters.model }}
 
     - id: activate-prompt

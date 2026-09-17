@@ -2,7 +2,7 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: llm-draft-register
-  title: "Draft Prompt / Ingest RAG Data"
+  title: 'Draft Prompt / Ingest RAG Data'
   description: >
     Drafts a new prompt version, or ingests documents into a new RAG index
     version.
@@ -14,45 +14,33 @@ spec:
   type: service
 
   parameters:
-    - title: What to draft
+    - title: 'Draft Prompt / Ingest RAG Data'
       required:
         - artifactKind
       properties:
         artifactKind:
           title: Artifact kind
           type: string
-          enum: [prompt, rag-index]
-          description: No default — choose explicitly which kind of artifact this run drafts.
-        promptName:
-          title: Persona key (artifactKind=prompt)
-          type: string
-          description: E.g. "mlops"
-        personaTitle:
-          title: Persona display name (artifactKind=prompt)
-          type: string
-          description: E.g. "MLOps Assistant"
-        promptContent:
-          title: System prompt content (artifactKind=prompt)
-          type: string
-        collectionName:
-          title: Qdrant collection (artifactKind=rag-index)
-          type: string
-        sourcePaths:
-          title: Source document paths (artifactKind=rag-index)
-          type: array
-          items:
-            type: string
-          description: Repo-relative paths, e.g. ["docs/playbook-ai-delivery-portal.md"].
-        chunkSize:
-          title: Chunk size in characters (artifactKind=rag-index)
-          type: integer
-          default: 800
-        chunkOverlap:
-          title: Chunk overlap in characters (artifactKind=rag-index)
-          type: integer
-          default: 100
+          oneOf:
+            - const: prompt
+              title: 'Prompt - system prompt for a persona'
+            - const: rag-index
+              title: 'RAG Index - ingest documents into a Qdrant collection'
+          description: >
+            Choose the artifact type to create.
+      # promptName/personaTitle/promptContent and collectionName/sourcePaths/
+      # chunkSize/chunkOverlap only exist in the resolved schema once
+      # artifactKind actually picks their branch (same "field only exists
+      # where it applies" mechanism as train-track-register's
+      # finetuneEnabled/baseModelUri) — previously these were unconditional
+      # base `properties`, so StepLayout's hasAnyRenderable() found them
+      # renderable regardless of artifactKind and showed both the Prompt and
+      # RAG Index panels at once. `required: [artifactKind]` on each `if`
+      # keeps neither panel showing before a choice is made (artifactKind has
+      # no default on purpose — see its own description above).
       allOf:
         - if:
+            required: [artifactKind]
             properties:
               artifactKind:
                 const: prompt
@@ -61,7 +49,27 @@ spec:
               - promptName
               - personaTitle
               - promptContent
+            properties:
+              promptName:
+                title: Persona key
+                type: string
+                description: >
+                  Persona key reused by Golden Path #2 (Evaluate & Activate)
+                  and routers/chat.py. Example: "mlops".
+              personaTitle:
+                title: Persona display name
+                type: string
+                description: 'Name shown in the Prompt Registry UI. Example: "MLOps Assistant".'
+              promptContent:
+                title: System prompt content
+                type: string
+                ui:widget: textarea
+                ui:options:
+                  rows: 14
+                description: >
+                  Full system prompt content. Supports multiline text.
         - if:
+            required: [artifactKind]
             properties:
               artifactKind:
                 const: rag-index
@@ -69,10 +77,64 @@ spec:
             required:
               - collectionName
               - sourcePaths
+            properties:
+              collectionName:
+                title: Qdrant collection
+                type: string
+                description: 'Qdrant collection name. Example: "idp-docs".'
+              sourcePaths:
+                title: Source document paths
+                type: array
+                items:
+                  type: string
+                default:
+                  - docs/playbook-ai-delivery-portal.md
+                description: >
+                  Relative repository paths to source documents. Add one file
+                  per line; no JSON wrapper is needed.
+              chunkSize:
+                title: Chunk size (characters)
+                type: integer
+                default: 800
+                description: >
+                  Smaller chunks improve retrieval precision but increase
+                  embedding cost and noise. Larger chunks preserve more
+                  context but may mix unrelated content. 800 is a good
+                  starting point for technical docs.
+              chunkOverlap:
+                title: Chunk overlap (characters)
+                type: integer
+                default: 100
+                description: >
+                  Characters shared by adjacent chunks to preserve context
+                  across boundaries. Usually set to 10-15% of chunkSize
+                  (80-120 for 800).
+      # Reuse the StepLayout field extension without changing field names or values.
+      ui:field: StepLayout
+      ui:options:
+        groups:
+          - title: Artifact type
+            fields:
+              - artifactKind
+          - title: 'Prompt (when Artifact kind = Prompt)'
+            fields:
+              - name: promptName
+                width: 6
+              - name: personaTitle
+                width: 6
+              - promptContent
+          - title: 'RAG Index (when Artifact kind = RAG Index)'
+            fields:
+              - collectionName
+              - name: chunkSize
+                width: 3
+              - name: chunkOverlap
+                width: 3
+              - sourcePaths
 
   steps:
     - id: draft-prompt
-      name: "Draft the prompt"
+      name: 'Draft the prompt'
       action: orchestration:draft-prompt
       if: ${{ parameters.artifactKind === 'prompt' }}
       input:
@@ -81,7 +143,7 @@ spec:
         content: ${{ parameters.promptContent }}
 
     - id: rag-ingest
-      name: "Ingest the RAG index"
+      name: 'Ingest the RAG index'
       action: orchestration:rag-ingest
       if: ${{ parameters.artifactKind === 'rag-index' }}
       input:
@@ -95,21 +157,19 @@ spec:
       - title: Result
         content: |
           {% if parameters.artifactKind === 'prompt' %}
-          Drafted prompt **${{ parameters.promptName }}** version
-          **${{ steps['draft-prompt'].output.version }}** — not active yet.
+          Prompt **${{ parameters.promptName }}** version
+          **${{ steps['draft-prompt'].output.version }}** drafted and is not active.
 
-          Run "Evaluate → Deploy (LLMOps Golden Path #2)" with
-          artifactKind=prompt, promptName=${{ parameters.promptName }},
-          promptVersion=${{ steps['draft-prompt'].output.version }} to
-          evaluate and activate it.
+          Run **"Evaluate & Activate Prompt / RAG Version"** with:
+          `artifactKind=prompt`, `promptName=${{ parameters.promptName }}`,
+          `promptVersion=${{ steps['draft-prompt'].output.version }}`.
           {% else %}
-          Ingested **${{ parameters.collectionName }}** as index version
+          **${{ parameters.collectionName }}** index version
           **${{ steps['rag-ingest'].output.indexVersion }}**
-          (${{ steps['rag-ingest'].output.chunksIngested }} chunks) — not
-          active yet.
+          (${{ steps['rag-ingest'].output.chunksIngested }} chunks) ingested and is not active.
 
-          Run "Evaluate → Deploy (LLMOps Golden Path #2)" with
-          artifactKind=rag-index, collectionName=${{ parameters.collectionName }},
-          indexVersion=${{ steps['rag-ingest'].output.indexVersion }} to
-          evaluate and activate it.
+          Run **"Evaluate & Activate Prompt / RAG Version"** with:
+          `artifactKind=rag-index`,
+          `collectionName=${{ parameters.collectionName }}`,
+          `indexVersion=${{ steps['rag-ingest'].output.indexVersion }}`.
           {% endif %}

@@ -8,7 +8,7 @@ metadata:
     KServe InferenceService. Requires a GPU-enabled cluster with the vLLM
     ServingRuntime installed.
   tags:
-    - mlops
+    - llmops
     - llm-serving
 
 spec:
@@ -16,7 +16,14 @@ spec:
   type: service
 
   parameters:
-    - title: LLM to deploy
+    # Model + Compute share ONE wizard step on purpose: Backstage isolates
+    # each parameters entry's formData to its own step, and the live panels
+    # below are cross-field (the GPU suggestion needs huggingFaceModelId's
+    # param count AND quantization/maxContextLength together). Split across
+    # two steps, GpuRecommendationPanel would never see the model id and
+    # would render nothing. Visual separation still comes from StepLayout
+    # groups, same as register-deploy's single-step / multi-group layout.
+    - title: Model & Compute
       required:
         - modelName
         - huggingFaceModelId
@@ -30,13 +37,22 @@ spec:
           title: HuggingFace Hub model id
           type: string
           description: E.g. "meta-llama/Llama-3.1-8B-Instruct"
+        hfTokenSecretRef:
+          title: HF token Secret name
+          type: string
+          description: >
+            K8s Secret NAME holding the HuggingFace token — never the token
+            itself. Required server-side when the model above is gated
+            (see the validator panel below); ignored for public models.
         runtime:
           title: Serving runtime
           type: string
-          enum: [vllm]
+          enum: [vllm, tensorrt-llm, triton]
           default: vllm
           description: >
-            Only vLLM today — see services/orchestration-api/llm_serving/registry.py.
+            vLLM runs on the cluster demo today. TensorRT-LLM and Triton are
+            on the roadmap — picking them will fail at prepare-manifest with a
+            friendly error pointing to infra/llm-serving/README.md.
         gpuType:
           title: GPU type
           type: string
@@ -62,37 +78,53 @@ spec:
           title: Max context length (tokens)
           type: integer
           default: 4096
-        deployStrategy:
-          title: Deploy strategy
+
+        # Optimization flags — only a subset supported per runtime in MVP.
+        # validate_runtime_optimizations() rejects unsupported flags with a clear
+        # error. The form shows all flags; backend enforces what actually works.
+        batchingStrategy:
+          title: Batching strategy
           type: string
-          enum: [direct, canary, ab, blue-green]
-          default: direct
+          enum: [static, dynamic, continuous]
+          default: continuous
           description: >
-            Same mechanism as the MLOps deploy Golden Path — Direct always
-            valid; Canary/A-B/Blue-Green require a prior deploy of this
-            model to already exist.
-        trafficPercent:
-          title: Traffic percent
+            vLLM's batching strategy. "continuous" (default) enables continuous
+            batching (PagedAttention) which is vLLM's default and recommended.
+        enablePagedAttention:
+          title: Enable PagedAttention
+          type: boolean
+          default: true
+          description: >
+            vLLM's PagedAttention (KV cache paging). Enabled by default —
+            disabling is rarely needed and mainly for debugging.
+        enablePrefixCaching:
+          title: Enable prefix caching
+          type: boolean
+          default: true
+          description: >
+            vLLM's automatic prefix caching for shared prompts. Enabled by default.
+        speculativeDecoding:
+          title: Speculative decoding
+          type: string
+          enum: [none, ngram, draft-model]
+          default: none
+          description: >
+            Speculative decoding mode. "none" (default) disables; "ngram" uses
+            n-gram lookup; "draft-model" requires draftModelId below.
+            Roadmap — not supported in MVP, will error at prepare time.
+        draftModelId:
+          title: Draft model ID (for speculative decoding)
+          type: string
+          description: >
+            HuggingFace model ID of the draft model when speculativeDecoding=draft-model.
+            Roadmap — not supported in MVP.
+        pipelineParallelSize:
+          title: Pipeline parallel size
           type: integer
-          description: Required unless deployStrategy is Direct.
-        releaseStrategy:
-          title: Release strategy
-          type: string
-          enum: [pr-gated, instant]
-          default: pr-gated
+          default: 1
           description: >
-            PR-gated (default) opens a PR against repoUrl. Instant calls
-            orchestration-api directly, no PR/Git involved — repoUrl is
-            unused in this case.
-        repoUrl:
-          title: Repository
-          type: string
-          description: >
-            Target GitOps repo for the deploy manifest PR — required when
-            releaseStrategy is pr-gated, in the format
-            github.com?owner=<org>&repo=<repo>. No RepoUrlPicker field
-            extension is confirmed available in this repo's frontend, so
-            this is a plain string field.
+            Number of pipeline parallel stages (vLLM --pipeline-parallel-size).
+            >1 splits model across multiple GPUs. Roadmap for >1.
       allOf:
         - if:
             properties:
@@ -110,6 +142,155 @@ spec:
             properties:
               quantization:
                 enum: [none, fp8, int4-awq]
+        # Conditionally show speculative decoding fields
+        - if:
+            properties:
+              speculativeDecoding:
+                const: draft-model
+          then:
+            required: [draftModelId]
+      ui:field: StepLayout
+      ui:options:
+        groups:
+          - title: Model
+            icon: apps
+            fields:
+              - name: modelName
+                width: 6
+                rolloutEligibilityGate: true
+              - name: huggingFaceModelId
+                width: 6
+                huggingFaceModelValidator: true
+              - name: hfTokenSecretRef
+                width: 6
+              - name: runtime
+                width: 6
+          - title: Compute
+            icon: tune
+            fields:
+              - name: gpuType
+                width: 6
+                gpuRecommendationPanel: true
+              - name: gpuCount
+                width: 6
+              - name: quantization
+                width: 6
+              - name: maxContextLength
+                width: 6
+          - title: Optimization (Advanced)
+            icon: bolt
+            fields:
+              - name: batchingStrategy
+                width: 6
+              - name: enablePagedAttention
+                width: 6
+              - name: enablePrefixCaching
+                width: 6
+              - name: speculativeDecoding
+                width: 6
+              - name: draftModelId
+                width: 6
+              - name: pipelineParallelSize
+                width: 6
+
+    - title: Strategy & Release
+      properties:
+        deployStrategy:
+          title: Deploy strategy
+          type: string
+          enum: [direct, canary, ab, blue-green]
+          default: direct
+          description: >
+            Same mechanism as the MLOps deploy Golden Path — Direct always
+            valid; Canary/A-B/Blue-Green require a prior deploy of this
+            model to already exist (see the eligibility panel on the Model
+            step — the backend rejects without one, this form keeps all
+            options so a first deploy never looks broken before that check
+            resolves).
+        trafficPercent:
+          title: Traffic percent
+          type: integer
+          description: Required unless deployStrategy is Direct.
+        environment:
+          title: Environment
+          type: string
+          enum: [dev, staging, prod]
+          default: dev
+          description: >
+            Target environment. Instant releases are dev-only server-side —
+            picking staging/prod narrows releaseStrategy to pr-gated below.
+        releaseStrategy:
+          title: Release strategy
+          type: string
+          enum: [pr-gated, instant]
+          default: pr-gated
+          description: >
+            PR-gated (default) opens a PR against repoUrl. Instant calls
+            orchestration-api directly, no PR/Git involved — repoUrl is
+            unused in this case. Instant is only offered for environment=dev;
+            hiding it here is UX only, the real guardrail is the backend's
+            own ValueError plus user_has_role.
+      allOf:
+        # Instant is dev-only — static (environment lives in this same step,
+        # so allOf can see it). The rollout gate (prior deploy?) is live API
+        # data and deliberately NOT narrowed here; the backend owns that
+        # rejection.
+        - if:
+            properties:
+              environment:
+                const: dev
+          then:
+            properties:
+              releaseStrategy:
+                enum: [pr-gated, instant]
+          else:
+            properties:
+              releaseStrategy:
+                enum: [pr-gated]
+        - if:
+            properties:
+              deployStrategy:
+                const: direct
+          then:
+            properties: {}
+          else:
+            required:
+              - trafficPercent
+            properties: {}
+      ui:field: StepLayout
+      ui:options:
+        groups:
+          - title: Deploy strategy
+            icon: tune
+            fields:
+              - deployStrategy
+              - trafficPercent
+          - title: Release
+            icon: function
+            fields:
+              - name: environment
+                width: 6
+              - name: releaseStrategy
+                width: 6
+
+    - title: Repository
+      properties:
+        repoUrl:
+          title: Repository
+          type: string
+          description: >
+            Target GitOps repo for the deploy manifest PR — required when
+            releaseStrategy is pr-gated, in the format
+            github.com?owner=<org>&repo=<repo>. No RepoUrlPicker field
+            extension is confirmed available in this repo's frontend, so
+            this is a plain string field.
+      ui:field: StepLayout
+      ui:options:
+        groups:
+          - title: Repository
+            icon: list
+            fields:
+              - repoUrl
 
   steps:
     - id: prepare-manifest
@@ -118,6 +299,7 @@ spec:
       input:
         modelName: ${{ parameters.modelName }}
         huggingFaceModelId: ${{ parameters.huggingFaceModelId }}
+        hfTokenSecretRef: ${{ parameters.hfTokenSecretRef }}
         runtime: ${{ parameters.runtime }}
         gpuType: ${{ parameters.gpuType }}
         gpuCount: ${{ parameters.gpuCount }}
@@ -126,6 +308,13 @@ spec:
         trafficStrategy: ${{ parameters.deployStrategy }}
         trafficPercent: ${{ parameters.trafficPercent }}
         releaseStrategy: ${{ parameters.releaseStrategy }}
+        environment: ${{ parameters.environment }}
+        batchingStrategy: ${{ parameters.batchingStrategy }}
+        enablePagedAttention: ${{ parameters.enablePagedAttention }}
+        enablePrefixCaching: ${{ parameters.enablePrefixCaching }}
+        speculativeDecoding: ${{ parameters.speculativeDecoding }}
+        draftModelId: ${{ parameters.draftModelId }}
+        pipelineParallelSize: ${{ parameters.pipelineParallelSize }}
 
     - id: publish-pr
       name: "Open the deploy PR"
@@ -139,8 +328,12 @@ spec:
           Adds the KServe InferenceService manifest for
           **${{ parameters.modelName }}** (${{ parameters.huggingFaceModelId }},
           ${{ parameters.gpuType }} x${{ parameters.gpuCount }},
-          quantization=${{ parameters.quantization }}). Requires a
-          GPU-enabled cluster with the vLLM ServingRuntime installed
+          quantization=${{ parameters.quantization }},
+          batchingStrategy=${{ parameters.batchingStrategy }},
+          enablePagedAttention=${{ parameters.enablePagedAttention }},
+          enablePrefixCaching=${{ parameters.enablePrefixCaching }},
+          pipelineParallelSize=${{ parameters.pipelineParallelSize }}).
+          Requires a GPU-enabled cluster with the vLLM ServingRuntime installed
           (infra/llm-serving/README.md) — merging this PR only deploys if
           ArgoCD is watching a cluster that actually has that GPU capacity.
         sourcePath: infra/environments/dev/inference-services/llmops-team
@@ -151,7 +344,11 @@ spec:
       - title: Result
         content: |
           Rendered the InferenceService manifest for
-          **${{ parameters.modelName }}** (${{ parameters.huggingFaceModelId }}).
+          **${{ parameters.modelName }}** (${{ parameters.huggingFaceModelId }}),
+          batchingStrategy=${{ parameters.batchingStrategy }},
+          enablePagedAttention=${{ parameters.enablePagedAttention }},
+          enablePrefixCaching=${{ parameters.enablePrefixCaching }},
+          pipelineParallelSize=${{ parameters.pipelineParallelSize }}.
 
           {% if parameters.releaseStrategy === 'pr-gated' %}
           Deploy PR opened: ${{ steps['publish-pr'].output.remoteUrl }}
