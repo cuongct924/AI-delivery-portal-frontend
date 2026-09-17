@@ -265,10 +265,6 @@ catalog:
       rules:
         - allow: [Template]
     - type: file
-      target: /app/templates/recommend-train-register/template.yaml
-      rules:
-        - allow: [Template]
-    - type: file
       target: /app/templates/setup-model-monitoring/template.yaml
       rules:
         - allow: [Template]

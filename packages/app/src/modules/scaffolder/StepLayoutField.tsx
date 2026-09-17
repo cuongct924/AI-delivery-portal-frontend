@@ -3251,17 +3251,9 @@ function StepLayout(
       // currently holds — falls back to showing everything if this step
       // never declared a dataSource field (dataSourcePicker is opt-in per
       // template, not a hard requirement of datasetPicker).
-      let scopedDatasets = properties.dataSource
+      const scopedDatasets = properties.dataSource
         ? datasets.filter(d => d.source === data.dataSource)
         : datasets;
-      // Excludes the RecSys sample data (data/ranking-package-recommendation-
-      // ranking/ locally, same prefix convention in the S3 bucket) — a
-      // learning-to-rank table with no target column, unusable by
-      // train.py/train_dl.py and only ever meant for
-      // recommend-train-register's own interactionsUri field, which doesn't
-      // go through this picker. Matches `recsys/` too for any checkout still
-      // on the older layout.
-      scopedDatasets = scopedDatasets.filter(d => !/^(recsys\/|ranking-)/i.test(d.name));
       // Further scoped to whatever file type `architecture` (set in an
       // earlier step, e.g. train-track-register's Architecture & Task)
       // can actually read — cv needs a .zip of images (ImageFolder),

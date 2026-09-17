@@ -32,7 +32,6 @@ export const CATEGORY_COLORS: Record<string, string> = {
   mlops: '#64B5F6',
   llmops: '#9575CD',
   'llm-serving': '#1565C0',
-  recsys: '#FFA726',
 };
 
 export const CATEGORY_FALLBACK_COLOR = '#9E9E9E';

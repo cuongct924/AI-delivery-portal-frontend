@@ -29,7 +29,7 @@ import { categoryColorForTags } from './colors';
  * SwappableComponentBlueprint extension point — see
  * https://backstage.io/docs/frontend-system/building-plugins/swappable-components/)
  * so the "Choose a template" gallery follows the color rulebook: category
- * (mlops/llmops/llm-serving/recsys, from metadata.tags) shows as a thin
+ * (mlops/llmops/llm-serving, from metadata.tags) shows as a thin
  * 4px strip + tag chips, never a full-card colored banner — the page-theme
  * gradient the stock CardHeader would otherwise use is already neutralized
  * in redTheme.ts's `pageTheme`, so this only adds the strip on top of that.

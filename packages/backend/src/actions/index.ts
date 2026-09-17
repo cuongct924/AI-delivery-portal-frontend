@@ -27,10 +27,8 @@ import {
   createRegisterModelAction,
   createRollbackPromotionAction,
   createSetupMonitoringAction,
-  createTriggerRecTrainingAction,
   createTriggerTrainingAction,
   createValidateDatasetAction,
-  createValidateRecDatasetAction,
 } from './mlopsActions';
 
 export default createBackendModule({
@@ -56,8 +54,6 @@ export default createBackendModule({
           createRecordDeployAction({ config, tokenService }),
           createPromoteModelAction({ config, tokenService }),
           createRollbackPromotionAction({ config, tokenService }),
-          createValidateRecDatasetAction({ config, tokenService }),
-          createTriggerRecTrainingAction({ config, tokenService }),
           createSetupMonitoringAction({ config, tokenService }),
           createRagIngestAction({ config, tokenService }),
           createRagEvaluateAction({ config, tokenService }),

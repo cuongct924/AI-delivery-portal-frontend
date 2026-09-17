@@ -120,7 +120,6 @@ const KNOWN_CARD_TYPES = [
 // here is on-screen order within each lane, mirroring PLATFORM_TYPES.
 const MLOPS_TEMPLATE_NAMES = [
   'train-track-register',
-  'recommend-train-register',
   'register-deploy',
   'setup-model-monitoring',
 ];

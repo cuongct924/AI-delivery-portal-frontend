@@ -460,10 +460,6 @@ catalog:
       rules:
         - allow: [Template]
     - type: file
-      target: ../../templates/recommend-train-register/template.yaml
-      rules:
-        - allow: [Template]
-    - type: file
       target: ../../templates/setup-model-monitoring/template.yaml
       rules:
         - allow: [Template]

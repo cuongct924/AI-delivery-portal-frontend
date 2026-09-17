@@ -41,9 +41,9 @@ backend.add(
 );
 
 // AI Delivery Portal — orchestration-api Custom Scaffolder Actions (Golden
-// Paths: Train->Track->Register, Register->Deploy, Recommend->Track->Register,
-// Register External Run, Setup Model Monitoring, Serving LLM, LLMOps
-// Lifecycle). See packages/backend/src/actions/mlopsActions.ts.
+// Paths: Train->Track->Register, Register->Deploy, Setup Model Monitoring,
+// Serving LLM, and the LLMOps lifecycle). See
+// packages/backend/src/actions/mlopsActions.ts.
 backend.add(import('./actions'));
 
 // AI Delivery Portal — Model Registry Catalog tab's backend (forwards
