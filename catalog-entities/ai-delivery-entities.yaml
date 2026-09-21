@@ -34,17 +34,18 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
-  name: observability-server
+  name: ai-observability-server
   description: >
-    MCP server — read-only "system/model health" tools (MLflow, K8s,
-    Prometheus). streamable-http, discovered via this Catalog, not a
-    hardcoded local path.
+    MCP server — read-only AI/ML/LLM health tools (MLflow, model latency,
+    LiteLLM spend, prompt/RAG active version). Infra tools (k8s, PromQL,
+    promotion) live in OpenChoreo's own MCP servers. streamable-http,
+    discovered via this Catalog, not a hardcoded local path.
 spec:
   type: service
   lifecycle: experimental
   owner: group:platform-team
   system: ai-delivery-portal
-  providesApis: [observability-mcp]
+  providesApis: [ai-observability-mcp]
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -115,15 +116,15 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: API
 metadata:
-  name: observability-mcp
+  name: ai-observability-mcp
   description: >
-    Read-only MCP tools — MLOps: list_experiments, get_model_metrics,
-    check_pod_status (mock), get_logs (mock), query_metric, check_model_latency,
-    get_promotion_status (mock). LLMOps: get_llm_spend,
+    Read-only AI/ML/LLM MCP tools — MLOps: list_experiments,
+    get_model_metrics, check_model_latency. LLMOps: get_llm_spend,
     get_active_prompt_version, get_active_rag_version,
-    get_eval_score_trend (mock).
+    get_eval_score_trend (mock). Infra tools (k8s pod/logs, PromQL,
+    promotion) are served by OpenChoreo's own MCP servers.
   annotations:
-    mcp/endpoint: http://observability-server:9001/mcp
+    mcp/endpoint: http://ai-observability-server:9001/mcp
     mcp/transport: streamable-http
 spec:
   # "mcp" is a self-invented type — no Backstage-native support yet.
@@ -132,7 +133,7 @@ spec:
   owner: group:platform-team
   system: ai-delivery-portal
   definition: |
-    MCP tools exposed by agents/mcp-servers/observability-server/server.py.
+    MCP tools exposed by agents/mcp-servers/ai-observability-server/server.py.
     All read-only (ToolAnnotations.read_only_hint=True) — this server never
     mutates state.
 ---
