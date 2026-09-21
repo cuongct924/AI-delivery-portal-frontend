@@ -1,28 +1,21 @@
 /**
  * Backend module registering the orchestration-api Custom Scaffolder
- * Actions (mlopsActions.ts) used by Golden Path #1 (Train->Track->Register),
- * #2 (Register->Deploy), #3 (Recommend->Track->Register), "Register
- * External Run", "Setup Model Monitoring", "Serving LLM", and the LLMOps
- * Lifecycle (RAG ingest/evaluate/activate, prompt draft/evaluate/activate)
- * — see examples/templates/.
+ * Actions used by Golden Path #1 (Train->Track->Register), #2
+ * (Register->Deploy), #3 (Recommend->Track->Register), "Register External
+ * Run", and "Setup Model Monitoring" (mlopsActions.ts), plus "Serving LLM"
+ * and the LLMOps Lifecycle (RAG ingest/evaluate/activate, prompt
+ * draft/evaluate/activate) (llmOpsActions.ts) — see examples/templates/.
  */
 
 import { coreServices, createBackendModule } from '@backstage/backend-plugin-api';
 import { scaffolderActionsExtensionPoint } from '@backstage/plugin-scaffolder-node';
 import { openChoreoTokenServiceRef } from '@openchoreo/openchoreo-auth';
 import {
-  createActivatePromptAction,
-  createDraftPromptAction,
   createEnrichDatasetFeaturesAction,
-  createEvaluatePromptAction,
   createModelSummaryAction,
   createPolicyCheckAction,
   createPrepareDeployManifestAction,
-  createPrepareLlmDeployManifestAction,
   createPromoteModelAction,
-  createRagActivateAction,
-  createRagEvaluateAction,
-  createRagIngestAction,
   createRecordDeployAction,
   createRegisterModelAction,
   createRollbackPromotionAction,
@@ -30,6 +23,15 @@ import {
   createTriggerTrainingAction,
   createValidateDatasetAction,
 } from './mlopsActions';
+import {
+  createActivatePromptAction,
+  createDraftPromptAction,
+  createEvaluatePromptAction,
+  createPrepareLlmDeployManifestAction,
+  createRagActivateAction,
+  createRagEvaluateAction,
+  createRagIngestAction,
+} from './llmOpsActions';
 
 export default createBackendModule({
   pluginId: 'scaffolder',
