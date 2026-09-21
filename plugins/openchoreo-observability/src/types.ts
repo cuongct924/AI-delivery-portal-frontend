@@ -295,6 +295,9 @@ export interface DoraChangeFailureRateSummary {
   total: number;
   classification: DoraClassification;
   deltaPct: number | null;
+  /** Share of failures attributable to infra vs. model/prompt/RAG semantics. */
+  infraCfr?: number | null;
+  semanticCfr?: number | null;
 }
 
 export interface DoraMttrSummary {
@@ -321,6 +324,10 @@ export interface DoraDataAvailability {
    * unaffected.
    */
   deliveryEvents?: boolean;
+  /** Whether an eval pipeline, drift monitor, and guardrails are wired up for this scope. */
+  evalPipeline?: boolean;
+  driftMonitor?: boolean;
+  guardrails?: boolean;
 }
 
 export interface DoraMetricsResponse {
@@ -361,6 +368,8 @@ export interface DoraMetricsResponse {
   };
 }
 
+export type DoraLifecyclePhase = 'data_prep' | 'train' | 'eval' | 'deploy';
+
 export interface DoraDeployment {
   deployedAt: string;
   projectName: string;
@@ -374,6 +383,26 @@ export interface DoraDeployment {
   failureReason: string;
   incidentId: string;
   leadTimeMs: number | null;
+  changeType?: 'infra' | 'model' | 'rag_index' | 'prompt' | null;
+  driftTriggered?: boolean;
+  evalCoverage?: number | null;
+  leadTimeBreakdown?: Record<DoraLifecyclePhase, number> | null;
+  evalBottleneck?: DoraLifecyclePhase | null;
+  failureClass?: 'infra' | 'semantic' | null;
+  semanticType?:
+    | 'accuracy_drop'
+    | 'drift'
+    | 'hallucination'
+    | 'guardrail'
+    | 'prompt_injection'
+    | null;
+  evalScore?: number | null;
+  baselineScore?: number | null;
+  driftScore?: number | null;
+  recoveryStrategy?: 'rollback' | 'fallback' | 'guardrail' | 'retrain' | null;
+  modelVersion?: string | null;
+  promptVersion?: string | null;
+  ragIndexVersion?: string | null;
 }
 
 export interface DoraDeploymentsResponse {

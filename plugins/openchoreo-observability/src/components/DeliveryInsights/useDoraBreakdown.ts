@@ -4,6 +4,7 @@ import { catalogApiRef } from '@backstage/plugin-catalog-react';
 import { CHOREO_ANNOTATIONS } from '@openchoreo/backstage-plugin-common';
 import { observabilityApiRef } from '../../api/ObservabilityApi';
 import {
+  DoraDataAvailability,
   DoraGranularity,
   DoraMetricsResponse,
   DoraSearchScope,
@@ -21,6 +22,8 @@ export interface DoraBreakdownRow {
   entityRef?: { kind: string; namespace: string; name: string };
   /** Child's summary; undefined while loading or when the query failed. */
   summary?: DoraMetricsResponse['summary'];
+  /** Child's availability flags (eval/drift/guardrail wiring), for the environment cards. */
+  dataAvailability?: DoraDataAvailability;
 }
 
 export interface UseDoraBreakdownResult {
@@ -215,7 +218,11 @@ export function useDoraBreakdown(
                 granularity,
               },
             );
-            return { ...child, summary: response.summary };
+            return {
+              ...child,
+              summary: response.summary,
+              dataAvailability: response.dataAvailability,
+            };
           } catch {
             return child; // row renders with em-dashes rather than failing the table
           }

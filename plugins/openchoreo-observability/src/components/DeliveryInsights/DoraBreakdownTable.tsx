@@ -151,6 +151,7 @@ export const DoraBreakdownTable = ({
             <TableCell align="right">Lead time p50</TableCell>
             <TableCell align="right">Change failure rate</TableCell>
             <TableCell align="right">MTTR</TableCell>
+            <TableCell align="right">Semantic CFR</TableCell>
             <TableCell>DORA rating</TableCell>
           </TableRow>
         </TableHead>
@@ -211,6 +212,11 @@ export const DoraBreakdownTable = ({
                 <TableCell align="right" className={classes.num}>
                   {formatDurationMs(mttr?.meanMs)}
                 </TableCell>
+                <TableCell align="right" className={classes.num}>
+                  {cfr?.semanticCfr !== undefined && cfr.semanticCfr !== null
+                    ? formatPercent(cfr.semanticCfr)
+                    : '—'}
+                </TableCell>
                 <TableCell>
                   <Chip
                     size="small"
@@ -221,6 +227,20 @@ export const DoraBreakdownTable = ({
                       color: colors.text,
                     }}
                   />
+                  {/* Semantic failures outweighing infra ones is a distinct risk from the generic DORA tier above. */}
+                  {(cfr?.semanticCfr ?? 0) > (cfr?.infraCfr ?? 0) &&
+                    (cfr?.semanticCfr ?? 0) > 0 && (
+                      <Chip
+                        size="small"
+                        label="Semantic risk"
+                        className={classes.chip}
+                        style={{
+                          marginLeft: 6,
+                          backgroundColor: theme.palette.warning.light,
+                          color: theme.palette.warning.dark,
+                        }}
+                      />
+                    )}
                   {delta !== null && delta !== 0 && (
                     <Typography
                       component="span"

@@ -35,8 +35,12 @@ export interface DoraTrendChartProps {
    */
   data: Array<Record<string, string | number | null>>;
   series: DoraChartSeries[];
-  /** bar = counts (deployment frequency); line = rates and durations. */
-  variant: 'bar' | 'line';
+  /**
+   * bar = counts (deployment frequency); line = rates and durations;
+   * waterfall = lead-time phase breakdown. Waterfall points carry `phase`
+   * instead of `bucketStart` (no time bucketing) — see `buildWaterfallData`.
+   */
+  variant: 'bar' | 'line' | 'waterfall';
   valueFormatter: (value: number) => string;
   emptyMessage?: string;
 }
@@ -50,16 +54,19 @@ export const DoraTrendChart = ({
   valueFormatter,
   emptyMessage,
 }: DoraTrendChartProps) => {
+  const isWaterfall = variant === 'waterfall';
   const chartData = useMemo(
     () =>
-      data.map(point => ({
-        ...point,
-        bucketLabel: formatBucketLabel(
-          point.bucketStart as string,
-          granularity,
-        ),
-      })),
-    [data, granularity],
+      isWaterfall
+        ? data.map(point => ({ ...point, bucketLabel: point.phase }))
+        : data.map(point => ({
+            ...point,
+            bucketLabel: formatBucketLabel(
+              point.bucketStart as string,
+              granularity,
+            ),
+          })),
+    [data, granularity, isWaterfall],
   );
 
   const hasData = chartData.length > 0;
@@ -79,6 +86,74 @@ export const DoraTrendChart = ({
     width: 48,
     tickFormatter: (value: number) => valueFormatter(value),
   };
+
+  let chartElement;
+  if (isWaterfall) {
+    chartElement = (
+      <BarChart data={chartData}>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+        <XAxis {...axisProps} />
+        <YAxis {...yAxisProps} allowDecimals={false} />
+        <Tooltip formatter={renderTooltipValue} />
+        {/* Invisible stack base offsets each phase's bar to start where the previous one ended. */}
+        <Bar dataKey="base" stackId="waterfall" fill="transparent" />
+        {series.map(s => (
+          <Bar
+            key={s.dataKey}
+            dataKey={s.dataKey}
+            name={s.label}
+            fill={s.color}
+            stackId="waterfall"
+            radius={[2, 2, 0, 0]}
+          />
+        ))}
+      </BarChart>
+    );
+  } else if (variant === 'bar') {
+    chartElement = (
+      <BarChart data={chartData}>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+        <XAxis {...axisProps} />
+        <YAxis {...yAxisProps} allowDecimals={false} />
+        <Tooltip formatter={renderTooltipValue} />
+        {series.map(s => (
+          <Bar
+            key={s.dataKey}
+            dataKey={s.dataKey}
+            name={s.label}
+            fill={s.color}
+            radius={[2, 2, 0, 0]}
+          />
+        ))}
+      </BarChart>
+    );
+  } else {
+    chartElement = (
+      <LineChart data={chartData}>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+        <XAxis {...axisProps} />
+        <YAxis {...yAxisProps} />
+        <Tooltip formatter={renderTooltipValue} />
+        {series.map(s => (
+          <Line
+            key={s.dataKey}
+            type="monotone"
+            dataKey={s.dataKey}
+            name={s.label}
+            stroke={s.color}
+            strokeWidth={2}
+            // A measurement whose neighbouring buckets are null has no
+            // segment to draw, and connectNulls is off by design, so
+            // without a dot it renders as nothing at all. Lead time and
+            // MTTR are sparse by nature -- they only have a value for
+            // buckets that actually recorded one -- so an isolated
+            // point is the normal case, not an edge case.
+            dot={{ r: 2 }}
+          />
+        ))}
+      </LineChart>
+    );
+  }
 
   return (
     <Card variant="outlined">
@@ -101,47 +176,7 @@ export const DoraTrendChart = ({
           </Typography>
         ) : (
           <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
-            {variant === 'bar' ? (
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis {...axisProps} />
-                <YAxis {...yAxisProps} allowDecimals={false} />
-                <Tooltip formatter={renderTooltipValue} />
-                {series.map(s => (
-                  <Bar
-                    key={s.dataKey}
-                    dataKey={s.dataKey}
-                    name={s.label}
-                    fill={s.color}
-                    radius={[2, 2, 0, 0]}
-                  />
-                ))}
-              </BarChart>
-            ) : (
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis {...axisProps} />
-                <YAxis {...yAxisProps} />
-                <Tooltip formatter={renderTooltipValue} />
-                {series.map(s => (
-                  <Line
-                    key={s.dataKey}
-                    type="monotone"
-                    dataKey={s.dataKey}
-                    name={s.label}
-                    stroke={s.color}
-                    strokeWidth={2}
-                    // A measurement whose neighbouring buckets are null has no
-                    // segment to draw, and connectNulls is off by design, so
-                    // without a dot it renders as nothing at all. Lead time and
-                    // MTTR are sparse by nature -- they only have a value for
-                    // buckets that actually recorded one -- so an isolated
-                    // point is the normal case, not an edge case.
-                    dot={{ r: 2 }}
-                  />
-                ))}
-              </LineChart>
-            )}
+            {chartElement}
           </ResponsiveContainer>
         )}
       </CardContent>

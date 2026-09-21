@@ -13,6 +13,7 @@ import { Progress } from '@backstage/core-components';
 import { DoraGranularity, DoraSearchScope } from '../../types';
 import { useDoraInsights } from './useDoraInsights';
 import { InsightsLevel, useDoraBreakdown } from './useDoraBreakdown';
+import { useLatestDoraDeployment } from './useLatestDoraDeployment';
 import { DoraMetricTile } from './DoraMetricTile';
 import { DoraTrendChart } from './DoraTrendChart';
 import { DoraBreakdownTable } from './DoraBreakdownTable';
@@ -21,6 +22,7 @@ import { ScopeFilters, type ScopeSelection } from '../ScopeFilters';
 import { useNamespaceEnvironments } from '../CostInsights/useNamespaceEnvironments';
 import {
   INSIGHTS_TIME_RANGES,
+  buildWaterfallData,
   fillSeriesGaps,
   formatDurationMs,
   dataAvailabilityWarning,
@@ -44,6 +46,7 @@ const CHART_COLORS = {
   leadTimeP95: '#98df8a',
   cfr: '#d62728',
   mttr: '#9467bd',
+  leadTimePhase: '#ff7f0e',
 };
 
 /**
@@ -147,6 +150,17 @@ export const DeliveryInsightsContent = ({
     environmentReady ? effectiveScope : null,
     rangeDays,
     granularity,
+  );
+
+  // Lead-time phase breakdown lives on individual deployment records, not the
+  // aggregate summary — fetch the most recent one to drive the waterfall chart.
+  const latestDeployment = useLatestDoraDeployment(
+    environmentReady ? effectiveScope : null,
+    rangeDays,
+  );
+  const waterfallData = useMemo(
+    () => buildWaterfallData(latestDeployment?.leadTimeBreakdown),
+    [latestDeployment],
   );
 
   // The breakdown knows which environments have data, but only by name. The
@@ -373,6 +387,13 @@ export const DeliveryInsightsContent = ({
                   cfr ? `${cfr.failed} of ${cfr.total} failed` : undefined
                 }
                 sparkData={cfrSparkData}
+                secondaryBadge={
+                  cfr?.semanticCfr !== undefined &&
+                  cfr.semanticCfr !== null &&
+                  cfr.semanticCfr > (cfr.infraCfr ?? 0)
+                    ? { label: 'Semantic-driven', tone: 'warning' }
+                    : undefined
+                }
               />
             </Grid>
             <Grid item xs={12} sm={6} md={3}>
@@ -470,6 +491,24 @@ export const DeliveryInsightsContent = ({
                   emptyMessage="No recovery episodes in the selected window"
                 />
               </Grid>
+              {waterfallData.length > 0 && (
+                <Grid item xs={12} md={6}>
+                  <DoraTrendChart
+                    title="Lead Time Phase Breakdown"
+                    granularity={granularity}
+                    data={waterfallData}
+                    series={[
+                      {
+                        dataKey: 'value',
+                        label: 'Phase duration',
+                        color: CHART_COLORS.leadTimePhase,
+                      },
+                    ]}
+                    variant="waterfall"
+                    valueFormatter={formatDurationMs}
+                  />
+                </Grid>
+              )}
             </Grid>
           </Box>
 

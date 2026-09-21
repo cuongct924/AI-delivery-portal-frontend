@@ -1,7 +1,16 @@
-import { Card, CardContent, Grid, Typography } from '@material-ui/core';
+import { Card, CardContent, Chip, Grid, Typography } from '@material-ui/core';
 import { Theme, makeStyles, useTheme } from '@material-ui/core/styles';
 import { DoraBreakdownRow } from './useDoraBreakdown';
 import { formatDurationMs, formatPercent } from './utils';
+
+const AVAILABILITY_CHIPS: ReadonlyArray<{
+  key: 'evalPipeline' | 'driftMonitor' | 'guardrails';
+  label: string;
+}> = [
+  { key: 'evalPipeline', label: 'Eval pipeline' },
+  { key: 'driftMonitor', label: 'Drift monitor' },
+  { key: 'guardrails', label: 'Guardrails' },
+];
 
 const useStyles = makeStyles(theme => ({
   header: {
@@ -29,6 +38,16 @@ const useStyles = makeStyles(theme => ({
     fontWeight: 650,
     fontVariantNumeric: 'tabular-nums',
     fontSize: 17,
+  },
+  availabilityRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: theme.spacing(0.5),
+    marginTop: theme.spacing(1.5),
+  },
+  availabilityChip: {
+    height: 20,
+    fontSize: 11,
   },
 }));
 
@@ -112,6 +131,28 @@ export const DoraEnvironmentCards = ({ rows }: DoraEnvironmentCardsProps) => {
                     </Grid>
                   ))}
                 </Grid>
+                <div className={classes.availabilityRow}>
+                  {AVAILABILITY_CHIPS.map(({ key, label }) => {
+                    const available = row.dataAvailability?.[key] === true;
+                    return (
+                      <Chip
+                        key={key}
+                        size="small"
+                        variant={available ? 'default' : 'outlined'}
+                        label={label}
+                        className={classes.availabilityChip}
+                        style={
+                          available
+                            ? {
+                                backgroundColor: theme.palette.success.light,
+                                color: theme.palette.success.dark,
+                              }
+                            : { color: theme.palette.text.disabled }
+                        }
+                      />
+                    );
+                  })}
+                </div>
               </CardContent>
             </Card>
           </Grid>

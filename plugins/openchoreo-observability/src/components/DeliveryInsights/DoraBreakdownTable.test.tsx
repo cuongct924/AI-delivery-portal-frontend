@@ -23,6 +23,8 @@ const summary = (total: number, classification: string) => ({
     total: 4,
     classification,
     deltaPct: null,
+    infraCfr: 0.05,
+    semanticCfr: 0.2,
   },
   mttr: {
     meanMs: 1800000,
@@ -116,5 +118,20 @@ describe('DoraBreakdownTable', () => {
     expect(
       screen.getByText(/Nothing to break down in this scope yet/i),
     ).toBeInTheDocument();
+  });
+
+  it('shows the semantic CFR and a risk badge when semantic failures dominate', async () => {
+    await renderTable({});
+    expect(screen.getByText('20.0%')).toBeInTheDocument();
+    expect(screen.getByText('Semantic risk')).toBeInTheDocument();
+  });
+
+  it('falls back to an em-dash when semantic CFR is absent', async () => {
+    const row: DoraBreakdownRow = {
+      ...projectRow,
+      summary: { ...(projectRow.summary as any), changeFailureRate: undefined },
+    };
+    await renderTable({ rows: [row] });
+    expect(screen.queryByText('Semantic risk')).not.toBeInTheDocument();
   });
 });

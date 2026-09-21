@@ -34,6 +34,10 @@ jest.mock('./useDoraBreakdown', () => ({
   useDoraBreakdown: () => breakdownResult,
 }));
 
+jest.mock('./useLatestDoraDeployment', () => ({
+  useLatestDoraDeployment: () => null,
+}));
+
 jest.mock('../CostInsights/useNamespaceEnvironments', () => ({
   useNamespaceEnvironments: () => ({ environments: [] }),
 }));

@@ -47,7 +47,30 @@ const renderChart = () =>
     />,
   );
 
+const waterfall = [
+  { phase: 'data_prep', value: 600000, base: 0 },
+  { phase: 'train', value: 1800000, base: 600000 },
+  { phase: 'eval', value: 300000, base: 2400000 },
+];
+
 describe('DoraTrendChart', () => {
+  it('stacks an invisible base bar under the visible one for the waterfall variant', () => {
+    render(
+      <DoraTrendChart
+        title="Lead Time Phase Breakdown"
+        granularity="daily"
+        data={waterfall}
+        series={[{ dataKey: 'value', label: 'Phase duration', color: '#000' }]}
+        variant="waterfall"
+        valueFormatter={v => String(v)}
+      />,
+    );
+    const bars = screen.getAllByTestId('bar');
+    expect(bars).toHaveLength(2);
+    expect(bars[0]).toHaveAttribute('data-key', 'base');
+    expect(bars[1]).toHaveAttribute('data-key', 'value');
+  });
+
   it('draws dots so an isolated measurement is still visible', () => {
     renderChart();
     // With connectNulls off, a point whose neighbours are both null has no

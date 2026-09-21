@@ -4,6 +4,7 @@ import {
   DoraClassification,
   DoraDataAvailability,
   DoraGranularity,
+  DoraLifecyclePhase,
 } from '../../types';
 
 /** Formats a millisecond duration as a compact human string (e.g. 45m, 3.2h, 2.1d). */
@@ -272,6 +273,35 @@ export function resolveGranularity(
 }
 
 export const BREAKDOWN_CONCURRENCY = 6;
+
+const LIFECYCLE_PHASES: readonly DoraLifecyclePhase[] = [
+  'data_prep',
+  'train',
+  'eval',
+  'deploy',
+];
+
+/**
+ * Turns a per-phase duration map into a waterfall series: each phase's `base`
+ * is the cumulative duration of every phase before it, so a stacked bar chart
+ * renders it starting where the previous phase ended instead of from zero.
+ */
+export function buildWaterfallData(
+  leadTimeBreakdown: Partial<Record<DoraLifecyclePhase, number>> | null | undefined,
+): Array<Record<string, string | number | null>> {
+  if (!leadTimeBreakdown) {
+    return [];
+  }
+  let cumulative = 0;
+  return LIFECYCLE_PHASES.filter(phase => leadTimeBreakdown[phase] !== undefined).map(
+    phase => {
+      const value = leadTimeBreakdown[phase] as number;
+      const base = cumulative;
+      cumulative += value;
+      return { phase, value, base };
+    },
+  );
+}
 
 /** Short bucket label for chart axes: "Jul 7" (daily/weekly) or "Jul 2026" (monthly). */
 export function formatBucketLabel(

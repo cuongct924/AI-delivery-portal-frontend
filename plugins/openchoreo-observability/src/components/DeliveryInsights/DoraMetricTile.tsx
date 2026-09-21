@@ -68,6 +68,8 @@ export interface DoraMetricTileProps {
   subText?: string;
   /** Per-bucket values rendered as a small sparkline in the tile corner. */
   sparkData?: number[];
+  /** ML/LLM callout beside the classification chip, e.g. "drift-driven cadence". */
+  secondaryBadge?: { label: string; tone: 'info' | 'warning' };
 }
 
 const Sparkline = ({ data }: { data: number[] }) => {
@@ -113,6 +115,7 @@ export const DoraMetricTile = ({
   positiveDeltaIsGood,
   subText,
   sparkData,
+  secondaryBadge,
 }: DoraMetricTileProps) => {
   const classes = useStyles();
   const theme = useTheme();
@@ -134,12 +137,25 @@ export const DoraMetricTile = ({
           <Typography variant="body2" className={classes.title}>
             {title}
           </Typography>
-          <Chip
-            size="small"
-            label={classification}
-            className={classes.chip}
-            style={{ backgroundColor: colors.background, color: colors.text }}
-          />
+          <Box style={{ display: 'flex', gap: theme.spacing(0.5) }}>
+            {secondaryBadge && (
+              <Chip
+                size="small"
+                label={secondaryBadge.label}
+                className={classes.chip}
+                style={{
+                  backgroundColor: theme.palette[secondaryBadge.tone].light,
+                  color: theme.palette[secondaryBadge.tone].dark,
+                }}
+              />
+            )}
+            <Chip
+              size="small"
+              label={classification}
+              className={classes.chip}
+              style={{ backgroundColor: colors.background, color: colors.text }}
+            />
+          </Box>
         </Box>
         <Typography variant="h4" className={classes.value}>
           {value}
