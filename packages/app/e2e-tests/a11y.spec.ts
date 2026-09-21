@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { signIn } from './signIn';
 
 // Subset of the 18 routes scanned in the Phase B audit
 // (audit-artifacts/axe/_summary.json). Six high-traffic routes are enough
@@ -30,33 +31,12 @@ const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'best-practice'];
 //   - OAuth mode (default) — a `Sign In` button kicks an OIDC flow.
 // We only want to scan the post-login layout, so dismiss whichever card
 // is present. If neither button shows up, the session is already live
-// and we proceed.
-async function dismissSignIn(page: import('@playwright/test').Page) {
-  for (const name of ['Enter', 'Sign In'] as const) {
-    const btn = page.getByRole('button', { name });
-    if (await btn.isVisible().catch(() => false)) {
-      await btn.click();
-      await page.waitForLoadState('networkidle').catch(() => undefined);
-      return;
-    }
-  }
-}
-
-// If the page is still showing the sign-in card after dismissal (e.g. OAuth
-// redirected and we landed on the IDP), we can't scan content meaningfully.
-// Detect by looking for the sidebar — when it's missing, the session never
-// reached the post-login layout.
-async function isPostLogin(page: import('@playwright/test').Page) {
-  const sidebar = page
-    .locator('nav[aria-label*="sidebar" i], a[href="/"][aria-label="Home"]')
-    .first();
-  return sidebar.isVisible().catch(() => false);
-}
+// and we proceed. See ./signIn for the shared flow.
 
 for (const route of ROUTES) {
   test(`axe — ${route.id}`, async ({ page }, testInfo) => {
     await page.goto(route.path);
-    await dismissSignIn(page);
+    const postLogin = await signIn(page);
     if (page.url().endsWith('/') && route.path !== '/') {
       await page.goto(route.path);
     }
@@ -65,7 +45,7 @@ for (const route of ROUTES) {
     // Fail loudly if we're still on the sign-in card — silent passes against
     // an empty card are worse than a red test, because they normalise
     // "the spec is clean" while no content was actually scanned.
-    if (!(await isPostLogin(page))) {
+    if (!postLogin) {
       throw new Error(
         `axe spec could not reach the post-login layout for ${route.id}; ` +
           'make sure the portal is running and you are signed in.',

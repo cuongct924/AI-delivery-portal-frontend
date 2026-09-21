@@ -49,9 +49,6 @@ app:
           path: /
     - home-page-widget:home/toolkit: false
     - home-page-widget:home/random-joke: false
-    - home-page-widget:home/most-visited: false
-    - home-page-widget:home/recently-visited: false
-    - home-page-widget:home/world-clock: false
     - theme:app/light: false
     - theme:app/dark: false
     # `page:kubernetes` is the plugin's standalone /kubernetes page — it
@@ -193,6 +190,13 @@ integrations:
 # reached today (docker compose up in the backend repo).
 orchestrationApi:
   baseUrl: ${ORCHESTRATION_API_URL}
+
+# Optional callback for monitoring failure events used by the IDP/DORA layer.
+# Keep it in deployment config rather than exposing an arbitrary URL in the
+# Scaffolder form.
+mlops:
+  monitoring:
+    failureWebhookUrl: ${MLOPS_MONITORING_FAILURE_WEBHOOK_URL}
 
 proxy:
   ### Example for how to add a proxy endpoint for the frontend.
@@ -372,7 +376,7 @@ catalog:
     pullRequestBranchName: backstage-integration
   rules:
     - allow:
-        [Component, System, API, Resource, Location, User, Group, Environment]
+        [Component, System, API, Resource, Location, User, Group, Environment, Template]
   locations:
     # Placeholder groups for Backstage entity owner references
     - type: file

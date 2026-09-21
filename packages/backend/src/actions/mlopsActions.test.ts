@@ -17,12 +17,21 @@ import {
   createRecordDeployAction,
   createRegisterModelAction,
   createRollbackPromotionAction,
+  createSetupMonitoringAction,
   createTriggerTrainingAction,
   createValidateDatasetAction,
 } from './mlopsActions';
 
 const BASE_URL = 'http://orchestration-api.test';
 const config = new ConfigReader({ orchestrationApi: { baseUrl: BASE_URL } });
+const monitoringConfig = new ConfigReader({
+  orchestrationApi: { baseUrl: BASE_URL },
+  mlops: {
+    monitoring: {
+      failureWebhookUrl: 'http://portal.test/api/monitoring/failures',
+    },
+  },
+});
 
 /**
  * Builds a minimal mock of the Scaffolder `ActionContext` for a given
@@ -111,7 +120,11 @@ describe('orchestration:trigger-training', () => {
       { ok: true, body: { workflow_name: 'wf-2' } },
       {
         ok: true,
-        body: { name: 'wf-2', phase: 'Failed', message: 'training script exited 1' },
+        body: {
+          name: 'wf-2',
+          phase: 'Failed',
+          message: 'training script exited 1',
+        },
       },
     ]);
     const action = createTriggerTrainingAction({ config, pollIntervalMs: 1 });
@@ -303,7 +316,9 @@ describe('orchestration:trigger-training', () => {
     const body = JSON.parse(requestInit.body as string);
     expect(body.search_strategy).toBe('bayesian');
     expect(body.num_trials).toBe(20);
-    expect(body.search_space_json).toBe('{"learning_rate": {"low": 0.0001, "high": 0.1}}');
+    expect(body.search_space_json).toBe(
+      '{"learning_rate": {"low": 0.0001, "high": 0.1}}',
+    );
     expect(body.objective_metric).toBe('r2');
     expect(body.objective_direction).toBe('maximize');
   });
@@ -346,7 +361,12 @@ describe('orchestration:validate-dataset', () => {
       {
         ok: true,
         body: [
-          { check_name: 'check_missing_values', severity: 'info', message: 'clean', details: {} },
+          {
+            check_name: 'check_missing_values',
+            severity: 'info',
+            message: 'clean',
+            details: {},
+          },
           {
             check_name: 'check_class_imbalance',
             severity: 'warning',
@@ -358,7 +378,11 @@ describe('orchestration:validate-dataset', () => {
     ]);
     const action = createValidateDatasetAction({ config });
     const { ctx, outputs } = createMockContext<typeof action>(
-      { datasetUri: 'file:///data.csv', taskType: 'classification', targetColumn: 'is_fraud' },
+      {
+        datasetUri: 'file:///data.csv',
+        taskType: 'classification',
+        targetColumn: 'is_fraud',
+      },
       '/tmp/workspace',
     );
 
@@ -366,7 +390,11 @@ describe('orchestration:validate-dataset', () => {
 
     expect(outputs.results).toEqual([
       { checkName: 'check_missing_values', severity: 'info', message: 'clean' },
-      { checkName: 'check_class_imbalance', severity: 'warning', message: 'minority class is 3%' },
+      {
+        checkName: 'check_class_imbalance',
+        severity: 'warning',
+        message: 'minority class is 3%',
+      },
     ]);
   });
 
@@ -386,7 +414,11 @@ describe('orchestration:validate-dataset', () => {
     ]);
     const action = createValidateDatasetAction({ config });
     const { ctx } = createMockContext<typeof action>(
-      { datasetUri: 'file:///data.csv', taskType: 'classification', targetColumn: 'is_fraud' },
+      {
+        datasetUri: 'file:///data.csv',
+        taskType: 'classification',
+        targetColumn: 'is_fraud',
+      },
       '/tmp/workspace',
     );
 
@@ -428,7 +460,9 @@ describe('orchestration:register-model', () => {
   });
 
   it('omits datasetVersion when not provided', async () => {
-    mockFetchResponses([{ ok: true, body: { name: 'churn-classifier', version: '2' } }]);
+    mockFetchResponses([
+      { ok: true, body: { name: 'churn-classifier', version: '2' } },
+    ]);
     const action = createRegisterModelAction({ config });
     const { ctx, outputs } = createMockContext<typeof action>(
       {
@@ -480,7 +514,11 @@ describe('orchestration:policy-check', () => {
         body: {
           passed: true,
           metrics: { accuracy: 0.92, precision: 0.85, recall: 0.8 },
-          thresholds: { min_accuracy: 0.7, min_precision: 0.6, min_recall: 0.6 },
+          thresholds: {
+            min_accuracy: 0.7,
+            min_precision: 0.6,
+            min_recall: 0.6,
+          },
         },
       },
     ]);
@@ -493,7 +531,11 @@ describe('orchestration:policy-check', () => {
     await action.handler(ctx);
 
     expect(outputs.passed).toBe(true);
-    expect(outputs.metrics).toEqual({ accuracy: 0.92, precision: 0.85, recall: 0.8 });
+    expect(outputs.metrics).toEqual({
+      accuracy: 0.92,
+      precision: 0.85,
+      recall: 0.8,
+    });
   });
 
   it('throws with the metrics summary when the gate rejects the model', async () => {
@@ -503,7 +545,11 @@ describe('orchestration:policy-check', () => {
         body: {
           passed: false,
           metrics: { accuracy: 0.4, precision: 0.3, recall: 0.3 },
-          thresholds: { min_accuracy: 0.7, min_precision: 0.6, min_recall: 0.6 },
+          thresholds: {
+            min_accuracy: 0.7,
+            min_precision: 0.6,
+            min_recall: 0.6,
+          },
         },
       },
     ]);
@@ -517,16 +563,98 @@ describe('orchestration:policy-check', () => {
   });
 });
 
+describe('orchestration:setup-monitoring', () => {
+  it('forwards performance degradation monitoring settings', async () => {
+    const fetchMock = mockFetchResponses([
+      { ok: true, body: { cron_workflow_name: 'monitoring-cron-1' } },
+    ]);
+    const action = createSetupMonitoringAction({ config });
+    const { ctx, outputs } = createMockContext<typeof action>(
+      {
+        modelName: 'fraud-detection',
+        modelVersion: '3',
+        referenceDataUri: 'file:///data/reference.csv',
+        productionDataSource: 'managed-prediction-log',
+        schedule: '0 * * * *',
+        monitoringType: 'performance-degradation',
+        groundTruthDataSource: 'managed-label-log',
+        groundTruthDataUri: 'file:///data/ground-truth.csv',
+        metricName: 'f1_score',
+        minMetricThreshold: 0.85,
+        onDriftDetected: 'alert-only',
+      },
+      '/tmp/workspace',
+    );
+
+    await action.handler(ctx);
+
+    const [, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(requestInit.body as string)).toEqual({
+      model_name: 'fraud-detection',
+      model_version: '3',
+      reference_data_uri: 'file:///data/reference.csv',
+      production_data_source: 'managed-prediction-log',
+      schedule: '0 * * * *',
+      monitoring_type: 'performance-degradation',
+      ground_truth_data_source: 'managed-label-log',
+      ground_truth_data_uri: 'file:///data/ground-truth.csv',
+      metric_name: 'f1_score',
+      min_metric_threshold: 0.85,
+      on_drift_detected: 'alert-only',
+    });
+    expect(outputs.cronWorkflowName).toBe('monitoring-cron-1');
+  });
+
+  it('adds reactive metadata to auto-retrain requests', async () => {
+    const fetchMock = mockFetchResponses([
+      { ok: true, body: { cron_workflow_name: 'monitoring-cron-2' } },
+    ]);
+    const action = createSetupMonitoringAction({ config: monitoringConfig });
+    const { ctx } = createMockContext<typeof action>(
+      {
+        modelName: 'fraud-detection',
+        modelVersion: '3',
+        referenceDataUri: 'file:///data/reference.csv',
+        productionDataSource: 'managed-prediction-log',
+        schedule: '0 0 * * *',
+        monitoringType: 'data-drift',
+        driftThreshold: 0.5,
+        onDriftDetected: 'auto-retrain',
+        retrainRequestJson: '{"model_name":"fraud-detection"}',
+      },
+      '/tmp/workspace',
+    );
+
+    await action.handler(ctx);
+
+    const [, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(requestInit.body as string);
+    expect(JSON.parse(body.retrain_request_json)).toEqual({
+      model_name: 'fraud-detection',
+      trigger_type: 'reactive',
+      trigger_reason: 'data_drift_exceeded',
+    });
+    expect(body.failure_webhook_url).toBe(
+      'http://portal.test/api/monitoring/failures',
+    );
+  });
+});
+
 describe('orchestration:prepare-deploy-manifest', () => {
   it('writes the rendered manifest into the workspace and outputs its path', async () => {
     const workspacePath = await fs.mkdtemp(
       path.join(os.tmpdir(), 'mlops-actions-test-'),
     );
-    const fileName = 'infra/environments/dev/inference-services/mlops-team/fraud-detection/3.yaml';
+    const fileName =
+      'infra/environments/dev/inference-services/mlops-team/fraud-detection/3.yaml';
     const fetchMock = mockFetchResponses([
       {
         ok: true,
-        body: { file_name: fileName, content: 'kind: InferenceService\n', deployed: false },
+        body: {
+          file_name: fileName,
+          content: 'kind: InferenceService\n',
+          deployed: false,
+        },
       },
     ]);
     const action = createPrepareDeployManifestAction({ config });
@@ -564,11 +692,16 @@ describe('orchestration:prepare-deploy-manifest', () => {
     const workspacePath = await fs.mkdtemp(
       path.join(os.tmpdir(), 'mlops-actions-test-'),
     );
-    const fileName = 'infra/environments/dev/inference-services/mlops-team/fraud-detection/4.yaml';
+    const fileName =
+      'infra/environments/dev/inference-services/mlops-team/fraud-detection/4.yaml';
     const fetchMock = mockFetchResponses([
       {
         ok: true,
-        body: { file_name: fileName, content: 'kind: InferenceService\n', deployed: true },
+        body: {
+          file_name: fileName,
+          content: 'kind: InferenceService\n',
+          deployed: true,
+        },
       },
     ]);
     const action = createPrepareDeployManifestAction({ config });
@@ -608,11 +741,16 @@ describe('orchestration:prepare-llm-deploy-manifest', () => {
     const workspacePath = await fs.mkdtemp(
       path.join(os.tmpdir(), 'mlops-actions-test-'),
     );
-    const fileName = 'infra/environments/dev/inference-services/llmops-team/llama-3-8b/llm.yaml';
+    const fileName =
+      'infra/environments/dev/inference-services/llmops-team/llama-3-8b/llm.yaml';
     const fetchMock = mockFetchResponses([
       {
         ok: true,
-        body: { file_name: fileName, content: 'kind: InferenceService\n', deployed: false },
+        body: {
+          file_name: fileName,
+          content: 'kind: InferenceService\n',
+          deployed: false,
+        },
       },
     ]);
     const action = createPrepareLlmDeployManifestAction({ config });
@@ -659,11 +797,16 @@ describe('orchestration:prepare-llm-deploy-manifest', () => {
     const workspacePath = await fs.mkdtemp(
       path.join(os.tmpdir(), 'mlops-actions-test-'),
     );
-    const fileName = 'infra/environments/dev/inference-services/llmops-team/llama-3-8b/llm.yaml';
+    const fileName =
+      'infra/environments/dev/inference-services/llmops-team/llama-3-8b/llm.yaml';
     const fetchMock = mockFetchResponses([
       {
         ok: true,
-        body: { file_name: fileName, content: 'kind: InferenceService\n', deployed: true },
+        body: {
+          file_name: fileName,
+          content: 'kind: InferenceService\n',
+          deployed: true,
+        },
       },
     ]);
     const action = createPrepareLlmDeployManifestAction({ config });
@@ -707,11 +850,16 @@ describe('orchestration:prepare-llm-deploy-manifest', () => {
     const workspacePath = await fs.mkdtemp(
       path.join(os.tmpdir(), 'mlops-actions-test-'),
     );
-    const fileName = 'infra/environments/dev/inference-services/llmops-team/llama-3-8b/llm.yaml';
+    const fileName =
+      'infra/environments/dev/inference-services/llmops-team/llama-3-8b/llm.yaml';
     const fetchMock = mockFetchResponses([
       {
         ok: true,
-        body: { file_name: fileName, content: 'kind: InferenceService\n', deployed: false },
+        body: {
+          file_name: fileName,
+          content: 'kind: InferenceService\n',
+          deployed: false,
+        },
       },
     ]);
     const action = createPrepareLlmDeployManifestAction({ config });
@@ -793,7 +941,11 @@ describe('orchestration:record-deploy', () => {
     const fetchMock = mockFetchResponses([
       {
         ok: true,
-        body: { model_name: 'fraud-detection', model_version: '5', pr_url: null },
+        body: {
+          model_name: 'fraud-detection',
+          model_version: '5',
+          pr_url: null,
+        },
       },
     ]);
     const action = createRecordDeployAction({ config });
@@ -826,7 +978,11 @@ describe('orchestration:promote-model', () => {
         body: {
           project: 'telco-fraud-detection',
           component: 'serving',
-          environments: { development: 'rel-1', staging: 'rel-1', production: null },
+          environments: {
+            development: 'rel-1',
+            staging: 'rel-1',
+            production: null,
+          },
           prod_pending_approval: true,
         },
       },
@@ -875,7 +1031,11 @@ describe('orchestration:rollback-promotion', () => {
         body: {
           project: 'telco-fraud-detection',
           component: 'serving',
-          environments: { development: 'rel-2', staging: 'rel-1', production: null },
+          environments: {
+            development: 'rel-2',
+            staging: 'rel-1',
+            production: null,
+          },
           prod_pending_approval: true,
         },
       },
@@ -909,7 +1069,9 @@ describe('orchestration:rollback-promotion', () => {
       '/tmp/workspace',
     );
 
-    await expect(action.handler(ctx)).rejects.toThrow(/no prior release recorded/);
+    await expect(action.handler(ctx)).rejects.toThrow(
+      /no prior release recorded/,
+    );
   });
 });
 
@@ -918,7 +1080,11 @@ describe('orchestration:rag-ingest', () => {
     const fetchMock = mockFetchResponses([
       {
         ok: true,
-        body: { collection: 'smoke-test', index_version: '1', chunks_ingested: 4 },
+        body: {
+          collection: 'smoke-test',
+          index_version: '1',
+          chunks_ingested: 4,
+        },
       },
     ]);
     const action = createRagIngestAction({ config });
@@ -955,7 +1121,13 @@ describe('orchestration:rag-evaluate', () => {
     const fetchMock = mockFetchResponses([
       {
         ok: true,
-        body: { passed: true, pass_rate: 1, results: [], total_tokens: 120, total_cost_usd: 0.003 },
+        body: {
+          passed: true,
+          pass_rate: 1,
+          results: [],
+          total_tokens: 120,
+          total_cost_usd: 0.003,
+        },
       },
     ]);
     const action = createRagEvaluateAction({ config });
@@ -1017,7 +1189,13 @@ describe('orchestration:draft-prompt', () => {
     const fetchMock = mockFetchResponses([
       {
         ok: true,
-        body: { id: 'rag-writer-v1', name: 'rag-writer', version: '1', persona: 'RAG Writer', content: 'sys' },
+        body: {
+          id: 'rag-writer-v1',
+          name: 'rag-writer',
+          version: '1',
+          persona: 'RAG Writer',
+          content: 'sys',
+        },
       },
     ]);
     const action = createDraftPromptAction({ config });
@@ -1032,7 +1210,11 @@ describe('orchestration:draft-prompt', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       `${BASE_URL}/prompts`,
       expect.objectContaining({
-        body: JSON.stringify({ name: 'rag-writer', persona: 'RAG Writer', content: 'sys' }),
+        body: JSON.stringify({
+          name: 'rag-writer',
+          persona: 'RAG Writer',
+          content: 'sys',
+        }),
       }),
     );
   });
@@ -1043,7 +1225,13 @@ describe('orchestration:evaluate-prompt', () => {
     const fetchMock = mockFetchResponses([
       {
         ok: true,
-        body: { passed: false, pass_rate: 0.5, results: [], total_tokens: 80, total_cost_usd: null },
+        body: {
+          passed: false,
+          pass_rate: 0.5,
+          results: [],
+          total_tokens: 80,
+          total_cost_usd: null,
+        },
       },
     ]);
     const action = createEvaluatePromptAction({ config });

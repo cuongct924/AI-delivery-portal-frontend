@@ -38,9 +38,6 @@ app:
           path: /
     - home-page-widget:home/toolkit: false
     - home-page-widget:home/random-joke: false
-    - home-page-widget:home/most-visited: false
-    - home-page-widget:home/recently-visited: false
-    - home-page-widget:home/world-clock: false
     - theme:app/light: false
     - theme:app/dark: false
     # `page:kubernetes` needs an entity context (throws standalone); we
@@ -173,7 +170,7 @@ catalog:
   # top-level rules.
   rules:
     - allow:
-        [Component, System, API, Resource, Location, User, Group, Environment]
+        [Component, System, API, Resource, Location, User, Group, Environment, Template]
   locations:
     # Placeholder groups for Backstage entity owner references
     - type: file
@@ -290,6 +287,10 @@ catalog:
 # — set this to that Component's real Gateway-exposed URL once it is.
 orchestrationApi:
   baseUrl: ${ORCHESTRATION_API_URL}
+
+mlops:
+  monitoring:
+    failureWebhookUrl: ${MLOPS_MONITORING_FAILURE_WEBHOOK_URL}
 
 # Proxies browser-side picker calls (packages/app/src/modules/scaffolder/
 # StepLayoutField.tsx's useDatasets/useModels/usePrompts/useRagCollections/

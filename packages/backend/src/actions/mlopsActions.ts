@@ -136,6 +136,40 @@ function getBaseUrl(config: Config): string {
   );
 }
 
+function enrichReactiveRetrainRequest(
+  requestJson: string | undefined,
+  monitoringType: 'data-drift' | 'performance-degradation',
+): string | undefined {
+  if (!requestJson) return undefined;
+
+  let request: unknown;
+  try {
+    request = JSON.parse(requestJson);
+  } catch {
+    throw new Error(
+      'Retrain request JSON must be valid JSON when auto-retrain is enabled',
+    );
+  }
+  if (
+    typeof request !== 'object' ||
+    request === null ||
+    Array.isArray(request)
+  ) {
+    throw new Error(
+      'Retrain request JSON must be a JSON object when auto-retrain is enabled',
+    );
+  }
+
+  return JSON.stringify({
+    ...(request as Record<string, unknown>),
+    trigger_type: 'reactive',
+    trigger_reason:
+      monitoringType === 'performance-degradation'
+        ? 'performance_degradation'
+        : 'data_drift_exceeded',
+  });
+}
+
 /**
  * Every orchestration-api route but `/models/register` requires a Bearer
  * token (`Depends(get_current_user)`). Scaffolder actions run purely
@@ -192,25 +226,41 @@ export function createTriggerTrainingAction({
       'Triggers the train (or fine-tune) Argo Workflow and waits for it to finish.',
     schema: {
       input: {
-        modelName: z => z.string({ description: 'Name to register the trained model under' }),
-        datasetUri: z => z.string({ description: 'URI of the training dataset' }),
+        modelName: z =>
+          z.string({ description: 'Name to register the trained model under' }),
+        datasetUri: z =>
+          z.string({ description: 'URI of the training dataset' }),
         taskType: z =>
-          z.string({ description: 'classification, regression, or clustering' }),
+          z.string({
+            description: 'classification, regression, or clustering',
+          }),
         architecture: z =>
           z
-            .string({ description: '"sklearn" (default), "mlp", or "lstm" — see dl_architecture_registry.py' })
+            .string({
+              description:
+                '"sklearn" (default), "mlp", or "lstm" — see dl_architecture_registry.py',
+            })
             .optional(),
         algorithm: z =>
           z
-            .string({ description: 'Registry key, e.g. "XGBClassifier" — required when architecture is "sklearn"' })
+            .string({
+              description:
+                'Registry key, e.g. "XGBClassifier" — required when architecture is "sklearn"',
+            })
             .optional(),
         targetColumn: z =>
           z
-            .string({ description: 'Label column — required unless taskType is clustering' })
+            .string({
+              description:
+                'Label column — required unless taskType is clustering',
+            })
             .optional(),
         idColumns: z =>
           z
-            .array(z.string(), { description: 'Columns to exclude as identifiers, e.g. transaction_id' })
+            .array(z.string(), {
+              description:
+                'Columns to exclude as identifiers, e.g. transaction_id',
+            })
             .optional(),
         timeColumn: z =>
           z
@@ -228,69 +278,123 @@ export function createTriggerTrainingAction({
             .optional(),
         hiddenLayers: z =>
           z
-            .array(z.number(), { description: 'Hidden layer sizes, e.g. [64, 32] — architecture=mlp' })
+            .array(z.number(), {
+              description:
+                'Hidden layer sizes, e.g. [64, 32] — architecture=mlp',
+            })
             .optional(),
-        dropout: z => z.number({ description: 'Dropout rate — architecture=mlp' }).optional(),
+        dropout: z =>
+          z
+            .number({ description: 'Dropout rate — architecture=mlp' })
+            .optional(),
         sequenceLength: z =>
-          z.number({ description: 'Sliding-window length — architecture=lstm' }).optional(),
-        numLayers: z => z.number({ description: 'LSTM layer count — architecture=lstm' }).optional(),
-        hiddenSize: z => z.number({ description: 'LSTM hidden size — architecture=lstm' }).optional(),
+          z
+            .number({
+              description: 'Sliding-window length — architecture=lstm',
+            })
+            .optional(),
+        numLayers: z =>
+          z
+            .number({ description: 'LSTM layer count — architecture=lstm' })
+            .optional(),
+        hiddenSize: z =>
+          z
+            .number({ description: 'LSTM hidden size — architecture=lstm' })
+            .optional(),
         learningRate: z =>
-          z.number({ description: 'Optimizer learning rate — architecture=mlp/lstm' }).optional(),
-        epochs: z => z.number({ description: 'Training epochs — architecture=mlp/lstm' }).optional(),
-        batchSize: z => z.number({ description: 'Batch size — architecture=mlp/lstm' }).optional(),
+          z
+            .number({
+              description: 'Optimizer learning rate — architecture=mlp/lstm',
+            })
+            .optional(),
+        epochs: z =>
+          z
+            .number({ description: 'Training epochs — architecture=mlp/lstm' })
+            .optional(),
+        batchSize: z =>
+          z
+            .number({ description: 'Batch size — architecture=mlp/lstm' })
+            .optional(),
         optimizer: z =>
           z
             .string({
-              description: '"adam" (default) or "sgd" — architecture=mlp/lstm/nlp/cv',
+              description:
+                '"adam" (default) or "sgd" — architecture=mlp/lstm/nlp/cv',
             })
             .optional(),
         codeRepoUrl: z =>
           z
-            .string({ description: 'Git repo URL to clone — algorithm="custom" (BYOC)' })
+            .string({
+              description: 'Git repo URL to clone — algorithm="custom" (BYOC)',
+            })
             .optional(),
         entrypointPath: z =>
           z
             .string({
-              description: 'Path, relative to the repo root, to the file defining train() — algorithm="custom"',
+              description:
+                'Path, relative to the repo root, to the file defining train() — algorithm="custom"',
             })
             .optional(),
         customConfig: z =>
           z
             .string({
-              description: 'JSON object of hyperparameters passed to train()\'s config arg — algorithm="custom"',
+              description:
+                'JSON object of hyperparameters passed to train()\'s config arg — algorithm="custom"',
             })
             .optional(),
         searchStrategy: z =>
           z
-            .string({ description: '"fixed" (default), "grid", "random", or "bayesian"' })
+            .string({
+              description: '"fixed" (default), "grid", "random", or "bayesian"',
+            })
             .optional(),
         numTrials: z =>
-          z.number({ description: 'Trial budget — searchStrategy=random/bayesian' }).optional(),
+          z
+            .number({
+              description: 'Trial budget — searchStrategy=random/bayesian',
+            })
+            .optional(),
         searchSpaceJson: z =>
           z
             .string({
-              description: 'JSON object mapping hyperparameter name to {choices:[...]} or {low,high} — searchStrategy!=fixed',
+              description:
+                'JSON object mapping hyperparameter name to {choices:[...]} or {low,high} — searchStrategy!=fixed',
             })
             .optional(),
         objectiveMetric: z =>
           z
-            .string({ description: 'Metric name to optimize across trials — searchStrategy!=fixed' })
+            .string({
+              description:
+                'Metric name to optimize across trials — searchStrategy!=fixed',
+            })
             .optional(),
         objectiveDirection: z =>
           z
-            .string({ description: '"maximize" (default) or "minimize" — searchStrategy!=fixed' })
+            .string({
+              description:
+                '"maximize" (default) or "minimize" — searchStrategy!=fixed',
+            })
             .optional(),
         textColumn: z =>
-          z.string({ description: 'Column containing the text to classify — architecture="nlp"' }).optional(),
+          z
+            .string({
+              description:
+                'Column containing the text to classify — architecture="nlp"',
+            })
+            .optional(),
         baseModelName: z =>
           z
-            .string({ description: 'HuggingFace Hub model id to fine-tune — architecture="nlp"' })
+            .string({
+              description:
+                'HuggingFace Hub model id to fine-tune — architecture="nlp"',
+            })
             .optional(),
       },
       output: {
-        workflowName: z => z.string({ description: 'Name of the Argo Workflow that ran' }),
-        phase: z => z.string({ description: 'Terminal phase the workflow finished in' }),
+        workflowName: z =>
+          z.string({ description: 'Name of the Argo Workflow that ran' }),
+        phase: z =>
+          z.string({ description: 'Terminal phase the workflow finished in' }),
         modelVersion: z =>
           z.string({
             description:
@@ -301,36 +405,40 @@ export function createTriggerTrainingAction({
     async handler(ctx) {
       const baseUrl = getBaseUrl(config);
       const { workflow_name: workflowName } =
-        await postJson<TriggerTrainingResponse>(`${baseUrl}/trigger-training`, {
-          model_name: ctx.input.modelName,
-          dataset_uri: ctx.input.datasetUri,
-          task_type: ctx.input.taskType,
-          architecture: ctx.input.architecture,
-          algorithm: ctx.input.algorithm,
-          target_column: ctx.input.targetColumn,
-          id_columns: ctx.input.idColumns,
-          time_column: ctx.input.timeColumn,
-          base_model_uri: ctx.input.baseModelUri,
-          hidden_layers: ctx.input.hiddenLayers,
-          dropout: ctx.input.dropout,
-          sequence_length: ctx.input.sequenceLength,
-          num_layers: ctx.input.numLayers,
-          hidden_size: ctx.input.hiddenSize,
-          learning_rate: ctx.input.learningRate,
-          epochs: ctx.input.epochs,
-          batch_size: ctx.input.batchSize,
-          optimizer: ctx.input.optimizer,
-          code_repo_url: ctx.input.codeRepoUrl,
-          entrypoint_path: ctx.input.entrypointPath,
-          custom_config: ctx.input.customConfig,
-          search_strategy: ctx.input.searchStrategy,
-          num_trials: ctx.input.numTrials,
-          search_space_json: ctx.input.searchSpaceJson,
-          objective_metric: ctx.input.objectiveMetric,
-          objective_direction: ctx.input.objectiveDirection,
-          text_column: ctx.input.textColumn,
-          base_model_name: ctx.input.baseModelName,
-        }, tokenService);
+        await postJson<TriggerTrainingResponse>(
+          `${baseUrl}/trigger-training`,
+          {
+            model_name: ctx.input.modelName,
+            dataset_uri: ctx.input.datasetUri,
+            task_type: ctx.input.taskType,
+            architecture: ctx.input.architecture,
+            algorithm: ctx.input.algorithm,
+            target_column: ctx.input.targetColumn,
+            id_columns: ctx.input.idColumns,
+            time_column: ctx.input.timeColumn,
+            base_model_uri: ctx.input.baseModelUri,
+            hidden_layers: ctx.input.hiddenLayers,
+            dropout: ctx.input.dropout,
+            sequence_length: ctx.input.sequenceLength,
+            num_layers: ctx.input.numLayers,
+            hidden_size: ctx.input.hiddenSize,
+            learning_rate: ctx.input.learningRate,
+            epochs: ctx.input.epochs,
+            batch_size: ctx.input.batchSize,
+            optimizer: ctx.input.optimizer,
+            code_repo_url: ctx.input.codeRepoUrl,
+            entrypoint_path: ctx.input.entrypointPath,
+            custom_config: ctx.input.customConfig,
+            search_strategy: ctx.input.searchStrategy,
+            num_trials: ctx.input.numTrials,
+            search_space_json: ctx.input.searchSpaceJson,
+            objective_metric: ctx.input.objectiveMetric,
+            objective_direction: ctx.input.objectiveDirection,
+            text_column: ctx.input.textColumn,
+            base_model_name: ctx.input.baseModelName,
+          },
+          tokenService,
+        );
       ctx.logger.info(`Triggered training workflow "${workflowName}"`);
 
       const deadline = Date.now() + pollTimeoutMs;
@@ -343,7 +451,9 @@ export function createTriggerTrainingAction({
         );
         if (!response.ok) {
           throw new Error(
-            `GET workflow status failed with ${response.status}: ${await response.text()}`,
+            `GET workflow status failed with ${
+              response.status
+            }: ${await response.text()}`,
           );
         }
         status = (await response.json()) as WorkflowStatusResponse;
@@ -354,12 +464,17 @@ export function createTriggerTrainingAction({
           );
           lastLoggedPhase = status.phase;
         }
-        if (status.phase !== null && TERMINAL_PHASES.has(status.phase as TerminalPhase)) {
+        if (
+          status.phase !== null &&
+          TERMINAL_PHASES.has(status.phase as TerminalPhase)
+        ) {
           break;
         }
         if (Date.now() >= deadline) {
           throw new Error(
-            `Timed out after ${pollTimeoutMs / 1000}s waiting for workflow "${workflowName}" to finish`,
+            `Timed out after ${
+              pollTimeoutMs / 1000
+            }s waiting for workflow "${workflowName}" to finish`,
           );
         }
         await sleep(pollIntervalMs);
@@ -368,18 +483,24 @@ export function createTriggerTrainingAction({
       const finalPhase = status.phase;
       if (finalPhase !== 'Succeeded') {
         throw new Error(
-          `Workflow "${workflowName}" ended in phase "${finalPhase}": ${status.message ?? 'no message'}`,
+          `Workflow "${workflowName}" ended in phase "${finalPhase}": ${
+            status.message ?? 'no message'
+          }`,
         );
       }
 
       // register-step registers async — fetch the resulting version now.
       const latestVersionResponse = await fetch(
-        `${baseUrl}/models/${encodeURIComponent(ctx.input.modelName)}/latest-version`,
+        `${baseUrl}/models/${encodeURIComponent(
+          ctx.input.modelName,
+        )}/latest-version`,
         { headers: await authHeaders(tokenService) },
       );
       if (!latestVersionResponse.ok) {
         throw new Error(
-          `GET latest model version failed with ${latestVersionResponse.status}: ${await latestVersionResponse.text()}`,
+          `GET latest model version failed with ${
+            latestVersionResponse.status
+          }: ${await latestVersionResponse.text()}`,
         );
       }
       const { version: modelVersion } =
@@ -397,51 +518,73 @@ export function createTriggerTrainingAction({
  * (services/orchestration-api/data_quality/) before training starts, and
  * fails fast (no Argo compute spent) if any check comes back blocking.
  */
-export function createValidateDatasetAction({ config, tokenService }: ActionDeps) {
+export function createValidateDatasetAction({
+  config,
+  tokenService,
+}: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:validate-dataset',
     description:
       'Runs data quality checks against the dataset and fails the step on any blocking result.',
     schema: {
       input: {
-        datasetUri: z => z.string({ description: 'URI of the dataset to validate' }),
+        datasetUri: z =>
+          z.string({ description: 'URI of the dataset to validate' }),
         taskType: z =>
-          z.string({ description: 'classification, regression, or clustering' }),
+          z.string({
+            description: 'classification, regression, or clustering',
+          }),
         targetColumn: z =>
           z
-            .string({ description: 'Label column — required unless taskType is clustering' })
+            .string({
+              description:
+                'Label column — required unless taskType is clustering',
+            })
             .optional(),
-        timeColumn: z => z.string({ description: 'Date/time column, if the data is ordered' }).optional(),
+        timeColumn: z =>
+          z
+            .string({ description: 'Date/time column, if the data is ordered' })
+            .optional(),
       },
       output: {
         results: z =>
-          z
-            .array(
-              z.object({
-                checkName: z.string(),
-                severity: z.enum(['blocking', 'warning', 'info']),
-                message: z.string(),
-              }),
-              { description: 'One entry per check that ran, grouped by severity in the log' },
-            ),
+          z.array(
+            z.object({
+              checkName: z.string(),
+              severity: z.enum(['blocking', 'warning', 'info']),
+              message: z.string(),
+            }),
+            {
+              description:
+                'One entry per check that ran, grouped by severity in the log',
+            },
+          ),
       },
     },
     async handler(ctx) {
       const baseUrl = getBaseUrl(config);
-      const results = await postJson<CheckResultItem[]>(`${baseUrl}/datasets/validate`, {
-        dataset_uri: ctx.input.datasetUri,
-        task_type: ctx.input.taskType,
-        target_column: ctx.input.targetColumn,
-        time_column: ctx.input.timeColumn,
-      }, tokenService);
+      const results = await postJson<CheckResultItem[]>(
+        `${baseUrl}/datasets/validate`,
+        {
+          dataset_uri: ctx.input.datasetUri,
+          task_type: ctx.input.taskType,
+          target_column: ctx.input.targetColumn,
+          time_column: ctx.input.timeColumn,
+        },
+        tokenService,
+      );
 
       for (const result of results) {
-        ctx.logger.info(`[${result.severity}] ${result.check_name}: ${result.message}`);
+        ctx.logger.info(
+          `[${result.severity}] ${result.check_name}: ${result.message}`,
+        );
       }
 
       const blocking = results.filter(r => r.severity === 'blocking');
       if (blocking.length > 0) {
-        const summary = blocking.map(r => `${r.check_name}: ${r.message}`).join('; ');
+        const summary = blocking
+          .map(r => `${r.check_name}: ${r.message}`)
+          .join('; ');
         throw new Error(`Dataset validation failed (blocking): ${summary}`);
       }
 
@@ -463,22 +606,34 @@ export function createValidateDatasetAction({ config, tokenService }: ActionDeps
  * `orchestration:trigger-training`. Opt-in — most Golden Path #1 runs skip
  * this step entirely.
  */
-export function createEnrichDatasetFeaturesAction({ config, tokenService }: ActionDeps) {
+export function createEnrichDatasetFeaturesAction({
+  config,
+  tokenService,
+}: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:enrich-dataset-features',
     description: "Merges precomputed Feast features into a dataset's rows.",
     schema: {
       input: {
-        datasetUri: z => z.string({ description: 'URI of the dataset to enrich' }),
+        datasetUri: z =>
+          z.string({ description: 'URI of the dataset to enrich' }),
         entityIdColumn: z =>
-          z.string({ description: 'Column identifying each row for the Feast lookup, e.g. "transaction_id"' }),
+          z.string({
+            description:
+              'Column identifying each row for the Feast lookup, e.g. "transaction_id"',
+          }),
         featureNames: z =>
           z.array(z.string(), {
-            description: 'Feast "<feature_view>:<feature>" references, e.g. "transaction_features:amount"',
+            description:
+              'Feast "<feature_view>:<feature>" references, e.g. "transaction_features:amount"',
           }),
       },
       output: {
-        datasetUri: z => z.string({ description: 'URI of the enriched dataset, with feature columns merged in' }),
+        datasetUri: z =>
+          z.string({
+            description:
+              'URI of the enriched dataset, with feature columns merged in',
+          }),
       },
     },
     async handler(ctx) {
@@ -504,42 +659,59 @@ export function createEnrichDatasetFeaturesAction({ config, tokenService }: Acti
  * register-step calls — this is the entry point for a model trained
  * outside any Golden Path (e.g. interactively in AI Notebook).
  */
-export function createRegisterModelAction({ config, tokenService }: ActionDeps) {
+export function createRegisterModelAction({
+  config,
+  tokenService,
+}: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:register-model',
-    description: "Registers an existing MLflow run's logged model into the Model Registry.",
+    description:
+      "Registers an existing MLflow run's logged model into the Model Registry.",
     schema: {
       input: {
-        modelName: z => z.string({ description: 'Name to register the model under' }),
+        modelName: z =>
+          z.string({ description: 'Name to register the model under' }),
         artifactUri: z =>
           z.string({
             description:
               'Logged model URI, e.g. "runs:/<run_id>/<artifact_path>" — printed as model_info.model_uri by mlflow.<flavor>.log_model()',
           }),
         taskType: z =>
-          z.string({ description: 'classification, regression, or clustering' }),
+          z.string({
+            description: 'classification, regression, or clustering',
+          }),
         datasetVersion: z =>
           z
             .string({
-              description: 'Dataset version — a DVC digest if available, otherwise any free-text identifier',
+              description:
+                'Dataset version — a DVC digest if available, otherwise any free-text identifier',
             })
             .optional(),
       },
       output: {
         modelName: z => z.string({ description: 'Registered model name' }),
         modelVersion: z =>
-          z.string({ description: 'MLflow version number assigned to the new registration' }),
+          z.string({
+            description:
+              'MLflow version number assigned to the new registration',
+          }),
       },
     },
     async handler(ctx) {
       const baseUrl = getBaseUrl(config);
-      const result = await postJson<RegisterModelResponse>(`${baseUrl}/models/register`, {
-        name: ctx.input.modelName,
-        artifact_uri: ctx.input.artifactUri,
-        task_type: ctx.input.taskType,
-        dataset_version: ctx.input.datasetVersion,
-      }, tokenService);
-      ctx.logger.info(`Registered "${result.name}" as version ${result.version}`);
+      const result = await postJson<RegisterModelResponse>(
+        `${baseUrl}/models/register`,
+        {
+          name: ctx.input.modelName,
+          artifact_uri: ctx.input.artifactUri,
+          task_type: ctx.input.taskType,
+          dataset_version: ctx.input.datasetVersion,
+        },
+        tokenService,
+      );
+      ctx.logger.info(
+        `Registered "${result.name}" as version ${result.version}`,
+      );
       ctx.output('modelName', result.name);
       ctx.output('modelVersion', result.version);
     },
@@ -553,26 +725,36 @@ export function createRegisterModelAction({ config, tokenService }: ActionDeps) 
 export function createModelSummaryAction({ config, tokenService }: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:model-summary',
-    description: 'Fetches a registered model version — task type, metrics, and tags.',
+    description:
+      'Fetches a registered model version — task type, metrics, and tags.',
     schema: {
       input: {
         modelName: z => z.string({ description: 'Registered model name' }),
-        modelVersion: z => z.string({ description: 'Registered model version' }),
+        modelVersion: z =>
+          z.string({ description: 'Registered model version' }),
       },
       output: {
-        taskType: z => z.string({ description: 'Task type tag set at register time' }).nullable(),
-        metrics: z => z.record(z.number(), { description: 'Logged training metrics' }),
+        taskType: z =>
+          z
+            .string({ description: 'Task type tag set at register time' })
+            .nullable(),
+        metrics: z =>
+          z.record(z.number(), { description: 'Logged training metrics' }),
       },
     },
     async handler(ctx) {
       const baseUrl = getBaseUrl(config);
       const response = await fetch(
-        `${baseUrl}/models/${encodeURIComponent(ctx.input.modelName)}/${encodeURIComponent(ctx.input.modelVersion)}/summary`,
+        `${baseUrl}/models/${encodeURIComponent(
+          ctx.input.modelName,
+        )}/${encodeURIComponent(ctx.input.modelVersion)}/summary`,
         { headers: await authHeaders(tokenService) },
       );
       if (!response.ok) {
         throw new Error(
-          `GET model version summary failed with ${response.status}: ${await response.text()}`,
+          `GET model version summary failed with ${
+            response.status
+          }: ${await response.text()}`,
         );
       }
       const summary = (await response.json()) as ModelVersionSummaryResponse;
@@ -596,12 +778,18 @@ export function createPolicyCheckAction({ config, tokenService }: ActionDeps) {
     schema: {
       input: {
         modelName: z => z.string({ description: 'Registered model name' }),
-        modelVersion: z => z.string({ description: 'Registered model version' }),
+        modelVersion: z =>
+          z.string({ description: 'Registered model version' }),
       },
       output: {
-        passed: z => z.boolean({ description: 'Whether the model passed the Evaluate Gate' }),
+        passed: z =>
+          z.boolean({
+            description: 'Whether the model passed the Evaluate Gate',
+          }),
         metrics: z =>
-          z.record(z.number(), { description: 'Model metrics compared against thresholds' }),
+          z.record(z.number(), {
+            description: 'Model metrics compared against thresholds',
+          }),
       },
     },
     async handler(ctx) {
@@ -633,7 +821,10 @@ export function createPolicyCheckAction({ config, tokenService }: ActionDeps) {
  * InferenceService manifest and writes it into the Scaffolder workspace so
  * a later `publish:github:pull-request` step can commit it.
  */
-export function createPrepareDeployManifestAction({ config, tokenService }: ActionDeps) {
+export function createPrepareDeployManifestAction({
+  config,
+  tokenService,
+}: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:prepare-deploy-manifest',
     description:
@@ -641,21 +832,26 @@ export function createPrepareDeployManifestAction({ config, tokenService }: Acti
     schema: {
       input: {
         modelName: z => z.string({ description: 'Registered model name' }),
-        modelVersion: z => z.string({ description: 'Registered model version' }),
+        modelVersion: z =>
+          z.string({ description: 'Registered model version' }),
         trafficStrategy: z =>
           z
             .enum(['direct', 'canary', 'ab', 'blue-green'], {
-              description: 'How traffic moves to the new version — canary/ab/blue-green require a prior deploy',
+              description:
+                'How traffic moves to the new version — canary/ab/blue-green require a prior deploy',
             })
             .optional(),
         trafficPercent: z =>
           z
-            .number({ description: 'Required unless trafficStrategy is direct/unset' })
+            .number({
+              description: 'Required unless trafficStrategy is direct/unset',
+            })
             .optional(),
         releaseStrategy: z =>
           z
             .enum(['pr-gated', 'instant'], {
-              description: 'pr-gated (default) opens a PR; instant deploys directly, no PR',
+              description:
+                'pr-gated (default) opens a PR; instant deploys directly, no PR',
             })
             .optional(),
         action: z =>
@@ -674,10 +870,14 @@ export function createPrepareDeployManifestAction({ config, tokenService }: Acti
             .optional(),
       },
       output: {
-        filePath: z => z.string({ description: 'Workspace-relative path the manifest was written to' }),
+        filePath: z =>
+          z.string({
+            description: 'Workspace-relative path the manifest was written to',
+          }),
         deployed: z =>
           z.boolean({
-            description: 'True when releaseStrategy=instant already deployed it — no PR to publish',
+            description:
+              'True when releaseStrategy=instant already deployed it — no PR to publish',
           }),
       },
     },
@@ -687,15 +887,19 @@ export function createPrepareDeployManifestAction({ config, tokenService }: Acti
         file_name: fileName,
         content,
         deployed,
-      } = await postJson<PrepareDeployResponse>(`${baseUrl}/deploy-model/prepare`, {
-        model_name: ctx.input.modelName,
-        model_version: ctx.input.modelVersion,
-        traffic_strategy: ctx.input.trafficStrategy,
-        traffic_percent: ctx.input.trafficPercent,
-        release_strategy: ctx.input.releaseStrategy,
-        action: ctx.input.action,
-        enable_prediction_logging: ctx.input.enablePredictionLogging,
-      }, tokenService);
+      } = await postJson<PrepareDeployResponse>(
+        `${baseUrl}/deploy-model/prepare`,
+        {
+          model_name: ctx.input.modelName,
+          model_version: ctx.input.modelVersion,
+          traffic_strategy: ctx.input.trafficStrategy,
+          traffic_percent: ctx.input.trafficPercent,
+          release_strategy: ctx.input.releaseStrategy,
+          action: ctx.input.action,
+          enable_prediction_logging: ctx.input.enablePredictionLogging,
+        },
+        tokenService,
+      );
       const absolutePath = path.join(ctx.workspacePath, fileName);
       await fs.mkdir(path.dirname(absolutePath), { recursive: true });
       await fs.writeFile(absolutePath, content, 'utf-8');
@@ -718,28 +922,44 @@ export function createPrepareDeployManifestAction({ config, tokenService }: Acti
  * `orchestration:prepare-deploy-manifest` but a separate endpoint since
  * that one hardcodes the MLflow Model Registry URI formula.
  */
-export function createPrepareLlmDeployManifestAction({ config, tokenService }: ActionDeps) {
+export function createPrepareLlmDeployManifestAction({
+  config,
+  tokenService,
+}: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:prepare-llm-deploy-manifest',
     description:
       'Renders the KServe InferenceService manifest for a self-hosted LLM and writes it into the workspace.',
     schema: {
       input: {
-        modelName: z => z.string({ description: 'Name to deploy the LLM under' }),
+        modelName: z =>
+          z.string({ description: 'Name to deploy the LLM under' }),
         huggingFaceModelId: z =>
-          z.string({ description: 'HuggingFace Hub model id, e.g. "meta-llama/Llama-3.1-8B-Instruct"' }),
+          z.string({
+            description:
+              'HuggingFace Hub model id, e.g. "meta-llama/Llama-3.1-8B-Instruct"',
+          }),
         runtime: z =>
-          z.string({ description: '"vllm" (default) — see llm_serving/registry.py' }).optional(),
+          z
+            .string({
+              description: '"vllm" (default) — see llm_serving/registry.py',
+            })
+            .optional(),
         gpuType: z =>
           z.enum(['L4', 'L40S', 'A100', 'H100', 'H200', 'B200'], {
             description: 'GPU type to request',
           }),
         gpuCount: z =>
-          z.enum(['1', '2', '4', '8'], { description: 'GPU count — also used as tensor-parallel-size' }).optional(),
+          z
+            .enum(['1', '2', '4', '8'], {
+              description: 'GPU count — also used as tensor-parallel-size',
+            })
+            .optional(),
         quantization: z =>
           z
             .enum(['none', 'fp8', 'int8', 'int4-awq'], {
-              description: 'Not every gpuType supports every value — see llm_serving/registry.py',
+              description:
+                'Not every gpuType supports every value — see llm_serving/registry.py',
             })
             .optional(),
         maxContextLength: z =>
@@ -747,23 +967,28 @@ export function createPrepareLlmDeployManifestAction({ config, tokenService }: A
         trafficStrategy: z =>
           z
             .enum(['direct', 'canary', 'ab', 'blue-green'], {
-              description: 'How traffic moves to the new version — canary/ab/blue-green require a prior deploy',
+              description:
+                'How traffic moves to the new version — canary/ab/blue-green require a prior deploy',
             })
             .optional(),
         trafficPercent: z =>
           z
-            .number({ description: 'Required unless trafficStrategy is direct/unset' })
+            .number({
+              description: 'Required unless trafficStrategy is direct/unset',
+            })
             .optional(),
         releaseStrategy: z =>
           z
             .enum(['pr-gated', 'instant'], {
-              description: 'pr-gated (default) opens a PR; instant deploys directly, no PR',
+              description:
+                'pr-gated (default) opens a PR; instant deploys directly, no PR',
             })
             .optional(),
         environment: z =>
           z
             .enum(['dev', 'staging', 'prod'], {
-              description: 'Target environment — instant only allowed on dev (backend guardrail)',
+              description:
+                'Target environment — instant only allowed on dev (backend guardrail)',
             })
             .optional(),
         hfTokenSecretRef: z =>
@@ -775,10 +1000,14 @@ export function createPrepareLlmDeployManifestAction({ config, tokenService }: A
             .optional(),
       },
       output: {
-        filePath: z => z.string({ description: 'Workspace-relative path the manifest was written to' }),
+        filePath: z =>
+          z.string({
+            description: 'Workspace-relative path the manifest was written to',
+          }),
         deployed: z =>
           z.boolean({
-            description: 'True when releaseStrategy=instant already deployed it — no PR to publish',
+            description:
+              'True when releaseStrategy=instant already deployed it — no PR to publish',
           }),
       },
     },
@@ -788,20 +1017,26 @@ export function createPrepareLlmDeployManifestAction({ config, tokenService }: A
         file_name: fileName,
         content,
         deployed,
-      } = await postJson<PrepareLlmDeployResponse>(`${baseUrl}/llm-deploy/prepare`, {
-        model_name: ctx.input.modelName,
-        huggingface_model_id: ctx.input.huggingFaceModelId,
-        runtime: ctx.input.runtime,
-        gpu_type: ctx.input.gpuType,
-        gpu_count: ctx.input.gpuCount ? Number(ctx.input.gpuCount) : undefined,
-        quantization: ctx.input.quantization,
-        max_context_length: ctx.input.maxContextLength,
-        traffic_strategy: ctx.input.trafficStrategy,
-        traffic_percent: ctx.input.trafficPercent,
-        release_strategy: ctx.input.releaseStrategy,
-        environment: ctx.input.environment,
-        hf_token_secret_ref: ctx.input.hfTokenSecretRef,
-      }, tokenService);
+      } = await postJson<PrepareLlmDeployResponse>(
+        `${baseUrl}/llm-deploy/prepare`,
+        {
+          model_name: ctx.input.modelName,
+          huggingface_model_id: ctx.input.huggingFaceModelId,
+          runtime: ctx.input.runtime,
+          gpu_type: ctx.input.gpuType,
+          gpu_count: ctx.input.gpuCount
+            ? Number(ctx.input.gpuCount)
+            : undefined,
+          quantization: ctx.input.quantization,
+          max_context_length: ctx.input.maxContextLength,
+          traffic_strategy: ctx.input.trafficStrategy,
+          traffic_percent: ctx.input.trafficPercent,
+          release_strategy: ctx.input.releaseStrategy,
+          environment: ctx.input.environment,
+          hf_token_secret_ref: ctx.input.hfTokenSecretRef,
+        },
+        tokenService,
+      );
       const absolutePath = path.join(ctx.workspacePath, fileName);
       await fs.mkdir(path.dirname(absolutePath), { recursive: true });
       await fs.writeFile(absolutePath, content, 'utf-8');
@@ -823,27 +1058,40 @@ export function createPrepareLlmDeployManifestAction({ config, tokenService }: A
 export function createRecordDeployAction({ config, tokenService }: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:record-deploy',
-    description: 'Records the deploy pull request URL against the model version.',
+    description:
+      'Records the deploy pull request URL against the model version.',
     schema: {
       input: {
         modelName: z => z.string({ description: 'Registered model name' }),
-        modelVersion: z => z.string({ description: 'Registered model version' }),
+        modelVersion: z =>
+          z.string({ description: 'Registered model version' }),
         prUrl: z =>
           z
-            .string({ description: 'URL of the deploy pull request — omitted for an instant release' })
+            .string({
+              description:
+                'URL of the deploy pull request — omitted for an instant release',
+            })
             .optional(),
       },
       output: {
-        recorded: z => z.boolean({ description: 'Always true on success — an HTTP error throws instead' }),
+        recorded: z =>
+          z.boolean({
+            description:
+              'Always true on success — an HTTP error throws instead',
+          }),
       },
     },
     async handler(ctx) {
       const baseUrl = getBaseUrl(config);
-      await postJson<RecordDeployResponse>(`${baseUrl}/deploy-model/record`, {
-        model_name: ctx.input.modelName,
-        model_version: ctx.input.modelVersion,
-        pr_url: ctx.input.prUrl,
-      }, tokenService);
+      await postJson<RecordDeployResponse>(
+        `${baseUrl}/deploy-model/record`,
+        {
+          model_name: ctx.input.modelName,
+          model_version: ctx.input.modelVersion,
+          pr_url: ctx.input.prUrl,
+        },
+        tokenService,
+      );
       ctx.output('recorded', true);
     },
   });
@@ -859,22 +1107,27 @@ export function createRecordDeployAction({ config, tokenService }: ActionDeps) {
 export function createPromoteModelAction({ config, tokenService }: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:promote-model',
-    description: 'Promotes the model currently bound in the source environment to the next one.',
+    description:
+      'Promotes the model currently bound in the source environment to the next one.',
     schema: {
       input: {
         modelName: z => z.string({ description: 'Registered model name' }),
         targetEnvironment: z =>
           z.enum(['staging', 'production'], {
-            description: 'staging promotes from development; production promotes from staging',
+            description:
+              'staging promotes from development; production promotes from staging',
           }),
       },
       output: {
         environments: z =>
           z.record(z.string(), z.string().nullable(), {
-            description: 'Release bound in each environment after the promotion',
+            description:
+              'Release bound in each environment after the promotion',
           }),
         prodPendingApproval: z =>
-          z.boolean({ description: 'True when staging is ahead of production' }),
+          z.boolean({
+            description: 'True when staging is ahead of production',
+          }),
       },
     },
     async handler(ctx) {
@@ -901,10 +1154,14 @@ export function createPromoteModelAction({ config, tokenService }: ActionDeps) {
  * adapters/openchoreo_promotion_adapter.py's annotation-based one-level
  * undo — see that module's docstring.
  */
-export function createRollbackPromotionAction({ config, tokenService }: ActionDeps) {
+export function createRollbackPromotionAction({
+  config,
+  tokenService,
+}: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:rollback-promotion',
-    description: 'Undoes the last promotion for one environment, moving it back to what was bound there before.',
+    description:
+      'Undoes the last promotion for one environment, moving it back to what was bound there before.',
     schema: {
       input: {
         modelName: z => z.string({ description: 'Registered model name' }),
@@ -919,7 +1176,9 @@ export function createRollbackPromotionAction({ config, tokenService }: ActionDe
             description: 'Release bound in each environment after the rollback',
           }),
         prodPendingApproval: z =>
-          z.boolean({ description: 'True when staging is ahead of production' }),
+          z.boolean({
+            description: 'True when staging is ahead of production',
+          }),
       },
     },
     async handler(ctx) {
@@ -944,31 +1203,84 @@ export function createRollbackPromotionAction({ config, tokenService }: ActionDe
  * Unlike every other action here, this doesn't poll a workflow to
  * completion — Setup just registers the schedule and returns.
  */
-export function createSetupMonitoringAction({ config, tokenService }: ActionDeps) {
+export function createSetupMonitoringAction({
+  config,
+  tokenService,
+}: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:setup-monitoring',
-    description: 'Registers a periodic Argo CronWorkflow that checks the model for data drift.',
+    description:
+      'Registers a periodic Argo CronWorkflow that checks the model for data drift.',
     schema: {
       input: {
         modelName: z => z.string({ description: 'Registered model name' }),
-        modelVersion: z => z.string({ description: 'Registered model version' }),
+        modelVersion: z =>
+          z.string({ description: 'Registered model version' }),
         referenceDataUri: z =>
           z.string({
-            description: 'file:// CSV path — normally the dataset the model was trained on',
+            description:
+              'file:// CSV path — normally the dataset the model was trained on',
+          }),
+        productionDataSource: z =>
+          z.enum(['managed-prediction-log', 'custom-uri'], {
+            description:
+              'Use the platform-managed prediction log or provide a custom URI',
           }),
         productionDataUri: z =>
+          z
+            .string({
+              description:
+                'file:// CSV path with recent production input data to compare against it',
+            })
+            .optional(),
+        schedule: z =>
           z.string({
-            description: 'file:// CSV path with recent production input data to compare against it',
+            description: 'Cron expression, e.g. "0 0 * * *" for daily',
           }),
-        schedule: z => z.string({ description: 'Cron expression, e.g. "0 0 * * *" for daily' }),
+        monitoringType: z =>
+          z.enum(['data-drift', 'performance-degradation'], {
+            description:
+              'Whether to monitor input distribution or labeled model performance',
+          }),
         driftThreshold: z =>
           z
             .number({
-              description: 'Share of columns (0-1) Evidently must flag as drifted to count as drift',
+              description:
+                'Share of columns (0-1) Evidently must flag as drifted to count as drift',
+            })
+            .optional(),
+        groundTruthDataUri: z =>
+          z
+            .string({
+              description:
+                'file:// CSV path containing delayed labels aligned with production predictions — required for performance-degradation',
+            })
+            .optional(),
+        groundTruthDataSource: z =>
+          z
+            .enum(['managed-label-log', 'custom-uri'], {
+              description:
+                'Use the managed delayed-label stream or provide a custom URI',
+            })
+            .optional(),
+        metricName: z =>
+          z
+            .string({
+              description:
+                'Metric to monitor when monitoringType=performance-degradation, e.g. f1_score or accuracy',
+            })
+            .optional(),
+        minMetricThreshold: z =>
+          z
+            .number({
+              description:
+                'Minimum acceptable performance metric when monitoringType=performance-degradation',
             })
             .optional(),
         onDriftDetected: z =>
-          z.string({ description: '"alert-only" (default) or "auto-retrain"' }).optional(),
+          z
+            .string({ description: '"alert-only" (default) or "auto-retrain"' })
+            .optional(),
         retrainRequestJson: z =>
           z
             .string({
@@ -978,23 +1290,46 @@ export function createSetupMonitoringAction({ config, tokenService }: ActionDeps
             .optional(),
       },
       output: {
-        cronWorkflowName: z => z.string({ description: 'Name of the registered CronWorkflow' }),
+        cronWorkflowName: z =>
+          z.string({ description: 'Name of the registered CronWorkflow' }),
       },
     },
     async handler(ctx) {
       const baseUrl = getBaseUrl(config);
+      const retrainRequestJson =
+        ctx.input.onDriftDetected === 'auto-retrain'
+          ? enrichReactiveRetrainRequest(
+              ctx.input.retrainRequestJson,
+              ctx.input.monitoringType,
+            )
+          : undefined;
       const { cron_workflow_name: cronWorkflowName } =
-        await postJson<SetupMonitoringResponse>(`${baseUrl}/setup-monitoring`, {
-          model_name: ctx.input.modelName,
-          model_version: ctx.input.modelVersion,
-          reference_data_uri: ctx.input.referenceDataUri,
-          production_data_uri: ctx.input.productionDataUri,
-          schedule: ctx.input.schedule,
-          drift_threshold: ctx.input.driftThreshold,
-          on_drift_detected: ctx.input.onDriftDetected,
-          retrain_request_json: ctx.input.retrainRequestJson,
-        }, tokenService);
-      ctx.logger.info(`Registered monitoring CronWorkflow "${cronWorkflowName}"`);
+        await postJson<SetupMonitoringResponse>(
+          `${baseUrl}/setup-monitoring`,
+          {
+            model_name: ctx.input.modelName,
+            model_version: ctx.input.modelVersion,
+            reference_data_uri: ctx.input.referenceDataUri,
+            production_data_source: ctx.input.productionDataSource,
+            production_data_uri: ctx.input.productionDataUri,
+            schedule: ctx.input.schedule,
+            monitoring_type: ctx.input.monitoringType,
+            drift_threshold: ctx.input.driftThreshold,
+            ground_truth_data_uri: ctx.input.groundTruthDataUri,
+            ground_truth_data_source: ctx.input.groundTruthDataSource,
+            metric_name: ctx.input.metricName,
+            min_metric_threshold: ctx.input.minMetricThreshold,
+            on_drift_detected: ctx.input.onDriftDetected,
+            retrain_request_json: retrainRequestJson,
+            failure_webhook_url: config.getOptionalString(
+              'mlops.monitoring.failureWebhookUrl',
+            ),
+          },
+          tokenService,
+        );
+      ctx.logger.info(
+        `Registered monitoring CronWorkflow "${cronWorkflowName}"`,
+      );
       ctx.output('cronWorkflowName', cronWorkflowName);
     },
   });
@@ -1060,26 +1395,39 @@ export function createRagIngestAction({ config, tokenService }: ActionDeps) {
         collection: z => z.string({ description: 'Qdrant collection name' }),
         sourcePaths: z =>
           z.array(z.string(), {
-            description: 'Repo-relative paths to ingest, e.g. ["docs/playbook-ai-delivery-portal.md"]',
+            description:
+              'Repo-relative paths to ingest, e.g. ["docs/playbook-ai-delivery-portal.md"]',
           }),
-        chunkSize: z => z.number({ description: 'Characters per chunk' }).optional(),
+        chunkSize: z =>
+          z.number({ description: 'Characters per chunk' }).optional(),
         chunkOverlap: z =>
-          z.number({ description: 'Character overlap between consecutive chunks' }).optional(),
+          z
+            .number({
+              description: 'Character overlap between consecutive chunks',
+            })
+            .optional(),
       },
       output: {
         indexVersion: z =>
-          z.string({ description: 'Newly registered RAG index version — not active yet' }),
-        chunksIngested: z => z.number({ description: 'Number of chunks embedded and upserted' }),
+          z.string({
+            description: 'Newly registered RAG index version — not active yet',
+          }),
+        chunksIngested: z =>
+          z.number({ description: 'Number of chunks embedded and upserted' }),
       },
     },
     async handler(ctx) {
       const baseUrl = getBaseUrl(config);
-      const result = await postJson<RagIngestResponse>(`${baseUrl}/rag/ingest`, {
-        collection: ctx.input.collection,
-        source_paths: ctx.input.sourcePaths,
-        chunk_size: ctx.input.chunkSize,
-        chunk_overlap: ctx.input.chunkOverlap,
-      }, tokenService);
+      const result = await postJson<RagIngestResponse>(
+        `${baseUrl}/rag/ingest`,
+        {
+          collection: ctx.input.collection,
+          source_paths: ctx.input.sourcePaths,
+          chunk_size: ctx.input.chunkSize,
+          chunk_overlap: ctx.input.chunkOverlap,
+        },
+        tokenService,
+      );
       ctx.logger.info(
         `Ingested ${result.chunks_ingested} chunks into "${result.collection}" as version ${result.index_version}`,
       );
@@ -1101,7 +1449,8 @@ export function createRagEvaluateAction({ config, tokenService }: ActionDeps) {
     schema: {
       input: {
         collection: z => z.string({ description: 'Qdrant collection name' }),
-        indexVersion: z => z.string({ description: 'RAG index version to evaluate' }),
+        indexVersion: z =>
+          z.string({ description: 'RAG index version to evaluate' }),
         evalCases: z =>
           z.array(z.string(), {
             description: 'Questions to run through the LLM judge',
@@ -1116,9 +1465,15 @@ export function createRagEvaluateAction({ config, tokenService }: ActionDeps) {
       },
       output: {
         passed: z => z.boolean({ description: 'True when pass_rate >= 0.8' }),
-        passRate: z => z.number({ description: 'Fraction of eval_cases that passed the gate' }),
+        passRate: z =>
+          z.number({
+            description: 'Fraction of eval_cases that passed the gate',
+          }),
         totalTokens: z =>
-          z.number({ description: 'Total tokens across all eval_cases\' answer-generation calls' }),
+          z.number({
+            description:
+              "Total tokens across all eval_cases' answer-generation calls",
+          }),
         totalCostUsd: z =>
           z
             .number({
@@ -1130,12 +1485,16 @@ export function createRagEvaluateAction({ config, tokenService }: ActionDeps) {
     },
     async handler(ctx) {
       const baseUrl = getBaseUrl(config);
-      const result = await postJson<RagEvaluateResponse>(`${baseUrl}/rag/evaluate`, {
-        collection: ctx.input.collection,
-        index_version: ctx.input.indexVersion,
-        eval_cases: ctx.input.evalCases.map(question => ({ question })),
-        model: ctx.input.model,
-      }, tokenService);
+      const result = await postJson<RagEvaluateResponse>(
+        `${baseUrl}/rag/evaluate`,
+        {
+          collection: ctx.input.collection,
+          index_version: ctx.input.indexVersion,
+          eval_cases: ctx.input.evalCases.map(question => ({ question })),
+          model: ctx.input.model,
+        },
+        tokenService,
+      );
       ctx.logger.info(
         `RAG evaluate: passed=${result.passed} pass_rate=${result.pass_rate} total_tokens=${result.total_tokens} total_cost_usd=${result.total_cost_usd}`,
       );
@@ -1158,19 +1517,29 @@ export function createRagActivateAction({ config, tokenService }: ActionDeps) {
     schema: {
       input: {
         collection: z => z.string({ description: 'Qdrant collection name' }),
-        indexVersion: z => z.string({ description: 'RAG index version to activate' }),
+        indexVersion: z =>
+          z.string({ description: 'RAG index version to activate' }),
       },
       output: {
-        activeVersion: z => z.string({ description: 'The version now active for this collection' }),
+        activeVersion: z =>
+          z.string({
+            description: 'The version now active for this collection',
+          }),
       },
     },
     async handler(ctx) {
       const baseUrl = getBaseUrl(config);
-      const result = await postJson<RagActivateResponse>(`${baseUrl}/rag/activate`, {
-        collection: ctx.input.collection,
-        index_version: ctx.input.indexVersion,
-      }, tokenService);
-      ctx.logger.info(`Activated RAG index "${result.collection}" version ${result.active_version}`);
+      const result = await postJson<RagActivateResponse>(
+        `${baseUrl}/rag/activate`,
+        {
+          collection: ctx.input.collection,
+          index_version: ctx.input.indexVersion,
+        },
+        tokenService,
+      );
+      ctx.logger.info(
+        `Activated RAG index "${result.collection}" version ${result.active_version}`,
+      );
       ctx.output('activeVersion', result.active_version);
     },
   });
@@ -1186,21 +1555,31 @@ export function createDraftPromptAction({ config, tokenService }: ActionDeps) {
     schema: {
       input: {
         name: z => z.string({ description: 'Persona key, e.g. "mlops"' }),
-        persona: z => z.string({ description: 'Display name, e.g. "MLOps Assistant"' }),
+        persona: z =>
+          z.string({ description: 'Display name, e.g. "MLOps Assistant"' }),
         content: z => z.string({ description: 'System prompt content' }),
       },
       output: {
-        version: z => z.string({ description: 'Newly registered prompt version — not active yet' }),
+        version: z =>
+          z.string({
+            description: 'Newly registered prompt version — not active yet',
+          }),
       },
     },
     async handler(ctx) {
       const baseUrl = getBaseUrl(config);
-      const result = await postJson<DraftPromptResponse>(`${baseUrl}/prompts`, {
-        name: ctx.input.name,
-        persona: ctx.input.persona,
-        content: ctx.input.content,
-      }, tokenService);
-      ctx.logger.info(`Drafted prompt "${result.name}" version ${result.version}`);
+      const result = await postJson<DraftPromptResponse>(
+        `${baseUrl}/prompts`,
+        {
+          name: ctx.input.name,
+          persona: ctx.input.persona,
+          content: ctx.input.content,
+        },
+        tokenService,
+      );
+      ctx.logger.info(
+        `Drafted prompt "${result.name}" version ${result.version}`,
+      );
       ctx.output('version', result.version);
     },
   });
@@ -1210,7 +1589,10 @@ export function createDraftPromptAction({ config, tokenService }: ActionDeps) {
  * `orchestration:evaluate-prompt` — runs the LLM-as-judge Evaluate Gate
  * against a prompt version and reports the pass rate.
  */
-export function createEvaluatePromptAction({ config, tokenService }: ActionDeps) {
+export function createEvaluatePromptAction({
+  config,
+  tokenService,
+}: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:evaluate-prompt',
     description:
@@ -1233,9 +1615,15 @@ export function createEvaluatePromptAction({ config, tokenService }: ActionDeps)
       },
       output: {
         passed: z => z.boolean({ description: 'True when pass_rate >= 0.8' }),
-        passRate: z => z.number({ description: 'Fraction of eval_cases that passed the gate' }),
+        passRate: z =>
+          z.number({
+            description: 'Fraction of eval_cases that passed the gate',
+          }),
         totalTokens: z =>
-          z.number({ description: 'Total tokens across all eval_cases\' answer-generation calls' }),
+          z.number({
+            description:
+              "Total tokens across all eval_cases' answer-generation calls",
+          }),
         totalCostUsd: z =>
           z
             .number({
@@ -1271,7 +1659,10 @@ export function createEvaluatePromptAction({ config, tokenService }: ActionDeps)
  * `orchestration:activate-prompt` — activates a prompt version;
  * routers/chat.py starts using it immediately.
  */
-export function createActivatePromptAction({ config, tokenService }: ActionDeps) {
+export function createActivatePromptAction({
+  config,
+  tokenService,
+}: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:activate-prompt',
     description: 'Activates a prompt version for use by the chat endpoint.',
@@ -1281,7 +1672,8 @@ export function createActivatePromptAction({ config, tokenService }: ActionDeps)
         version: z => z.string({ description: 'Prompt version to activate' }),
       },
       output: {
-        activeVersion: z => z.string({ description: 'The version now active for this persona' }),
+        activeVersion: z =>
+          z.string({ description: 'The version now active for this persona' }),
       },
     },
     async handler(ctx) {
@@ -1291,7 +1683,9 @@ export function createActivatePromptAction({ config, tokenService }: ActionDeps)
         { version: ctx.input.version },
         tokenService,
       );
-      ctx.logger.info(`Activated prompt "${result.name}" version ${result.active_version}`);
+      ctx.logger.info(
+        `Activated prompt "${result.name}" version ${result.active_version}`,
+      );
       ctx.output('activeVersion', result.active_version);
     },
   });

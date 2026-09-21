@@ -2,7 +2,7 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: setup-model-monitoring
-  title: "Set Up Model Monitoring"
+  title: 'Set Up Model Monitoring'
   description: >
     Schedules recurring drift checks between production and training data,
     logged to MLflow, with optional auto-retraining.
@@ -15,13 +15,14 @@ spec:
   type: service
 
   parameters:
-    - title: Model to monitor
+    - title: Model and monitoring signal
       required:
         - modelName
         - modelVersion
         - referenceDataUri
-        - productionDataUri
-        - schedule
+        - productionDataSource
+        - schedulePreset
+        - monitoringType
       properties:
         modelName:
           title: Model name
@@ -34,31 +35,46 @@ spec:
           title: Reference (training) data URI
           type: string
           description: >
-            A file:// CSV path — normally the same datasetUri/
-            interactionsUri the model was trained on.
-        productionDataUri:
-          title: Recent production data URI
+            Select the training dataset used by this model. The platform uses
+            it as the stable baseline for comparison.
+        productionDataSource:
+          title: Production data source
           type: string
+          oneOf:
+            - const: managed-prediction-log
+              title: Platform-managed prediction log (recommended)
+            - const: custom-uri
+              title: Custom URI (advanced)
+          default: managed-prediction-log
           description: >
-            A file:// CSV path with recent real input data to compare
-            against the reference data. Setting up automatic logging of
-            live serving inputs into this file is a separate, not-yet-
-            built piece — for now, point this at wherever your team
-            already collects a sample of recent production inputs.
-        schedule:
-          title: Schedule (cron expression)
+            The recommended option reads data automatically logged by the
+            deployed model. Choose Custom URI only when your data is managed
+            outside the platform.
+        schedulePreset:
+          title: Monitoring frequency
           type: string
-          default: "0 0 * * *"
+          oneOf:
+            - const: hourly
+              title: Hourly
+            - const: daily
+              title: Daily (recommended)
+            - const: weekly
+              title: Weekly
+            - const: custom
+              title: Custom cron (advanced)
+          default: daily
+          description: Choose how often the monitoring job should run.
+        monitoringType:
+          title: Detection signal
+          type: string
+          enum:
+            - data-drift
+            - performance-degradation
+          default: data-drift
           description: >
-            Standard 5-field cron. Common presets: "0 * * * *" (hourly),
-            "0 0 * * *" (daily, default), "0 0 * * 0" (weekly).
-        driftThreshold:
-          title: Drift threshold
-          type: number
-          default: 0.5
-          description: >
-            Share of columns Evidently must flag as drifted (0-1) before
-            this counts as "drift detected".
+            Data drift detects changed input distributions. Performance
+            degradation detects a drop in a quality metric once labels are
+            available for recent production predictions.
         onDriftDetected:
           title: On drift detected
           type: string
@@ -69,36 +85,231 @@ spec:
             "auto-retrain" also calls trigger-training automatically —
             real risk if the drift check false-positives, so this is your
             call, not the platform's.
-        retrainRequestJson:
-          title: Retrain request JSON (onDriftDetected=auto-retrain)
-          type: string
-          description: >
-            The exact JSON body you'd POST to trigger-training by hand,
-            e.g. {"model_name": "fraud-detection", "dataset_uri":
-            "file:///mnt/data/fraud-detection-sample.csv", "task_type":
-            "classification", "algorithm": "XGBClassifier"}.
       allOf:
+        - if:
+            properties:
+              schedulePreset:
+                const: hourly
+          then:
+            properties:
+              schedule:
+                const: '0 * * * *'
+            required: [schedule]
+        - if:
+            properties:
+              schedulePreset:
+                const: daily
+          then:
+            properties:
+              schedule:
+                const: '0 0 * * *'
+            required: [schedule]
+        - if:
+            properties:
+              schedulePreset:
+                const: weekly
+          then:
+            properties:
+              schedule:
+                const: '0 0 * * 0'
+            required: [schedule]
+        - if:
+            properties:
+              schedulePreset:
+                const: custom
+          then:
+            properties:
+              schedule:
+                title: Custom cron expression
+                type: string
+                pattern: '^([0-9*/?,LW#-]+\s+){4}[0-9*/?,LW#-]+$'
+                description: Standard 5-field cron expression.
+            required: [schedule]
+        - if:
+            properties:
+              productionDataSource:
+                const: custom-uri
+          then:
+            properties:
+              productionDataUri:
+                title: Custom production data URI
+                type: string
+                description: >
+                  URI containing recent production inputs or predictions,
+                  for example s3://bucket/path or file:///data/production.csv.
+            required:
+              - productionDataUri
+        - if:
+            properties:
+              monitoringType:
+                const: performance-degradation
+          then:
+            properties:
+              groundTruthDataSource:
+                title: Ground-truth source
+                type: string
+                oneOf:
+                  - const: managed-label-log
+                    title: Platform-managed delayed labels (recommended)
+                  - const: custom-uri
+                    title: Custom URI (advanced)
+                default: managed-label-log
+                description: >
+                  Use the managed label stream when production labels are
+                  delivered to the platform after inference.
+              metricName:
+                title: Performance metric
+                type: string
+                oneOf:
+                  - const: f1_score
+                    title: F1-score
+                  - const: accuracy
+                    title: Accuracy
+                  - const: precision
+                    title: Precision
+                  - const: recall
+                    title: Recall
+                  - const: rmse
+                    title: RMSE
+                default: f1_score
+                description: >
+                  Metric to monitor once ground truth is available, for
+                  example f1_score, accuracy, precision, recall, or rmse.
+              minMetricThreshold:
+                title: Minimum acceptable metric
+                type: number
+                default: 0.85
+                minimum: 0
+                maximum: 1
+                description: >
+                  Performance is considered degraded when metricName falls
+                  below this value.
+            required:
+              - groundTruthDataSource
+              - metricName
+              - minMetricThreshold
+        - if:
+            properties:
+              monitoringType:
+                const: performance-degradation
+          then:
+            allOf:
+              - if:
+                  properties:
+                    groundTruthDataSource:
+                      const: custom-uri
+                then:
+                  properties:
+                    groundTruthDataUri:
+                      title: Custom ground-truth data URI
+                      type: string
+                      description: >
+                        URI containing delayed labels aligned with the
+                        production predictions.
+                  required:
+                    - groundTruthDataUri
+        - if:
+            properties:
+              monitoringType:
+                const: data-drift
+          then:
+            properties:
+              driftThreshold:
+                title: Drift threshold (share of columns)
+                type: number
+                default: 0.5
+                minimum: 0
+                maximum: 1
+                description: >
+                  Share of columns Evidently must flag as drifted (0-1)
+                  before this counts as drift detected.
         - if:
             properties:
               onDriftDetected:
                 const: auto-retrain
           then:
+            properties:
+              retrainTaskType:
+                title: Retrain task type
+                type: string
+                enum: [classification, regression]
+                default: classification
+                description: Select the task type used by the training pipeline.
+              retrainAlgorithm:
+                title: Retrain algorithm
+                type: string
+                enum:
+                  - LogisticRegression
+                  - RandomForestClassifier
+                  - GradientBoostingClassifier
+                  - XGBClassifier
+                default: LogisticRegression
+                description: Select an approved algorithm for reactive retraining.
             required:
-              - retrainRequestJson
+              - retrainTaskType
+              - retrainAlgorithm
+
+      ui:field: StepLayout
+      ui:options:
+        groups:
+          - title: Model and data
+            icon: storage
+            fields:
+              - name: modelName
+                width: 6
+                modelNamePicker: true
+              - name: modelVersion
+                width: 6
+                modelVersionPicker: true
+              - name: referenceDataUri
+                datasetPicker: true
+              - name: productionDataSource
+                width: 6
+              - name: productionDataUri
+                width: 6
+              - name: schedulePreset
+                width: 6
+              - name: schedule
+                width: 6
+          - title: Detection signal
+            icon: query_stats
+            fields:
+              - monitoringType
+              - driftThreshold
+              - groundTruthDataSource
+              - groundTruthDataUri
+              - metricName
+              - minMetricThreshold
+          - title: Response
+            icon: notifications
+            fields:
+              - onDriftDetected
+              - retrainTaskType
+              - retrainAlgorithm
 
   steps:
     - id: setup-monitoring
-      name: "Register the monitoring schedule"
+      name: 'Register the monitoring schedule'
       action: orchestration:setup-monitoring
       input:
         modelName: ${{ parameters.modelName }}
         modelVersion: ${{ parameters.modelVersion }}
         referenceDataUri: ${{ parameters.referenceDataUri }}
+        productionDataSource: ${{ parameters.productionDataSource }}
         productionDataUri: ${{ parameters.productionDataUri }}
         schedule: ${{ parameters.schedule }}
+        monitoringType: ${{ parameters.monitoringType }}
         driftThreshold: ${{ parameters.driftThreshold }}
+        groundTruthDataUri: ${{ parameters.groundTruthDataUri }}
+        groundTruthDataSource: ${{ parameters.groundTruthDataSource }}
+        metricName: ${{ parameters.metricName }}
+        minMetricThreshold: ${{ parameters.minMetricThreshold }}
         onDriftDetected: ${{ parameters.onDriftDetected }}
-        retrainRequestJson: ${{ parameters.retrainRequestJson }}
+        retrainRequestJson: >-
+          {"model_name":"${{ parameters.modelName }}","dataset_uri":"${{
+          parameters.referenceDataUri }}","task_type":"${{
+          parameters.retrainTaskType }}","algorithm":"${{
+          parameters.retrainAlgorithm }}"}
 
   output:
     links:
@@ -110,7 +321,9 @@ spec:
           Monitoring scheduled for **${{ parameters.modelName }}** version
           **${{ parameters.modelVersion }}** — CronWorkflow
           `${{ steps['setup-monitoring'].output.cronWorkflowName }}` runs
-          on `${{ parameters.schedule }}`, comparing production data
-          against the reference dataset and logging drift_share to MLflow
-          each time. On drift ≥ **${{ parameters.driftThreshold }}**:
-          **${{ parameters.onDriftDetected }}**.
+          on `${{ parameters.schedule }}` using the
+          **${{ parameters.monitoringType }}** signal. Data-drift uses a
+          drift-share threshold of **${{ parameters.driftThreshold }}**;
+          performance-degradation monitors **${{ parameters.metricName }}**
+          against a minimum of **${{ parameters.minMetricThreshold }}**.
+          Response: **${{ parameters.onDriftDetected }}**.

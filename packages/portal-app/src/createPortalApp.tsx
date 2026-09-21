@@ -33,6 +33,7 @@ import {
 import kubernetesPluginAlpha from '@backstage/plugin-kubernetes/alpha';
 import jenkinsPluginAlpha from '@backstage-community/plugin-jenkins/alpha';
 import githubActionsPluginAlpha from '@backstage-community/plugin-github-actions/alpha';
+import mcpChatPluginAlpha from '@backstage-community/plugin-mcp-chat/alpha';
 import gitlabPluginAlpha from '@immobiliarelabs/backstage-plugin-gitlab/alpha';
 import homePluginAlpha from '@backstage/plugin-home/alpha';
 import { portalAppPlugin } from './portalPlugin';
@@ -71,6 +72,7 @@ export function createPortalApp(options?: PortalAppOptions) {
       jenkinsPluginAlpha,
       githubActionsPluginAlpha,
       gitlabPluginAlpha,
+      mcpChatPluginAlpha,
       userSettingsPluginAlpha,
       techDocsReportIssueAddonModule,
       // `openchoreoCiPluginAlpha` before `openchoreoPluginAlpha` so within

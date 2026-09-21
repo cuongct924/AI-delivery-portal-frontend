@@ -24,14 +24,30 @@ export class ObservabilityService {
   private readonly logger: LoggerService;
   private readonly baseUrl: string;
   private readonly resolver: ObservabilityUrlResolver;
+  /**
+   * When set, every observer URL resolves here instead of through the
+   * OpenChoreo API. Lets a local mock observer (backend repo
+   * `routers/mock_observer.py`) back the Delivery Insights page without a
+   * real observability plane.
+   */
+  private readonly mockObserverUrl?: string;
 
-  static create(logger: LoggerService, baseUrl: string): ObservabilityService {
-    return new ObservabilityService(logger, baseUrl);
+  static create(
+    logger: LoggerService,
+    baseUrl: string,
+    mockObserverUrl?: string,
+  ): ObservabilityService {
+    return new ObservabilityService(logger, baseUrl, mockObserverUrl);
   }
 
-  private constructor(logger: LoggerService, baseUrl: string) {
+  private constructor(
+    logger: LoggerService,
+    baseUrl: string,
+    mockObserverUrl?: string,
+  ) {
     this.logger = logger;
     this.baseUrl = baseUrl;
+    this.mockObserverUrl = mockObserverUrl;
     this.resolver = new ObservabilityUrlResolver({ baseUrl, logger });
   }
 
@@ -48,6 +64,9 @@ export class ObservabilityService {
     rcaAgentUrl?: string;
     finopsAgentUrl?: string;
   }> {
+    if (this.mockObserverUrl) {
+      return { observerUrl: this.mockObserverUrl };
+    }
     return this.resolver.resolveForEnvironment(
       namespaceName,
       environmentName,
@@ -65,6 +84,9 @@ export class ObservabilityService {
     observerUrl?: string;
     auditLogsEnabled?: boolean;
   }> {
+    if (this.mockObserverUrl) {
+      return { observerUrl: this.mockObserverUrl };
+    }
     const { observerUrl, auditLogsEnabled } =
       await this.resolver.resolveForPlatform(userToken);
     return { observerUrl, auditLogsEnabled };
@@ -213,7 +235,14 @@ export const observabilityServiceRef = createServiceRef<
         const baseUrl =
           deps.config.getOptionalString('openchoreo.baseUrl') ||
           'http://localhost:8080';
-        return ObservabilityService.create(deps.logger, baseUrl);
+        const mockObserverUrl = deps.config.getOptionalString(
+          'openchoreo.observability.mockObserverUrl',
+        );
+        return ObservabilityService.create(
+          deps.logger,
+          baseUrl,
+          mockObserverUrl,
+        );
       },
     }),
 });

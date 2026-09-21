@@ -21,6 +21,7 @@
     "build-image": "docker buildx build ../.. -f Dockerfile --tag openchoreo-ui:local --load"
   },
   "dependencies": {
+    "@backstage-community/plugin-mcp-chat-backend": "0.13.0",
     "@backstage/backend-defaults": "^0.17.1",
     "@backstage/backend-plugin-api": "^1.9.1",
     "@backstage/config": "^1.3.8",

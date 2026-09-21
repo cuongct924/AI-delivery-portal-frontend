@@ -40,6 +40,11 @@ backend.add(
   import('@openchoreo/backstage-plugin-openchoreo-portal-assistant-backend'),
 );
 
+// MCP Chat — AI chat page (page:mcp-chat) that talks to the local MCP servers
+// (observability, golden-path-guide, mlops/llmops golden paths) through an LLM
+// provider. Configured under `mcpChat` in app-config.local.yaml.
+backend.add(import('@backstage-community/plugin-mcp-chat-backend'));
+
 // AI Delivery Portal — orchestration-api Custom Scaffolder Actions (Golden
 // Paths: Train->Track->Register, Register->Deploy, Setup Model Monitoring,
 // Serving LLM, and the LLMOps lifecycle). See

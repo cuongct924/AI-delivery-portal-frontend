@@ -29,7 +29,12 @@ import UndoIcon from '@material-ui/icons/Undo';
 import RestoreIcon from '@material-ui/icons/Restore';
 import CheckCircleIcon from '@material-ui/icons/CheckCircle';
 import CancelIcon from '@material-ui/icons/Cancel';
-import { configApiRef, discoveryApiRef, fetchApiRef, useApi } from '@backstage/core-plugin-api';
+import {
+  configApiRef,
+  discoveryApiRef,
+  fetchApiRef,
+  useApi,
+} from '@backstage/core-plugin-api';
 import type { FieldExtensionComponentProps } from '@backstage/plugin-scaffolder-react';
 import { openChoreoAuthApiRef } from '@openchoreo/backstage-plugin';
 import type { JSONSchema7 } from 'json-schema';
@@ -304,12 +309,18 @@ function normalizeField(field: string | GroupField): GroupField {
 }
 
 /** Mirrors renderField's own skip rules (missing / const-only) so a group's visibility check never disagrees with what it actually renders. */
-function isRenderable(name: string, properties: Record<string, JSONSchema7>): boolean {
+function isRenderable(
+  name: string,
+  properties: Record<string, JSONSchema7>,
+): boolean {
   const fieldSchema = properties[name];
   return Boolean(fieldSchema) && fieldSchema.const === undefined;
 }
 
-function hasAnyRenderable(entries: GroupEntry[], properties: Record<string, JSONSchema7>): boolean {
+function hasAnyRenderable(
+  entries: GroupEntry[],
+  properties: Record<string, JSONSchema7>,
+): boolean {
   return entries.some(entry =>
     isSubpanel(entry)
       ? hasAnyRenderable(entry.subpanel.fields, properties)
@@ -334,7 +345,8 @@ function useOpenChoreoAuthHeaders(): () => Promise<HeadersInit> {
   const configApi = useApi(configApiRef);
   const authApi = useApi(openChoreoAuthApiRef);
   return useCallback(async (): Promise<Record<string, string>> => {
-    const authEnabled = configApi.getOptionalBoolean('openchoreo.features.auth.enabled') ?? true;
+    const authEnabled =
+      configApi.getOptionalBoolean('openchoreo.features.auth.enabled') ?? true;
     if (!authEnabled) return {};
     try {
       const token = await authApi.getAccessToken();
@@ -358,7 +370,14 @@ function toStringList(body: unknown): string[] {
   if (Array.isArray(body)) return body.map(String);
   if (body && typeof body === 'object') {
     const obj = body as Record<string, unknown>;
-    for (const key of ['names', 'versions', 'columns', 'features', 'datasets', 'models']) {
+    for (const key of [
+      'names',
+      'versions',
+      'columns',
+      'features',
+      'datasets',
+      'models',
+    ]) {
       if (Array.isArray(obj[key])) return (obj[key] as unknown[]).map(String);
     }
   }
@@ -386,9 +405,14 @@ function useDatasetColumns(datasetUri: unknown): string[] {
     let cancelled = false;
     Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
       .then(([proxyUrl, headers]) =>
-        fetch(`${proxyUrl}/orchestration-api/datasets/columns?dataset_uri=${encodeURIComponent(datasetUri)}`, {
-          headers,
-        }),
+        fetch(
+          `${proxyUrl}/orchestration-api/datasets/columns?dataset_uri=${encodeURIComponent(
+            datasetUri,
+          )}`,
+          {
+            headers,
+          },
+        ),
       )
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -428,7 +452,9 @@ const DATASET_SOURCE_LABELS: Record<string, string> = {
 
 /** Groups datasets by `source`, preserving the backend's ordering of both
  * the sources themselves and the datasets within each. */
-function groupDatasetsBySource(datasets: DatasetInfo[]): [string, DatasetInfo[]][] {
+function groupDatasetsBySource(
+  datasets: DatasetInfo[],
+): [string, DatasetInfo[]][] {
   const order: string[] = [];
   const groups = new Map<string, DatasetInfo[]>();
   for (const dataset of datasets) {
@@ -456,7 +482,9 @@ function useDatasets(): DatasetInfo[] {
   useEffect(() => {
     let cancelled = false;
     Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
-      .then(([proxyUrl, headers]) => fetch(`${proxyUrl}/orchestration-api/datasets`, { headers }))
+      .then(([proxyUrl, headers]) =>
+        fetch(`${proxyUrl}/orchestration-api/datasets`, { headers }),
+      )
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
@@ -504,7 +532,9 @@ function useModels(): RegisteredModel[] {
   useEffect(() => {
     let cancelled = false;
     Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
-      .then(([proxyUrl, headers]) => fetch(`${proxyUrl}/orchestration-api/models`, { headers }))
+      .then(([proxyUrl, headers]) =>
+        fetch(`${proxyUrl}/orchestration-api/models`, { headers }),
+      )
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
@@ -547,7 +577,9 @@ function useAvailableFeatures(): string[] {
   useEffect(() => {
     let cancelled = false;
     Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
-      .then(([proxyUrl, headers]) => fetch(`${proxyUrl}/orchestration-api/features`, { headers }))
+      .then(([proxyUrl, headers]) =>
+        fetch(`${proxyUrl}/orchestration-api/features`, { headers }),
+      )
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
@@ -588,9 +620,14 @@ function useModelVersions(modelName: unknown): string[] {
     let cancelled = false;
     Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
       .then(([proxyUrl, headers]) =>
-        fetch(`${proxyUrl}/orchestration-api/models/${encodeURIComponent(modelName)}/versions`, {
-          headers,
-        }),
+        fetch(
+          `${proxyUrl}/orchestration-api/models/${encodeURIComponent(
+            modelName,
+          )}/versions`,
+          {
+            headers,
+          },
+        ),
       )
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -628,7 +665,9 @@ function useNameList(path: string): string[] {
   useEffect(() => {
     let cancelled = false;
     Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
-      .then(([proxyUrl, headers]) => fetch(`${proxyUrl}/orchestration-api${path}`, { headers }))
+      .then(([proxyUrl, headers]) =>
+        fetch(`${proxyUrl}/orchestration-api${path}`, { headers }),
+      )
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
@@ -699,7 +738,9 @@ function useHuggingFaceModelInfo(modelId: unknown): HuggingFaceModelInfoState {
   const discoveryApi = useApi(discoveryApiRef);
   const { fetch } = useApi(fetchApiRef);
   const getAuthHeaders = useOpenChoreoAuthHeaders();
-  const [state, setState] = useState<HuggingFaceModelInfoState>({ status: 'empty' });
+  const [state, setState] = useState<HuggingFaceModelInfoState>({
+    status: 'empty',
+  });
 
   useEffect(() => {
     if (typeof modelId !== 'string' || !modelId) {
@@ -712,7 +753,9 @@ function useHuggingFaceModelInfo(modelId: unknown): HuggingFaceModelInfoState {
       Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
         .then(([proxyUrl, headers]) =>
           fetch(
-            `${proxyUrl}/orchestration-api/llm-deploy/validate-model?huggingface_model_id=${encodeURIComponent(modelId)}`,
+            `${proxyUrl}/orchestration-api/llm-deploy/validate-model?huggingface_model_id=${encodeURIComponent(
+              modelId,
+            )}`,
             { headers },
           ),
         )
@@ -743,7 +786,10 @@ function useHuggingFaceModelInfo(modelId: unknown): HuggingFaceModelInfoState {
             return;
           }
           const rawGated = body.is_gated ?? body.isGated ?? body.gated;
-          const rawParams = body.param_count_billion ?? body.paramCountBillion ?? body.params_billion;
+          const rawParams =
+            body.param_count_billion ??
+            body.paramCountBillion ??
+            body.params_billion;
           setState({
             status: 'found',
             info: {
@@ -813,8 +859,16 @@ function useGpuRecommendation(
   const discoveryApi = useApi(discoveryApiRef);
   const { fetch } = useApi(fetchApiRef);
   const getAuthHeaders = useOpenChoreoAuthHeaders();
-  const [state, setState] = useState<GpuRecommendationState>({ status: 'empty' });
-  const { maxContextLength, numLayers, hiddenSize, numAttentionHeads, numKeyValueHeads } = hints;
+  const [state, setState] = useState<GpuRecommendationState>({
+    status: 'empty',
+  });
+  const {
+    maxContextLength,
+    numLayers,
+    hiddenSize,
+    numAttentionHeads,
+    numKeyValueHeads,
+  } = hints;
 
   useEffect(() => {
     if (typeof paramCountBillion !== 'number') {
@@ -826,9 +880,11 @@ function useGpuRecommendation(
     const timer = setTimeout(() => {
       const params = new URLSearchParams();
       params.set('param_count_billion', String(paramCountBillion));
-      if (typeof quantization === 'string' && quantization) params.set('quantization', quantization);
+      if (typeof quantization === 'string' && quantization)
+        params.set('quantization', quantization);
       const numericHint = (value: unknown, key: string) => {
-        if (typeof value === 'number' && !Number.isNaN(value)) params.set(key, String(value));
+        if (typeof value === 'number' && !Number.isNaN(value))
+          params.set(key, String(value));
       };
       numericHint(maxContextLength, 'max_context_length');
       numericHint(numLayers, 'num_layers');
@@ -837,9 +893,12 @@ function useGpuRecommendation(
       numericHint(numKeyValueHeads, 'num_key_value_heads');
       Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
         .then(([proxyUrl, headers]) =>
-          fetch(`${proxyUrl}/orchestration-api/llm-deploy/gpu-recommendation?${params.toString()}`, {
-            headers,
-          }),
+          fetch(
+            `${proxyUrl}/orchestration-api/llm-deploy/gpu-recommendation?${params.toString()}`,
+            {
+              headers,
+            },
+          ),
         )
         .then(res => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -907,7 +966,9 @@ function useRolloutEligibility(modelName: unknown): RolloutEligibilityState {
   const discoveryApi = useApi(discoveryApiRef);
   const { fetch } = useApi(fetchApiRef);
   const getAuthHeaders = useOpenChoreoAuthHeaders();
-  const [state, setState] = useState<RolloutEligibilityState>({ status: 'empty' });
+  const [state, setState] = useState<RolloutEligibilityState>({
+    status: 'empty',
+  });
 
   useEffect(() => {
     if (typeof modelName !== 'string' || !modelName) {
@@ -920,7 +981,9 @@ function useRolloutEligibility(modelName: unknown): RolloutEligibilityState {
       Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
         .then(([proxyUrl, headers]) =>
           fetch(
-            `${proxyUrl}/orchestration-api/llm-deploy/rollout-eligibility?model_name=${encodeURIComponent(modelName)}`,
+            `${proxyUrl}/orchestration-api/llm-deploy/rollout-eligibility?model_name=${encodeURIComponent(
+              modelName,
+            )}`,
             { headers },
           ),
         )
@@ -931,7 +994,8 @@ function useRolloutEligibility(modelName: unknown): RolloutEligibilityState {
         .then(body => {
           if (cancelled) return;
           const safe = (body ?? {}) as Record<string, unknown>;
-          const raw = safe.has_prior_deploy ?? safe.hasPriorDeploy ?? safe.eligible;
+          const raw =
+            safe.has_prior_deploy ?? safe.hasPriorDeploy ?? safe.eligible;
           setState({ status: 'found', hasPriorDeploy: raw === true });
         })
         .catch(() => {
@@ -967,9 +1031,14 @@ function useVersionList(basePath: string, name: unknown): string[] {
     let cancelled = false;
     Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
       .then(([proxyUrl, headers]) =>
-        fetch(`${proxyUrl}/orchestration-api${basePath}/${encodeURIComponent(name)}/versions`, {
-          headers,
-        }),
+        fetch(
+          `${proxyUrl}/orchestration-api${basePath}/${encodeURIComponent(
+            name,
+          )}/versions`,
+          {
+            headers,
+          },
+        ),
       )
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1028,7 +1097,9 @@ function useDatasetPreview(datasetUri: unknown): DatasetPreview | null {
     Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
       .then(([proxyUrl, headers]) =>
         fetch(
-          `${proxyUrl}/orchestration-api/datasets/preview?dataset_uri=${encodeURIComponent(datasetUri)}&limit=${DATASET_PREVIEW_ROW_LIMIT}`,
+          `${proxyUrl}/orchestration-api/datasets/preview?dataset_uri=${encodeURIComponent(
+            datasetUri,
+          )}&limit=${DATASET_PREVIEW_ROW_LIMIT}`,
           { headers },
         ),
       )
@@ -1041,7 +1112,9 @@ function useDatasetPreview(datasetUri: unknown): DatasetPreview | null {
           const obj = (body ?? {}) as Partial<DatasetPreview>;
           setPreview({
             columns: Array.isArray(obj.columns) ? obj.columns.map(String) : [],
-            rows: Array.isArray(obj.rows) ? (obj.rows as Record<string, unknown>[]) : [],
+            rows: Array.isArray(obj.rows)
+              ? (obj.rows as Record<string, unknown>[])
+              : [],
           });
         }
       })
@@ -1064,15 +1137,25 @@ function useDatasetPreview(datasetUri: unknown): DatasetPreview | null {
  * `datasetUri` changes — picking a different dataset should show its data,
  * not stay collapsed on whatever the previous dataset left it at.
  */
-function DatasetPreviewPanel({ datasetUri }: { datasetUri: unknown }): JSX.Element | null {
+function DatasetPreviewPanel({
+  datasetUri,
+}: {
+  datasetUri: unknown;
+}): JSX.Element | null {
   const preview = useDatasetPreview(datasetUri);
   const [expanded, setExpanded] = useState(true);
   useEffect(() => setExpanded(true), [datasetUri]);
   if (!preview || preview.rows.length === 0) return null;
   return (
-    <Accordion expanded={expanded} onChange={(_e, isExpanded) => setExpanded(isExpanded)}>
+    <Accordion
+      expanded={expanded}
+      onChange={(_e, isExpanded) => setExpanded(isExpanded)}
+    >
       <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-        <Typography variant="overline" style={{ color: NEUTRAL.textSecondary, fontWeight: 700 }}>
+        <Typography
+          variant="overline"
+          style={{ color: NEUTRAL.textSecondary, fontWeight: 700 }}
+        >
           Data preview (first {preview.rows.length} rows)
         </Typography>
       </AccordionSummary>
@@ -1107,13 +1190,19 @@ interface DatasetValidationResult {
   message: string;
 }
 
-const VALIDATION_SEVERITY_COLOR: Record<DatasetValidationResult['severity'], string> = {
+const VALIDATION_SEVERITY_COLOR: Record<
+  DatasetValidationResult['severity'],
+  string
+> = {
   blocking: STATUS.error,
   warning: STATUS.warning,
   info: STATUS.success,
 };
 
-const VALIDATION_SEVERITY_LABEL: Record<DatasetValidationResult['severity'], string> = {
+const VALIDATION_SEVERITY_LABEL: Record<
+  DatasetValidationResult['severity'],
+  string
+> = {
   blocking: 'Error',
   warning: 'Warning',
   info: 'OK',
@@ -1140,10 +1229,17 @@ function useDatasetValidation(
   const discoveryApi = useApi(discoveryApiRef);
   const { fetch } = useApi(fetchApiRef);
   const getAuthHeaders = useOpenChoreoAuthHeaders();
-  const [results, setResults] = useState<DatasetValidationResult[] | null>(null);
+  const [results, setResults] = useState<DatasetValidationResult[] | null>(
+    null,
+  );
 
   useEffect(() => {
-    if (typeof datasetUri !== 'string' || !datasetUri || typeof taskType !== 'string' || !taskType) {
+    if (
+      typeof datasetUri !== 'string' ||
+      !datasetUri ||
+      typeof taskType !== 'string' ||
+      !taskType
+    ) {
       setResults(null);
       return undefined;
     }
@@ -1157,8 +1253,14 @@ function useDatasetValidation(
             body: JSON.stringify({
               dataset_uri: datasetUri,
               task_type: taskType,
-              target_column: typeof targetColumn === 'string' && targetColumn ? targetColumn : undefined,
-              time_column: typeof timeColumn === 'string' && timeColumn ? timeColumn : undefined,
+              target_column:
+                typeof targetColumn === 'string' && targetColumn
+                  ? targetColumn
+                  : undefined,
+              time_column:
+                typeof timeColumn === 'string' && timeColumn
+                  ? timeColumn
+                  : undefined,
             }),
           }),
         )
@@ -1181,7 +1283,15 @@ function useDatasetValidation(
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [discoveryApi, fetch, datasetUri, taskType, targetColumn, timeColumn, getAuthHeaders]);
+  }, [
+    discoveryApi,
+    fetch,
+    datasetUri,
+    taskType,
+    targetColumn,
+    timeColumn,
+    getAuthHeaders,
+  ]);
 
   return results;
 }
@@ -1198,26 +1308,53 @@ function DatasetValidationPanel({
   targetColumn: unknown;
   timeColumn: unknown;
 }): JSX.Element | null {
-  const results = useDatasetValidation(datasetUri, taskType, targetColumn, timeColumn);
+  const results = useDatasetValidation(
+    datasetUri,
+    taskType,
+    targetColumn,
+    timeColumn,
+  );
   const [expanded, setExpanded] = useState(true);
   useEffect(() => setExpanded(true), [datasetUri, targetColumn, timeColumn]);
   if (!results || results.length === 0) return null;
   const blockingCount = results.filter(r => r.severity === 'blocking').length;
   return (
-    <Accordion expanded={expanded} onChange={(_e, isExpanded) => setExpanded(isExpanded)}>
+    <Accordion
+      expanded={expanded}
+      onChange={(_e, isExpanded) => setExpanded(isExpanded)}
+    >
       <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-        <Typography variant="overline" style={{ color: NEUTRAL.textSecondary, fontWeight: 700 }}>
-          Data validation {blockingCount > 0 ? `(${blockingCount} error${blockingCount > 1 ? 's' : ''})` : ''}
+        <Typography
+          variant="overline"
+          style={{ color: NEUTRAL.textSecondary, fontWeight: 700 }}
+        >
+          Data validation{' '}
+          {blockingCount > 0
+            ? `(${blockingCount} error${blockingCount > 1 ? 's' : ''})`
+            : ''}
         </Typography>
       </AccordionSummary>
       <AccordionDetails>
-        <Box display="flex" flexDirection="column" style={{ gap: 8, width: '100%' }}>
+        <Box
+          display="flex"
+          flexDirection="column"
+          style={{ gap: 8, width: '100%' }}
+        >
           {results.map(result => (
-            <Box key={result.check_name} display="flex" alignItems="flex-start" style={{ gap: 8 }}>
+            <Box
+              key={result.check_name}
+              display="flex"
+              alignItems="flex-start"
+              style={{ gap: 8 }}
+            >
               <Chip
                 label={VALIDATION_SEVERITY_LABEL[result.severity]}
                 size="small"
-                style={{ backgroundColor: VALIDATION_SEVERITY_COLOR[result.severity], color: '#FFF', flexShrink: 0 }}
+                style={{
+                  backgroundColor: VALIDATION_SEVERITY_COLOR[result.severity],
+                  color: '#FFF',
+                  flexShrink: 0,
+                }}
               />
               <Typography variant="body2">{result.message}</Typography>
             </Box>
@@ -1352,7 +1489,10 @@ function BaseModelPickerField({
       name={name}
     >
       {models.map(model => (
-        <MenuItem key={`${model.name}:${model.version}`} value={`models:/${model.name}/${model.version}`}>
+        <MenuItem
+          key={`${model.name}:${model.version}`}
+          value={`models:/${model.name}/${model.version}`}
+        >
           {model.name} (v{model.version})
         </MenuItem>
       ))}
@@ -1369,8 +1509,18 @@ interface ActionOption {
 
 /** Evaluate & Deploy Model's own 4 `action` values — see the GroupField.actionPicker doc comment for why these are hardcoded here rather than read from the field's schema. */
 const ACTION_OPTIONS: ActionOption[] = [
-  { value: 'deploy', label: 'Deploy', caption: 'Evaluate and release a new version', Icon: FlashOnIcon },
-  { value: 'rollback', label: 'Rollback', caption: 'Instant cutover to an older version (dev)', Icon: UndoIcon },
+  {
+    value: 'deploy',
+    label: 'Deploy',
+    caption: 'Evaluate and release a new version',
+    Icon: FlashOnIcon,
+  },
+  {
+    value: 'rollback',
+    label: 'Rollback',
+    caption: 'Instant cutover to an older version (dev)',
+    Icon: UndoIcon,
+  },
   {
     value: 'promote',
     label: 'Promote',
@@ -1410,24 +1560,41 @@ function ActionPickerField({
               onClick={() => onChange(option.value)}
               style={{
                 cursor: 'pointer',
-                border: `${selected ? 2 : 1}px solid ${selected ? NEUTRAL.textPrimary : NEUTRAL.border}`,
+                border: `${selected ? 2 : 1}px solid ${
+                  selected ? NEUTRAL.textPrimary : NEUTRAL.border
+                }`,
                 backgroundColor: selected ? NEUTRAL.paper : NEUTRAL.background,
               }}
               elevation={0}
             >
-              <CardContent style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: 12 }}>
+              <CardContent
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 8,
+                  padding: 12,
+                }}
+              >
                 <option.Icon
                   style={{
                     fontSize: 20,
                     marginTop: 2,
-                    color: selected ? NEUTRAL.textPrimary : NEUTRAL.textSecondary,
+                    color: selected
+                      ? NEUTRAL.textPrimary
+                      : NEUTRAL.textSecondary,
                   }}
                 />
                 <Box>
-                  <Typography variant="body2" style={{ fontWeight: selected ? 700 : 500 }}>
+                  <Typography
+                    variant="body2"
+                    style={{ fontWeight: selected ? 700 : 500 }}
+                  >
                     {option.label}
                   </Typography>
-                  <Typography variant="caption" style={{ color: NEUTRAL.textSecondary }}>
+                  <Typography
+                    variant="caption"
+                    style={{ color: NEUTRAL.textSecondary }}
+                  >
                     {option.caption}
                   </Typography>
                 </Box>
@@ -1579,6 +1746,7 @@ interface ModelVersionSummary {
   task_type: string | null;
   metrics: Record<string, number>;
   tags: Record<string, string>;
+  dataset_uri?: string | null;
 }
 
 type ModelVersionCheckState =
@@ -1598,11 +1766,16 @@ type ModelVersionCheckState =
  * to 'empty', same non-blocking contract as every other live panel here;
  * the real gate stays the `policy-check` step.
  */
-function useModelVersionCheck(modelName: unknown, modelVersion: unknown): ModelVersionCheckState {
+function useModelVersionCheck(
+  modelName: unknown,
+  modelVersion: unknown,
+): ModelVersionCheckState {
   const discoveryApi = useApi(discoveryApiRef);
   const { fetch } = useApi(fetchApiRef);
   const getAuthHeaders = useOpenChoreoAuthHeaders();
-  const [state, setState] = useState<ModelVersionCheckState>({ status: 'empty' });
+  const [state, setState] = useState<ModelVersionCheckState>({
+    status: 'empty',
+  });
 
   useEffect(() => {
     if (
@@ -1620,7 +1793,9 @@ function useModelVersionCheck(modelName: unknown, modelVersion: unknown): ModelV
       Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
         .then(([proxyUrl, headers]) =>
           fetch(
-            `${proxyUrl}/orchestration-api/models/${encodeURIComponent(modelName)}/${encodeURIComponent(modelVersion)}/summary`,
+            `${proxyUrl}/orchestration-api/models/${encodeURIComponent(
+              modelName,
+            )}/${encodeURIComponent(modelVersion)}/summary`,
             { headers },
           ),
         )
@@ -1639,17 +1814,36 @@ function useModelVersionCheck(modelName: unknown, modelVersion: unknown): ModelV
             return;
           }
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const summary = ((await res.json()) ?? {}) as Partial<ModelVersionSummary>;
+          const summary = ((await res.json()) ??
+            {}) as Partial<ModelVersionSummary>;
           if (!cancelled) {
             setState({
               status: 'found',
               summary: {
-                name: typeof summary.name === 'string' ? summary.name : String(modelName),
-                version: typeof summary.version === 'string' ? summary.version : String(modelVersion),
-                task_type: typeof summary.task_type === 'string' ? summary.task_type : null,
+                name:
+                  typeof summary.name === 'string'
+                    ? summary.name
+                    : String(modelName),
+                version:
+                  typeof summary.version === 'string'
+                    ? summary.version
+                    : String(modelVersion),
+                task_type:
+                  typeof summary.task_type === 'string'
+                    ? summary.task_type
+                    : null,
                 metrics:
-                  summary.metrics && typeof summary.metrics === 'object' ? summary.metrics : {},
-                tags: summary.tags && typeof summary.tags === 'object' ? summary.tags : {},
+                  summary.metrics && typeof summary.metrics === 'object'
+                    ? summary.metrics
+                    : {},
+                tags:
+                  summary.tags && typeof summary.tags === 'object'
+                    ? summary.tags
+                    : {},
+                dataset_uri:
+                  typeof summary.dataset_uri === 'string'
+                    ? summary.dataset_uri
+                    : null,
               },
             });
           }
@@ -1695,7 +1889,10 @@ type GatePreviewState =
  * still runs at submit time and reports the actual reason, this is
  * advisory only.
  */
-function useGatePreview(modelName: unknown, modelVersion: unknown): GatePreviewState {
+function useGatePreview(
+  modelName: unknown,
+  modelVersion: unknown,
+): GatePreviewState {
   const discoveryApi = useApi(discoveryApiRef);
   const { fetch } = useApi(fetchApiRef);
   const getAuthHeaders = useOpenChoreoAuthHeaders();
@@ -1717,7 +1914,9 @@ function useGatePreview(modelName: unknown, modelVersion: unknown): GatePreviewS
       Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
         .then(([proxyUrl, headers]) =>
           fetch(
-            `${proxyUrl}/orchestration-api/models/${encodeURIComponent(modelName)}/${encodeURIComponent(modelVersion)}/gate-preview`,
+            `${proxyUrl}/orchestration-api/models/${encodeURIComponent(
+              modelName,
+            )}/${encodeURIComponent(modelVersion)}/gate-preview`,
             { headers },
           ),
         )
@@ -1733,9 +1932,11 @@ function useGatePreview(modelName: unknown, modelVersion: unknown): GatePreviewS
             status: 'found',
             gate: {
               passed: (gate ?? {}).passed === true,
-              metrics: (gate ?? {}).metrics && typeof (gate as GateResult).metrics === 'object'
-                ? (gate as GateResult).metrics
-                : {},
+              metrics:
+                (gate ?? {}).metrics &&
+                typeof (gate as GateResult).metrics === 'object'
+                  ? (gate as GateResult).metrics
+                  : {},
               thresholds: Array.isArray((gate ?? {}).thresholds)
                 ? (gate as GateResult).thresholds
                 : [],
@@ -1771,14 +1972,18 @@ function GateThresholdRow({
     threshold.minimum !== null
       ? `≥ ${threshold.minimum}`
       : threshold.maximum !== null
-        ? `≤ ${threshold.maximum}`
-        : '';
+      ? `≤ ${threshold.maximum}`
+      : '';
   return (
     <Box display="flex" alignItems="center" style={{ gap: 6 }}>
       {met ? (
-        <CheckCircleIcon style={{ fontSize: 16, color: STATUS.success, flexShrink: 0 }} />
+        <CheckCircleIcon
+          style={{ fontSize: 16, color: STATUS.success, flexShrink: 0 }}
+        />
       ) : (
-        <CancelIcon style={{ fontSize: 16, color: STATUS.error, flexShrink: 0 }} />
+        <CancelIcon
+          style={{ fontSize: 16, color: STATUS.error, flexShrink: 0 }}
+        />
       )}
       <Typography variant="body2">
         {threshold.metric}: {value ?? '—'}{' '}
@@ -1813,7 +2018,11 @@ function GatePreviewPanel({
       }}
     >
       <Chip
-        label={gate.passed ? 'Evaluate Gate: would PASS' : 'Evaluate Gate: would FAIL'}
+        label={
+          gate.passed
+            ? 'Evaluate Gate: would PASS'
+            : 'Evaluate Gate: would FAIL'
+        }
         size="small"
         style={{
           backgroundColor: gate.passed ? STATUS.success : STATUS.error,
@@ -1865,7 +2074,11 @@ function ModelVersionCheckPanel({
         <Chip
           label="Not found"
           size="small"
-          style={{ backgroundColor: STATUS.error, color: '#FFF', flexShrink: 0 }}
+          style={{
+            backgroundColor: STATUS.error,
+            color: '#FFF',
+            flexShrink: 0,
+          }}
         />
         <Typography variant="body2">{state.message}</Typography>
       </Box>
@@ -1881,10 +2094,16 @@ function ModelVersionCheckPanel({
         <Chip
           label="Found"
           size="small"
-          style={{ backgroundColor: STATUS.success, color: '#FFF', flexShrink: 0 }}
+          style={{
+            backgroundColor: STATUS.success,
+            color: '#FFF',
+            flexShrink: 0,
+          }}
         />
         <Typography variant="body2">
-          {summary.task_type ? `task_type: ${summary.task_type}` : 'no task_type tag set'}
+          {summary.task_type
+            ? `task_type: ${summary.task_type}`
+            : 'no task_type tag set'}
           {metricsText && ` — ${metricsText}`}
         </Typography>
       </Box>
@@ -1902,7 +2121,11 @@ function ModelVersionCheckPanel({
  * server-side). Advisory only; the real check stays the backend's own
  * validation at submit time.
  */
-function HuggingFaceModelValidatorPanel({ modelId }: { modelId: unknown }): JSX.Element | null {
+function HuggingFaceModelValidatorPanel({
+  modelId,
+}: {
+  modelId: unknown;
+}): JSX.Element | null {
   const state = useHuggingFaceModelInfo(modelId);
   if (state.status === 'empty' || state.status === 'loading') return null;
   if (state.status === 'not_found') {
@@ -1911,7 +2134,11 @@ function HuggingFaceModelValidatorPanel({ modelId }: { modelId: unknown }): JSX.
         <Chip
           label="Not found"
           size="small"
-          style={{ backgroundColor: STATUS.error, color: '#FFF', flexShrink: 0 }}
+          style={{
+            backgroundColor: STATUS.error,
+            color: '#FFF',
+            flexShrink: 0,
+          }}
         />
         <Typography variant="body2">{state.message}</Typography>
       </Box>
@@ -1931,7 +2158,8 @@ function HuggingFaceModelValidatorPanel({ modelId }: { modelId: unknown }): JSX.
       />
       <Typography variant="body2">
         {info.modelId}
-        {info.paramCountBillion !== null && ` — ~${info.paramCountBillion}B params`}
+        {info.paramCountBillion !== null &&
+          ` — ~${info.paramCountBillion}B params`}
         {info.isGated
           ? ' — gated model: fill hfTokenSecretRef (Secret name, not the token).'
           : ' — public model: no HF token needed.'}
@@ -1961,7 +2189,9 @@ function GpuRecommendationPanel({
   const info = hfState.status === 'found' ? hfState.info : undefined;
   const recState = useGpuRecommendation(info?.paramCountBillion, quantization, {
     maxContextLength:
-      typeof maxContextLength === 'number' ? maxContextLength : info?.maxContextLength,
+      typeof maxContextLength === 'number'
+        ? maxContextLength
+        : info?.maxContextLength,
     numLayers: info?.numLayers,
     hiddenSize: info?.hiddenSize,
     numAttentionHeads: info?.numAttentionHeads,
@@ -1970,14 +2200,20 @@ function GpuRecommendationPanel({
   if (recState.status !== 'found') return null;
   const { recommendation } = recState;
   const vramText =
-    recommendation.vramNeededGb !== null ? `needs ~${recommendation.vramNeededGb} GB VRAM` : null;
+    recommendation.vramNeededGb !== null
+      ? `needs ~${recommendation.vramNeededGb} GB VRAM`
+      : null;
   if (!recommendation.gpuType || !recommendation.gpuCount) {
     return (
       <Box display="flex" alignItems="flex-start" style={{ gap: 8 }}>
         <Chip
           label="No fit"
           size="small"
-          style={{ backgroundColor: STATUS.error, color: '#FFF', flexShrink: 0 }}
+          style={{
+            backgroundColor: STATUS.error,
+            color: '#FFF',
+            flexShrink: 0,
+          }}
         />
         <Typography variant="body2">
           No GPU configuration fits at up to 8-way tensor parallelism
@@ -1988,7 +2224,13 @@ function GpuRecommendationPanel({
     );
   }
   return (
-    <Box style={{ border: `1px solid ${NEUTRAL.border}`, borderRadius: 4, padding: 12 }}>
+    <Box
+      style={{
+        border: `1px solid ${NEUTRAL.border}`,
+        borderRadius: 4,
+        padding: 12,
+      }}
+    >
       <Typography variant="body2" style={{ fontWeight: 600, marginBottom: 4 }}>
         Suggested GPU — {recommendation.gpuType} x{recommendation.gpuCount}
       </Typography>
@@ -2007,7 +2249,11 @@ function GpuRecommendationPanel({
  * blue-green will be rejected server-side, so this warns before submit
  * instead of after the whole wizard runs.
  */
-function RolloutEligibilityGatePanel({ modelName }: { modelName: unknown }): JSX.Element | null {
+function RolloutEligibilityGatePanel({
+  modelName,
+}: {
+  modelName: unknown;
+}): JSX.Element | null {
   const state = useRolloutEligibility(modelName);
   if (state.status !== 'found') return null;
   return (
@@ -2016,7 +2262,9 @@ function RolloutEligibilityGatePanel({ modelName }: { modelName: unknown }): JSX
         label={state.hasPriorDeploy ? 'Prior deploy found' : 'First deploy'}
         size="small"
         style={{
-          backgroundColor: state.hasPriorDeploy ? STATUS.success : STATUS.warning,
+          backgroundColor: state.hasPriorDeploy
+            ? STATUS.success
+            : STATUS.warning,
           color: '#FFF',
           flexShrink: 0,
         }}
@@ -2058,23 +2306,38 @@ function useCurrentLiveVersionSummary(modelName: unknown): LiveVersionState {
     let cancelled = false;
     Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
       .then(([proxyUrl, headers]) =>
-        fetch(`${proxyUrl}/orchestration-api/models/${encodeURIComponent(modelName)}/deploy-status`, {
-          headers,
-        }).then(res => {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          return res.json() as Promise<Partial<{ deployed: boolean; live_version: string | null }>>;
-        }).then(deployStatus => {
-          if (!deployStatus || !deployStatus.deployed || !deployStatus.live_version) {
-            return null;
-          }
-          return fetch(
-            `${proxyUrl}/orchestration-api/models/${encodeURIComponent(modelName)}/${encodeURIComponent(deployStatus.live_version)}/summary`,
-            { headers },
-          ).then(res => {
+        fetch(
+          `${proxyUrl}/orchestration-api/models/${encodeURIComponent(
+            modelName,
+          )}/deploy-status`,
+          {
+            headers,
+          },
+        )
+          .then(res => {
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            return res.json() as Promise<ModelVersionSummary>;
-          });
-        }),
+            return res.json() as Promise<
+              Partial<{ deployed: boolean; live_version: string | null }>
+            >;
+          })
+          .then(deployStatus => {
+            if (
+              !deployStatus ||
+              !deployStatus.deployed ||
+              !deployStatus.live_version
+            ) {
+              return null;
+            }
+            return fetch(
+              `${proxyUrl}/orchestration-api/models/${encodeURIComponent(
+                modelName,
+              )}/${encodeURIComponent(deployStatus.live_version)}/summary`,
+              { headers },
+            ).then(res => {
+              if (!res.ok) throw new Error(`HTTP ${res.status}`);
+              return res.json() as Promise<ModelVersionSummary>;
+            });
+          }),
       )
       .then(summary => {
         if (cancelled) return;
@@ -2113,12 +2376,21 @@ function VersionComparisonPanel({
   if (live.summary.version === incoming.summary.version) return null;
 
   const metricNames = Array.from(
-    new Set([...Object.keys(live.summary.metrics), ...Object.keys(incoming.summary.metrics)]),
+    new Set([
+      ...Object.keys(live.summary.metrics),
+      ...Object.keys(incoming.summary.metrics),
+    ]),
   );
   if (metricNames.length === 0) return null;
 
   return (
-    <Box style={{ border: `1px solid ${NEUTRAL.border}`, borderRadius: 4, padding: 12 }}>
+    <Box
+      style={{
+        border: `1px solid ${NEUTRAL.border}`,
+        borderRadius: 4,
+        padding: 12,
+      }}
+    >
       <Typography variant="body2" style={{ fontWeight: 600, marginBottom: 8 }}>
         Live (v{live.summary.version}) vs. new (v{incoming.summary.version})
       </Typography>
@@ -2126,15 +2398,22 @@ function VersionComparisonPanel({
         {metricNames.map(metric => (
           <Fragment key={metric}>
             <Grid item xs={4}>
-              <Typography variant="body2" style={{ color: NEUTRAL.textSecondary }}>
+              <Typography
+                variant="body2"
+                style={{ color: NEUTRAL.textSecondary }}
+              >
                 {metric}
               </Typography>
             </Grid>
             <Grid item xs={4}>
-              <Typography variant="body2">{live.summary.metrics[metric] ?? '—'}</Typography>
+              <Typography variant="body2">
+                {live.summary.metrics[metric] ?? '—'}
+              </Typography>
             </Grid>
             <Grid item xs={4}>
-              <Typography variant="body2">{incoming.summary.metrics[metric] ?? '—'}</Typography>
+              <Typography variant="body2">
+                {incoming.summary.metrics[metric] ?? '—'}
+              </Typography>
             </Grid>
           </Fragment>
         ))}
@@ -2172,7 +2451,9 @@ function usePromotionStatus(modelName: unknown): PromotionStatusState {
   const discoveryApi = useApi(discoveryApiRef);
   const { fetch } = useApi(fetchApiRef);
   const getAuthHeaders = useOpenChoreoAuthHeaders();
-  const [state, setState] = useState<PromotionStatusState>({ status: 'loading' });
+  const [state, setState] = useState<PromotionStatusState>({
+    status: 'loading',
+  });
 
   useEffect(() => {
     if (typeof modelName !== 'string' || !modelName) {
@@ -2184,7 +2465,9 @@ function usePromotionStatus(modelName: unknown): PromotionStatusState {
     Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
       .then(([proxyUrl, headers]) =>
         fetch(
-          `${proxyUrl}/orchestration-api/models/${encodeURIComponent(modelName)}/promotion-status`,
+          `${proxyUrl}/orchestration-api/models/${encodeURIComponent(
+            modelName,
+          )}/promotion-status`,
           { headers },
         ),
       )
@@ -2200,7 +2483,8 @@ function usePromotionStatus(modelName: unknown): PromotionStatusState {
           status: 'found',
           data: {
             project: typeof data?.project === 'string' ? data.project : '',
-            component: typeof data?.component === 'string' ? data.component : '',
+            component:
+              typeof data?.component === 'string' ? data.component : '',
             environments:
               data?.environments && typeof data.environments === 'object'
                 ? (data.environments as Record<string, string | null>)
@@ -2254,12 +2538,23 @@ function PromotionPreviewPanel({
   if (state.status !== 'found') return null;
   if (typeof targetEnvironment !== 'string' || !targetEnvironment) return null;
 
-  const sourceEnvironment = mode === 'promote' ? PROMOTION_SOURCE_ENVIRONMENT[targetEnvironment] : undefined;
-  const sourceRelease = sourceEnvironment ? state.data.environments[sourceEnvironment] : undefined;
+  const sourceEnvironment =
+    mode === 'promote'
+      ? PROMOTION_SOURCE_ENVIRONMENT[targetEnvironment]
+      : undefined;
+  const sourceRelease = sourceEnvironment
+    ? state.data.environments[sourceEnvironment]
+    : undefined;
   const targetRelease = state.data.environments[targetEnvironment];
 
   return (
-    <Box style={{ border: `1px solid ${NEUTRAL.border}`, borderRadius: 4, padding: 12 }}>
+    <Box
+      style={{
+        border: `1px solid ${NEUTRAL.border}`,
+        borderRadius: 4,
+        padding: 12,
+      }}
+    >
       <Typography variant="body2" style={{ fontWeight: 600, marginBottom: 8 }}>
         Release bound per environment today
       </Typography>
@@ -2267,12 +2562,17 @@ function PromotionPreviewPanel({
         {(['development', 'staging', 'production'] as const).map(env => (
           <Fragment key={env}>
             <Grid item xs={4}>
-              <Typography variant="body2" style={{ color: NEUTRAL.textSecondary }}>
+              <Typography
+                variant="body2"
+                style={{ color: NEUTRAL.textSecondary }}
+              >
                 {env}
               </Typography>
             </Grid>
             <Grid item xs={8}>
-              <Typography variant="body2">{state.data.environments[env] ?? '(none yet)'}</Typography>
+              <Typography variant="body2">
+                {state.data.environments[env] ?? '(none yet)'}
+              </Typography>
             </Grid>
           </Fragment>
         ))}
@@ -2281,13 +2581,14 @@ function PromotionPreviewPanel({
         <Typography variant="body2" style={{ marginTop: 8 }}>
           {sourceRelease ? (
             <>
-              Will move <strong>{sourceRelease}</strong> from {sourceEnvironment} into{' '}
-              {targetEnvironment}
+              Will move <strong>{sourceRelease}</strong> from{' '}
+              {sourceEnvironment} into {targetEnvironment}
               {targetRelease ? `, replacing ${targetRelease}` : ''}.
             </>
           ) : (
             <>
-              Nothing bound in {sourceEnvironment} yet — submitting will fail until something is.
+              Nothing bound in {sourceEnvironment} yet — submitting will fail
+              until something is.
             </>
           )}
         </Typography>
@@ -2320,9 +2621,15 @@ const DEPLOY_STRATEGY_LABELS: Record<string, string> = {
  * so reusing the deploy sentence for them would be actively wrong, not
  * just imprecise.
  */
-function DeploySummaryPanel({ data }: { data: Record<string, unknown> }): JSX.Element {
+function DeploySummaryPanel({
+  data,
+}: {
+  data: Record<string, unknown>;
+}): JSX.Element {
   const modelName =
-    typeof data.modelName === 'string' && data.modelName ? data.modelName : '(model not chosen yet)';
+    typeof data.modelName === 'string' && data.modelName
+      ? data.modelName
+      : '(model not chosen yet)';
   const modelVersion =
     typeof data.modelVersion === 'string' && data.modelVersion
       ? `v${data.modelVersion}`
@@ -2333,8 +2640,8 @@ function DeploySummaryPanel({ data }: { data: Record<string, unknown> }): JSX.El
   if (action === 'rollback') {
     sentence = (
       <>
-        Will roll back <strong>{modelName}</strong> to <strong>{modelVersion}</strong> — instant,
-        100% cutover, no PR.
+        Will roll back <strong>{modelName}</strong> to{' '}
+        <strong>{modelVersion}</strong> — instant, 100% cutover, no PR.
       </>
     );
   } else if (action === 'promote') {
@@ -2344,8 +2651,8 @@ function DeploySummaryPanel({ data }: { data: Record<string, unknown> }): JSX.El
         : '(environment not chosen yet)';
     sentence = (
       <>
-        Will promote <strong>{modelName}</strong>&apos;s currently-bound release to{' '}
-        <strong>{targetEnvironment}</strong>.
+        Will promote <strong>{modelName}</strong>&apos;s currently-bound release
+        to <strong>{targetEnvironment}</strong>.
       </>
     );
   } else if (action === 'promote-rollback') {
@@ -2355,28 +2662,46 @@ function DeploySummaryPanel({ data }: { data: Record<string, unknown> }): JSX.El
         : '(environment not chosen yet)';
     sentence = (
       <>
-        Will undo the last promotion to <strong>{rollbackEnvironment}</strong> for{' '}
-        <strong>{modelName}</strong>, one step back.
+        Will undo the last promotion to <strong>{rollbackEnvironment}</strong>{' '}
+        for <strong>{modelName}</strong>, one step back.
       </>
     );
   } else {
-    const deployStrategy = typeof data.deployStrategy === 'string' ? data.deployStrategy : 'direct';
-    const strategyLabel = DEPLOY_STRATEGY_LABELS[deployStrategy] ?? deployStrategy;
-    const trafficPercent = typeof data.trafficPercent === 'number' ? data.trafficPercent : undefined;
+    const deployStrategy =
+      typeof data.deployStrategy === 'string' ? data.deployStrategy : 'direct';
+    const strategyLabel =
+      DEPLOY_STRATEGY_LABELS[deployStrategy] ?? deployStrategy;
+    const trafficPercent =
+      typeof data.trafficPercent === 'number' ? data.trafficPercent : undefined;
     let percentSuffix = '';
     if (deployStrategy === 'blue-green' && trafficPercent !== undefined) {
-      percentSuffix = ` (${trafficPercent === 100 ? 'cutting over immediately' : 'staged dark, no traffic yet'})`;
-    } else if ((deployStrategy === 'canary' || deployStrategy === 'ab') && trafficPercent !== undefined) {
+      percentSuffix = ` (${
+        trafficPercent === 100
+          ? 'cutting over immediately'
+          : 'staged dark, no traffic yet'
+      })`;
+    } else if (
+      (deployStrategy === 'canary' || deployStrategy === 'ab') &&
+      trafficPercent !== undefined
+    ) {
       percentSuffix = ` starting at ${trafficPercent}%`;
     }
-    const releaseStrategy = typeof data.releaseStrategy === 'string' ? data.releaseStrategy : 'pr-gated';
-    const repoUrl = typeof data.repoUrl === 'string' && data.repoUrl ? data.repoUrl : undefined;
+    const releaseStrategy =
+      typeof data.releaseStrategy === 'string'
+        ? data.releaseStrategy
+        : 'pr-gated';
+    const repoUrl =
+      typeof data.repoUrl === 'string' && data.repoUrl
+        ? data.repoUrl
+        : undefined;
     const releaseText =
-      releaseStrategy === 'pr-gated' ? `via a PR${repoUrl ? ` to ${repoUrl}` : ''}` : 'instantly, with no PR';
+      releaseStrategy === 'pr-gated'
+        ? `via a PR${repoUrl ? ` to ${repoUrl}` : ''}`
+        : 'instantly, with no PR';
     sentence = (
       <>
-        Will deploy <strong>{modelName}</strong> <strong>{modelVersion}</strong>, {strategyLabel}{' '}
-        strategy{percentSuffix}, released {releaseText}.
+        Will deploy <strong>{modelName}</strong> <strong>{modelVersion}</strong>
+        , {strategyLabel} strategy{percentSuffix}, released {releaseText}.
       </>
     );
   }
@@ -2432,19 +2757,24 @@ function ColumnPickerField({
         multiple: mode === 'multi',
         renderValue:
           mode === 'multi'
-            ? ((v: unknown) => (
+            ? (v: unknown) => (
                 <Box display="flex" flexWrap="wrap" style={{ gap: 4 }}>
                   {(v as string[]).map(col => (
                     <Chip key={col} label={col} size="small" />
                   ))}
                 </Box>
-              ))
+              )
             : undefined,
       }}
     >
       {columns.map(col => (
         <MenuItem key={col} value={col}>
-          {mode === 'multi' && <Checkbox size="small" checked={(selected as string[]).includes(col)} />}
+          {mode === 'multi' && (
+            <Checkbox
+              size="small"
+              checked={(selected as string[]).includes(col)}
+            />
+          )}
           {col}
         </MenuItem>
       ))}
@@ -2469,7 +2799,12 @@ const MLP_HYPERPARAMS: HyperparamMeta[] = [
   { key: 'epochs', label: 'Epochs', kind: 'numeric' },
   { key: 'batch_size', label: 'Batch size', kind: 'numeric' },
   { key: 'dropout', label: 'Dropout', kind: 'numeric' },
-  { key: 'optimizer', label: 'Optimizer', kind: 'categorical', categoricalOptions: ['adam', 'sgd'] },
+  {
+    key: 'optimizer',
+    label: 'Optimizer',
+    kind: 'categorical',
+    categoricalOptions: ['adam', 'sgd'],
+  },
 ];
 const LSTM_HYPERPARAMS: HyperparamMeta[] = [
   { key: 'learning_rate', label: 'Learning rate', kind: 'numeric' },
@@ -2478,7 +2813,12 @@ const LSTM_HYPERPARAMS: HyperparamMeta[] = [
   { key: 'sequence_length', label: 'Sequence length', kind: 'numeric' },
   { key: 'num_layers', label: 'Number of layers', kind: 'numeric' },
   { key: 'hidden_size', label: 'Hidden size', kind: 'numeric' },
-  { key: 'optimizer', label: 'Optimizer', kind: 'categorical', categoricalOptions: ['adam', 'sgd'] },
+  {
+    key: 'optimizer',
+    label: 'Optimizer',
+    kind: 'categorical',
+    categoricalOptions: ['adam', 'sgd'],
+  },
 ];
 
 interface SearchSpaceRow {
@@ -2491,7 +2831,14 @@ interface SearchSpaceRow {
 }
 
 function emptyRow(): SearchSpaceRow {
-  return { enabled: false, mode: 'range', low: '', high: '', choicesText: '', categoricalChoices: [] };
+  return {
+    enabled: false,
+    mode: 'range',
+    low: '',
+    high: '',
+    choicesText: '',
+    categoricalChoices: [],
+  };
 }
 
 /** Parses an existing `{"param": {"low":..,"high":..} | {"choices":[...]}}` JSON string (or "{}"/invalid) into per-row UI state — only called once, at mount, via useState's lazy initializer (see SearchSpaceBuilderField). */
@@ -2499,7 +2846,10 @@ function parseSearchSpaceJson(
   json: string,
   hyperparams: HyperparamMeta[],
 ): Record<string, SearchSpaceRow> {
-  let parsed: Record<string, { choices?: unknown[]; low?: number; high?: number }> = {};
+  let parsed: Record<
+    string,
+    { choices?: unknown[]; low?: number; high?: number }
+  > = {};
   try {
     const value: unknown = JSON.parse(json || '{}');
     if (value && typeof value === 'object') parsed = value as typeof parsed;
@@ -2517,10 +2867,26 @@ function parseSearchSpaceJson(
     if (Array.isArray(spec.choices)) {
       rows[meta.key] =
         meta.kind === 'categorical'
-          ? { ...emptyRow(), enabled: true, mode: 'choices', categoricalChoices: spec.choices.map(String) }
-          : { ...emptyRow(), enabled: true, mode: 'choices', choicesText: spec.choices.join(', ') };
+          ? {
+              ...emptyRow(),
+              enabled: true,
+              mode: 'choices',
+              categoricalChoices: spec.choices.map(String),
+            }
+          : {
+              ...emptyRow(),
+              enabled: true,
+              mode: 'choices',
+              choicesText: spec.choices.join(', '),
+            };
     } else if (spec.low !== undefined && spec.high !== undefined) {
-      rows[meta.key] = { ...emptyRow(), enabled: true, mode: 'range', low: String(spec.low), high: String(spec.high) };
+      rows[meta.key] = {
+        ...emptyRow(),
+        enabled: true,
+        mode: 'range',
+        low: String(spec.low),
+        high: String(spec.high),
+      };
     } else {
       rows[meta.key] = emptyRow();
     }
@@ -2532,12 +2898,16 @@ function serializeSearchSpace(
   rows: Record<string, SearchSpaceRow>,
   hyperparams: HyperparamMeta[],
 ): string {
-  const result: Record<string, { choices?: unknown[]; low?: number; high?: number }> = {};
+  const result: Record<
+    string,
+    { choices?: unknown[]; low?: number; high?: number }
+  > = {};
   for (const meta of hyperparams) {
     const row = rows[meta.key];
     if (!row?.enabled) continue;
     if (meta.kind === 'categorical') {
-      if (row.categoricalChoices.length > 0) result[meta.key] = { choices: row.categoricalChoices };
+      if (row.categoricalChoices.length > 0)
+        result[meta.key] = { choices: row.categoricalChoices };
       continue;
     }
     if (row.mode === 'choices') {
@@ -2551,7 +2921,8 @@ function serializeSearchSpace(
     } else {
       const low = Number(row.low);
       const high = Number(row.high);
-      if (!Number.isNaN(low) && !Number.isNaN(high)) result[meta.key] = { low, high };
+      if (!Number.isNaN(low) && !Number.isNaN(high))
+        result[meta.key] = { low, high };
     }
   }
   return JSON.stringify(result);
@@ -2580,7 +2951,8 @@ function SearchSpaceBuilderField({
   value,
   onChange,
 }: SearchSpaceBuilderFieldProps): JSX.Element {
-  const hyperparams = architecture === 'lstm' ? LSTM_HYPERPARAMS : MLP_HYPERPARAMS;
+  const hyperparams =
+    architecture === 'lstm' ? LSTM_HYPERPARAMS : MLP_HYPERPARAMS;
   const [rows, setRows] = useState<Record<string, SearchSpaceRow>>(() =>
     parseSearchSpaceJson(typeof value === 'string' ? value : '{}', hyperparams),
   );
@@ -2613,7 +2985,9 @@ function SearchSpaceBuilderField({
                   <Checkbox
                     size="small"
                     checked={row.enabled}
-                    onChange={e => updateRow(meta.key, { enabled: e.target.checked })}
+                    onChange={e =>
+                      updateRow(meta.key, { enabled: e.target.checked })
+                    }
                   />
                 </TableCell>
                 <TableCell>{meta.label}</TableCell>
@@ -2635,7 +3009,9 @@ function SearchSpaceBuilderField({
                                 updateRow(meta.key, {
                                   categoricalChoices: e.target.checked
                                     ? [...row.categoricalChoices, option]
-                                    : row.categoricalChoices.filter(o => o !== option),
+                                    : row.categoricalChoices.filter(
+                                        o => o !== option,
+                                      ),
                                 })
                               }
                             />
@@ -2645,13 +3021,21 @@ function SearchSpaceBuilderField({
                       ))}
                     </Box>
                   ) : (
-                    <Box display="flex" alignItems="flex-start" style={{ gap: 8 }}>
+                    <Box
+                      display="flex"
+                      alignItems="flex-start"
+                      style={{ gap: 8 }}
+                    >
                       <TextField
                         select
                         variant="outlined"
                         size="small"
                         value={row.mode}
-                        onChange={e => updateRow(meta.key, { mode: e.target.value as 'range' | 'choices' })}
+                        onChange={e =>
+                          updateRow(meta.key, {
+                            mode: e.target.value as 'range' | 'choices',
+                          })
+                        }
                         style={{ minWidth: 110 }}
                       >
                         <MenuItem value="range">Range</MenuItem>
@@ -2664,7 +3048,9 @@ function SearchSpaceBuilderField({
                             size="small"
                             label="Low"
                             value={row.low}
-                            onChange={e => updateRow(meta.key, { low: e.target.value })}
+                            onChange={e =>
+                              updateRow(meta.key, { low: e.target.value })
+                            }
                             style={{ width: 100 }}
                           />
                           <TextField
@@ -2672,7 +3058,9 @@ function SearchSpaceBuilderField({
                             size="small"
                             label="High"
                             value={row.high}
-                            onChange={e => updateRow(meta.key, { high: e.target.value })}
+                            onChange={e =>
+                              updateRow(meta.key, { high: e.target.value })
+                            }
                             style={{ width: 100 }}
                           />
                         </>
@@ -2683,7 +3071,9 @@ function SearchSpaceBuilderField({
                           label="Comma-separated values"
                           placeholder="e.g. 16, 32, 64"
                           value={row.choicesText}
-                          onChange={e => updateRow(meta.key, { choicesText: e.target.value })}
+                          onChange={e =>
+                            updateRow(meta.key, { choicesText: e.target.value })
+                          }
                           fullWidth
                         />
                       )}
@@ -2696,7 +3086,11 @@ function SearchSpaceBuilderField({
         </TableBody>
       </Table>
       {description && (
-        <Typography variant="caption" color="textSecondary" style={{ display: 'block', marginTop: 4 }}>
+        <Typography
+          variant="caption"
+          color="textSecondary"
+          style={{ display: 'block', marginTop: 4 }}
+        >
           {description}
         </Typography>
       )}
@@ -2740,9 +3134,20 @@ function resolvedEnumValues(fieldSchema: JSONSchema7): unknown[] | null {
  * Golden Path's `steps:` receive.
  */
 function StepLayout(
-  props: FieldExtensionComponentProps<Record<string, unknown>, StepLayoutUiOptions>,
+  props: FieldExtensionComponentProps<
+    Record<string, unknown>,
+    StepLayoutUiOptions
+  >,
 ): JSX.Element {
-  const { schema, uiSchema, formData, onChange, idSchema, registry, errorSchema } = props;
+  const {
+    schema,
+    uiSchema,
+    formData,
+    onChange,
+    idSchema,
+    registry,
+    errorSchema,
+  } = props;
   const { SchemaField } = registry.fields;
   const properties = (schema.properties ?? {}) as Record<string, JSONSchema7>;
   const requiredFields = new Set(schema.required ?? []);
@@ -2754,6 +3159,7 @@ function StepLayout(
   const models = useModels();
   const availableFeatures = useAvailableFeatures();
   const modelVersions = useModelVersions(data.modelName);
+  const modelSummary = useModelVersionCheck(data.modelName, data.modelVersion);
   const promptNames = usePrompts();
   const promptVersions = usePromptVersions(data.promptName);
   const ragCollections = useRagCollections();
@@ -2794,7 +3200,8 @@ function StepLayout(
     const updates: Record<string, unknown> = {};
 
     previousPropertyNames.current.forEach(name => {
-      if (!currentNames.has(name) && data[name] !== undefined) updates[name] = undefined;
+      if (!currentNames.has(name) && data[name] !== undefined)
+        updates[name] = undefined;
     });
     Object.entries(properties).forEach(([name, fieldSchema]) => {
       if (fieldSchema.const !== undefined) {
@@ -2802,7 +3209,11 @@ function StepLayout(
         return;
       }
       const allowedValues = resolvedEnumValues(fieldSchema);
-      if (allowedValues && data[name] !== undefined && !allowedValues.includes(data[name])) {
+      if (
+        allowedValues &&
+        data[name] !== undefined &&
+        !allowedValues.includes(data[name])
+      ) {
         updates[name] = undefined;
       }
     });
@@ -2824,7 +3235,10 @@ function StepLayout(
   // not just once.
   useEffect(() => {
     if (dataSources.length === 0 || !properties.dataSource) return;
-    if (typeof data.dataSource !== 'string' || !dataSources.includes(data.dataSource)) {
+    if (
+      typeof data.dataSource !== 'string' ||
+      !dataSources.includes(data.dataSource)
+    ) {
       onChange({ ...data, dataSource: dataSources[0], datasetUri: undefined });
       return;
     }
@@ -2835,7 +3249,8 @@ function StepLayout(
         d =>
           d.source === data.dataSource &&
           d.uri === data.datasetUri &&
-          (typeof data.architecture !== 'string' || d.name.toLowerCase().endsWith('.zip') === wantsZip),
+          (typeof data.architecture !== 'string' ||
+            d.name.toLowerCase().endsWith('.zip') === wantsZip),
       );
     if (data.datasetUri !== undefined && !datasetUriBelongsToSource) {
       onChange({ ...data, datasetUri: undefined });
@@ -2859,11 +3274,41 @@ function StepLayout(
     if (!properties.modelVersion) return;
     if (data.modelName !== previousModelNameForVersion.current) {
       previousModelNameForVersion.current = data.modelName;
-      if (data.modelVersion !== undefined) onChange({ ...data, modelVersion: undefined });
+      if (data.modelVersion !== undefined)
+        onChange({ ...data, modelVersion: undefined });
       return;
     }
     if (modelVersions.length > 0 && !data.modelVersion) {
       onChange({ ...data, modelVersion: modelVersions[0] });
+    }
+  });
+
+  // Bind monitoring.referenceDataUri to the selected model version's
+  // registered training dataset when model metadata exposes it. Older model
+  // versions may not have that metadata, so the existing dataset picker stays
+  // available as a backward-compatible fallback.
+  const previousReferenceModel = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!properties.referenceDataUri) return;
+    const modelName = typeof data.modelName === 'string' ? data.modelName : '';
+    const modelVersion =
+      typeof data.modelVersion === 'string' ? data.modelVersion : '';
+    const modelKey =
+      modelName && modelVersion ? `${modelName}:${modelVersion}` : undefined;
+    if (modelKey !== previousReferenceModel.current) {
+      previousReferenceModel.current = modelKey;
+      if (data.referenceDataUri !== undefined) {
+        onChange({ ...data, referenceDataUri: undefined });
+      }
+      return;
+    }
+    if (modelSummary.status !== 'found') return;
+    const summaryDatasetUri =
+      modelSummary.summary.dataset_uri ??
+      modelSummary.summary.tags.dataset_uri ??
+      modelSummary.summary.tags.training_dataset_uri;
+    if (summaryDatasetUri && data.referenceDataUri !== summaryDatasetUri) {
+      onChange({ ...data, referenceDataUri: summaryDatasetUri });
     }
   });
 
@@ -2932,7 +3377,8 @@ function StepLayout(
       // "Time-series forecasting" — still literally trains as regression,
       // see train-track-register's finance-operations taskType branch).
       // Falls back to the raw const when a branch doesn't set one.
-      const displayTitle = (fieldSchema as { displayTitle?: unknown }).displayTitle;
+      const displayTitle = (fieldSchema as { displayTitle?: unknown })
+        .displayTitle;
       return (
         <Grid item xs={12} md={width} key={name}>
           <TextField
@@ -2942,8 +3388,14 @@ function StepLayout(
             // (this needs to stay legible, it's a value being reported to
             // the user, not a field that merely doesn't apply right now).
             InputProps={{ readOnly: true }}
-            label={typeof fieldSchema.title === 'string' ? fieldSchema.title : name}
-            value={typeof displayTitle === 'string' ? displayTitle : String(fieldSchema.const)}
+            label={
+              typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+            }
+            value={
+              typeof displayTitle === 'string'
+                ? displayTitle
+                : String(fieldSchema.const)
+            }
             helperText={
               typeof fieldSchema.description === 'string'
                 ? fieldSchema.description
@@ -2958,8 +3410,14 @@ function StepLayout(
         <Grid item xs={12} md={width} key={name}>
           <BaseModelPickerField
             name={name}
-            title={typeof fieldSchema.title === 'string' ? fieldSchema.title : name}
-            description={typeof fieldSchema.description === 'string' ? fieldSchema.description : undefined}
+            title={
+              typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+            }
+            description={
+              typeof fieldSchema.description === 'string'
+                ? fieldSchema.description
+                : undefined
+            }
             required={requiredFields.has(name)}
             models={models}
             value={data[name]}
@@ -2974,8 +3432,14 @@ function StepLayout(
         <Grid item xs={12} md={width} key={name}>
           <ModelNamePickerField
             name={name}
-            title={typeof fieldSchema.title === 'string' ? fieldSchema.title : name}
-            description={typeof fieldSchema.description === 'string' ? fieldSchema.description : undefined}
+            title={
+              typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+            }
+            description={
+              typeof fieldSchema.description === 'string'
+                ? fieldSchema.description
+                : undefined
+            }
             required={requiredFields.has(name)}
             modelNames={modelNames}
             value={data[name]}
@@ -2989,8 +3453,14 @@ function StepLayout(
         modelVersionPicker && modelVersions.length > 0 ? (
           <ModelVersionPickerField
             name={name}
-            title={typeof fieldSchema.title === 'string' ? fieldSchema.title : name}
-            description={typeof fieldSchema.description === 'string' ? fieldSchema.description : undefined}
+            title={
+              typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+            }
+            description={
+              typeof fieldSchema.description === 'string'
+                ? fieldSchema.description
+                : undefined
+            }
             required={requiredFields.has(name)}
             versions={modelVersions}
             value={data[name]}
@@ -3052,7 +3522,10 @@ function StepLayout(
         <Fragment key={name}>
           {field}
           <Grid item xs={12}>
-            <VersionComparisonPanel modelName={data.modelName} newVersion={data.modelVersion} />
+            <VersionComparisonPanel
+              modelName={data.modelName}
+              newVersion={data.modelVersion}
+            />
           </Grid>
         </Fragment>
       );
@@ -3079,7 +3552,10 @@ function StepLayout(
         <Fragment key={name}>
           {field}
           <Grid item xs={12}>
-            <PromotionPreviewPanel modelName={data.modelName} targetEnvironment={data[name]} />
+            <PromotionPreviewPanel
+              modelName={data.modelName}
+              targetEnvironment={data[name]}
+            />
           </Grid>
         </Fragment>
       );
@@ -3106,7 +3582,11 @@ function StepLayout(
         <Fragment key={name}>
           {field}
           <Grid item xs={12}>
-            <PromotionPreviewPanel modelName={data.modelName} targetEnvironment={data[name]} mode="rollback" />
+            <PromotionPreviewPanel
+              modelName={data.modelName}
+              targetEnvironment={data[name]}
+              mode="rollback"
+            />
           </Grid>
         </Fragment>
       );
@@ -3116,8 +3596,14 @@ function StepLayout(
         <Grid item xs={12} md={width} key={name}>
           <OptionPickerField
             name={name}
-            title={typeof fieldSchema.title === 'string' ? fieldSchema.title : name}
-            description={typeof fieldSchema.description === 'string' ? fieldSchema.description : undefined}
+            title={
+              typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+            }
+            description={
+              typeof fieldSchema.description === 'string'
+                ? fieldSchema.description
+                : undefined
+            }
             required={requiredFields.has(name)}
             options={promptNames}
             value={data[name]}
@@ -3131,8 +3617,14 @@ function StepLayout(
         <Grid item xs={12} md={width} key={name}>
           <OptionPickerField
             name={name}
-            title={typeof fieldSchema.title === 'string' ? fieldSchema.title : name}
-            description={typeof fieldSchema.description === 'string' ? fieldSchema.description : undefined}
+            title={
+              typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+            }
+            description={
+              typeof fieldSchema.description === 'string'
+                ? fieldSchema.description
+                : undefined
+            }
             required={requiredFields.has(name)}
             options={promptVersions}
             formatOption={version => `v${version}`}
@@ -3147,8 +3639,14 @@ function StepLayout(
         <Grid item xs={12} md={width} key={name}>
           <OptionPickerField
             name={name}
-            title={typeof fieldSchema.title === 'string' ? fieldSchema.title : name}
-            description={typeof fieldSchema.description === 'string' ? fieldSchema.description : undefined}
+            title={
+              typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+            }
+            description={
+              typeof fieldSchema.description === 'string'
+                ? fieldSchema.description
+                : undefined
+            }
             required={requiredFields.has(name)}
             options={ragCollections}
             value={data[name]}
@@ -3162,8 +3660,14 @@ function StepLayout(
         <Grid item xs={12} md={width} key={name}>
           <OptionPickerField
             name={name}
-            title={typeof fieldSchema.title === 'string' ? fieldSchema.title : name}
-            description={typeof fieldSchema.description === 'string' ? fieldSchema.description : undefined}
+            title={
+              typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+            }
+            description={
+              typeof fieldSchema.description === 'string'
+                ? fieldSchema.description
+                : undefined
+            }
             required={requiredFields.has(name)}
             options={ragIndexVersions}
             formatOption={version => `v${version}`}
@@ -3178,8 +3682,14 @@ function StepLayout(
         <Grid item xs={12} md={width} key={name}>
           <OptionPickerField
             name={name}
-            title={typeof fieldSchema.title === 'string' ? fieldSchema.title : name}
-            description={typeof fieldSchema.description === 'string' ? fieldSchema.description : undefined}
+            title={
+              typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+            }
+            description={
+              typeof fieldSchema.description === 'string'
+                ? fieldSchema.description
+                : undefined
+            }
             required={requiredFields.has(name)}
             options={llmModels}
             value={data[name]}
@@ -3188,7 +3698,11 @@ function StepLayout(
         </Grid>
       );
     }
-    if (huggingFaceModelValidator || gpuRecommendationPanel || rolloutEligibilityGate) {
+    if (
+      huggingFaceModelValidator ||
+      gpuRecommendationPanel ||
+      rolloutEligibilityGate
+    ) {
       const field = (
         <Grid item xs={12} md={width} key={`${name}-input`}>
           <SchemaField
@@ -3236,8 +3750,14 @@ function StepLayout(
         <Grid item xs={12} md={width} key={name}>
           <DataSourcePickerField
             name={name}
-            title={typeof fieldSchema.title === 'string' ? fieldSchema.title : name}
-            description={typeof fieldSchema.description === 'string' ? fieldSchema.description : undefined}
+            title={
+              typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+            }
+            description={
+              typeof fieldSchema.description === 'string'
+                ? fieldSchema.description
+                : undefined
+            }
             required={requiredFields.has(name)}
             sources={dataSources}
             value={data[name]}
@@ -3251,7 +3771,7 @@ function StepLayout(
       // currently holds — falls back to showing everything if this step
       // never declared a dataSource field (dataSourcePicker is opt-in per
       // template, not a hard requirement of datasetPicker).
-      const scopedDatasets = properties.dataSource
+      let scopedDatasets = properties.dataSource
         ? datasets.filter(d => d.source === data.dataSource)
         : datasets;
       // Further scoped to whatever file type `architecture` (set in an
@@ -3263,7 +3783,9 @@ function StepLayout(
       // template with a datasetPicker but no `architecture` field.
       if (typeof data.architecture === 'string') {
         const wantsZip = data.architecture === 'cv';
-        scopedDatasets = scopedDatasets.filter(d => d.name.toLowerCase().endsWith('.zip') === wantsZip);
+        scopedDatasets = scopedDatasets.filter(
+          d => d.name.toLowerCase().endsWith('.zip') === wantsZip,
+        );
       }
       // Further scoped to the one data/<...>-<useCase>/ directory built
       // for this use case (see data/README.md's per-use-case layout) —
@@ -3281,15 +3803,23 @@ function StepLayout(
       // (architecture-filtered) list instead of showing nothing.
       if (typeof data.useCase === 'string' && data.useCase.length > 0) {
         const suffix = `-${data.useCase}`;
-        const matching = scopedDatasets.filter(d => (d.name.split('/')[0] ?? '').endsWith(suffix));
+        const matching = scopedDatasets.filter(d =>
+          (d.name.split('/')[0] ?? '').endsWith(suffix),
+        );
         if (matching.length > 0) scopedDatasets = matching;
       }
       const picker = (
         <Grid item xs={12} md={width} key={`${name}-picker`}>
           <DatasetPickerField
             name={name}
-            title={typeof fieldSchema.title === 'string' ? fieldSchema.title : name}
-            description={typeof fieldSchema.description === 'string' ? fieldSchema.description : undefined}
+            title={
+              typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+            }
+            description={
+              typeof fieldSchema.description === 'string'
+                ? fieldSchema.description
+                : undefined
+            }
             required={requiredFields.has(name)}
             datasets={scopedDatasets}
             value={data[name]}
@@ -3323,8 +3853,14 @@ function StepLayout(
       return (
         <Grid item xs={12} key={name}>
           <SearchSpaceBuilderField
-            title={typeof fieldSchema.title === 'string' ? fieldSchema.title : name}
-            description={typeof fieldSchema.description === 'string' ? fieldSchema.description : undefined}
+            title={
+              typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+            }
+            description={
+              typeof fieldSchema.description === 'string'
+                ? fieldSchema.description
+                : undefined
+            }
             architecture={data.architecture}
             value={data[name]}
             onChange={value => onChange({ ...data, [name]: value })}
@@ -3337,8 +3873,14 @@ function StepLayout(
         <Grid item xs={12} md={width} key={name}>
           <ColumnPickerField
             name={name}
-            title={typeof fieldSchema.title === 'string' ? fieldSchema.title : name}
-            description={typeof fieldSchema.description === 'string' ? fieldSchema.description : undefined}
+            title={
+              typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+            }
+            description={
+              typeof fieldSchema.description === 'string'
+                ? fieldSchema.description
+                : undefined
+            }
             required={requiredFields.has(name)}
             mode="multi"
             columns={availableFeatures}
@@ -3353,8 +3895,14 @@ function StepLayout(
         <Grid item xs={12} md={width} key={name}>
           <ColumnPickerField
             name={name}
-            title={typeof fieldSchema.title === 'string' ? fieldSchema.title : name}
-            description={typeof fieldSchema.description === 'string' ? fieldSchema.description : undefined}
+            title={
+              typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+            }
+            description={
+              typeof fieldSchema.description === 'string'
+                ? fieldSchema.description
+                : undefined
+            }
             required={requiredFields.has(name)}
             mode={columnPicker}
             columns={datasetColumns}
@@ -3392,7 +3940,9 @@ function StepLayout(
       {entries.map(entry => {
         if (isSubpanel(entry)) {
           const { subpanel } = entry;
-          const hasAnyField = subpanel.fields.some(f => properties[normalizeField(f).name]);
+          const hasAnyField = subpanel.fields.some(
+            f => properties[normalizeField(f).name],
+          );
           // Progressive disclosure: a conditional child block doesn't exist
           // on screen at all when its condition isn't met — not an empty
           // dashed box.
@@ -3407,7 +3957,12 @@ function StepLayout(
               >
                 <Typography
                   variant="overline"
-                  style={{ color: NEUTRAL.textSecondary, fontWeight: 700, display: 'block', marginBottom: 8 }}
+                  style={{
+                    color: NEUTRAL.textSecondary,
+                    fontWeight: 700,
+                    display: 'block',
+                    marginBottom: 8,
+                  }}
                 >
                   {subpanel.title}
                 </Typography>
@@ -3479,7 +4034,11 @@ function StepLayout(
   );
 
   const flattenNames = (entries: GroupEntry[]): string[] =>
-    entries.flatMap(e => (isSubpanel(e) ? flattenNames(e.subpanel.fields) : [normalizeField(e).name]));
+    entries.flatMap(e =>
+      isSubpanel(e)
+        ? flattenNames(e.subpanel.fields)
+        : [normalizeField(e).name],
+    );
 
   const grouped = new Set<string>();
   groups.forEach(group => {
@@ -3492,7 +4051,9 @@ function StepLayout(
     const Icon = group.icon ? GROUP_ICONS[group.icon] : undefined;
     return (
       <Box display="flex" alignItems="center" style={{ gap: 6 }}>
-        {Icon && <Icon style={{ fontSize: 16, color: NEUTRAL.textSecondary }} />}
+        {Icon && (
+          <Icon style={{ fontSize: 16, color: NEUTRAL.textSecondary }} />
+        )}
         {/* Panel title is intentionally SMALLER than a field label (12px vs
             13-14px) — it names a group, not a value to enter, so weight +
             icon carry the distinction, not size. */}
@@ -3523,11 +4084,20 @@ function StepLayout(
         // whole panel instead of rendering a header over blank space. A
         // toggleField panel (e.g. Fine-tune) still shows as long as the
         // toggle itself exists, even before it's switched on.
-        const toggleFieldExists = Boolean(group.toggleField && properties[group.toggleField]);
-        if (!hasAnyRenderable(group.fields, properties) && !toggleFieldExists) return null;
-        const toggleOn = group.toggleField ? Boolean(data[group.toggleField]) : true;
+        const toggleFieldExists = Boolean(
+          group.toggleField && properties[group.toggleField],
+        );
+        if (!hasAnyRenderable(group.fields, properties) && !toggleFieldExists)
+          return null;
+        const toggleOn = group.toggleField
+          ? Boolean(data[group.toggleField])
+          : true;
         const header = (
-          <Box display="flex" alignItems="flex-start" justifyContent="space-between">
+          <Box
+            display="flex"
+            alignItems="flex-start"
+            justifyContent="space-between"
+          >
             <PanelTitle group={group} />
             {group.toggleField && properties[group.toggleField] && (
               <FormControlLabel
@@ -3537,7 +4107,12 @@ function StepLayout(
                   <Checkbox
                     size="small"
                     checked={toggleOn}
-                    onChange={e => onChange({ ...data, [group.toggleField as string]: e.target.checked })}
+                    onChange={e =>
+                      onChange({
+                        ...data,
+                        [group.toggleField as string]: e.target.checked,
+                      })
+                    }
                   />
                 }
               />
@@ -3567,7 +4142,10 @@ function StepLayout(
             variant="outlined"
             style={{
               marginBottom: 24,
-              backgroundColor: group.variant === 'optional' ? NEUTRAL.background : NEUTRAL.paper,
+              backgroundColor:
+                group.variant === 'optional'
+                  ? NEUTRAL.background
+                  : NEUTRAL.paper,
             }}
             key={group.title}
           >

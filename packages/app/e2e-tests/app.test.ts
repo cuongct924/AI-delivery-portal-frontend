@@ -15,13 +15,16 @@
  */
 
 import { test, expect } from '@playwright/test';
+import { signIn } from './signIn';
 
 test('App should render the welcome page', async ({ page }) => {
   await page.goto('/');
 
-  const enterButton = page.getByRole('button', { name: 'Enter' });
-  await expect(enterButton).toBeVisible();
-  await enterButton.click();
+  const postLogin = await signIn(page);
+  expect(postLogin, 'reached the post-login layout').toBe(true);
 
-  await expect(page.getByText('My Company Catalog')).toBeVisible();
+  // The portal shell is up once the Home link is visible.
+  await expect(
+    page.locator('a[href="/"][aria-label="Home"]').first(),
+  ).toBeVisible();
 });
