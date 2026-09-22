@@ -19,6 +19,7 @@ import type {
   CostRowRecommendation,
   CostScope,
   CostScopeLevel,
+  CostStageFilter,
 } from './types';
 import { formatCost, formatEfficiency, formatDelta } from './format';
 import { CostOptimizeButton } from './CostOptimizeButton';
@@ -179,6 +180,11 @@ export interface CostInsightsTableProps {
    * with several components a note asks the user to select one.
    */
   singleComponent?: boolean;
+  /**
+   * Active stage filter. When `all`, the standard table swaps the CPU/Memory
+   * columns for a Build/Gate/Run split, so the lifecycle cost is visible.
+   */
+  stage?: CostStageFilter;
 }
 
 const EmptyState: FC = () => {
@@ -449,10 +455,14 @@ const StandardCostTable: FC<CostInsightsTableProps> = ({
   onDrill,
   icon: KindIcon,
   titles,
+  stage = 'all',
 }) => {
   const classes = useStyles();
   const [orderBy, setOrderBy] = useState<SortId>('total');
   const [order, setOrder] = useState<SortOrder>('desc');
+  // When every stage is shown, the lifecycle split is more useful than the
+  // CPU/Memory split, so the columns swap.
+  const showStages = stage === 'all';
 
   const onSort = (id: SortId) => {
     if (orderBy === id) {
@@ -501,24 +511,34 @@ const StandardCostTable: FC<CostInsightsTableProps> = ({
             <TableCell sortDirection={orderBy === 'name' ? order : false}>
               {sortLabel('name', dimensionHeader(level))}
             </TableCell>
-            <TableCell
-              className={classes.numeric}
-              sortDirection={orderBy === 'cpuCost' ? order : false}
-            >
-              {sortLabel('cpuCost', 'CPU (USD)', true)}
-            </TableCell>
-            <TableCell
-              className={classes.numeric}
-              sortDirection={orderBy === 'memoryCost' ? order : false}
-            >
-              {sortLabel('memoryCost', 'Memory (USD)', true)}
-            </TableCell>
-            <TableCell
-              className={classes.numeric}
-              sortDirection={orderBy === 'efficiency' ? order : false}
-            >
-              {sortLabel('efficiency', 'Efficiency', true)}
-            </TableCell>
+            {showStages ? (
+              <>
+                <TableCell className={classes.numeric}>Build (USD)</TableCell>
+                <TableCell className={classes.numeric}>Gate (USD)</TableCell>
+                <TableCell className={classes.numeric}>Run (USD)</TableCell>
+              </>
+            ) : (
+              <>
+                <TableCell
+                  className={classes.numeric}
+                  sortDirection={orderBy === 'cpuCost' ? order : false}
+                >
+                  {sortLabel('cpuCost', 'CPU (USD)', true)}
+                </TableCell>
+                <TableCell
+                  className={classes.numeric}
+                  sortDirection={orderBy === 'memoryCost' ? order : false}
+                >
+                  {sortLabel('memoryCost', 'Memory (USD)', true)}
+                </TableCell>
+                <TableCell
+                  className={classes.numeric}
+                  sortDirection={orderBy === 'efficiency' ? order : false}
+                >
+                  {sortLabel('efficiency', 'Efficiency', true)}
+                </TableCell>
+              </>
+            )}
             <TableCell
               className={classes.numeric}
               sortDirection={orderBy === 'total' ? order : false}
@@ -558,15 +578,31 @@ const StandardCostTable: FC<CostInsightsTableProps> = ({
                   )}
                 </span>
               </TableCell>
-              <TableCell className={classes.numeric}>
-                {formatCost(row.cpuCost)}
-              </TableCell>
-              <TableCell className={classes.numeric}>
-                {formatCost(row.memoryCost)}
-              </TableCell>
-              <TableCell className={classes.numeric}>
-                {formatEfficiency(row.efficiency)}
-              </TableCell>
+              {showStages ? (
+                <>
+                  <TableCell className={classes.numeric}>
+                    {formatCost(row.stageCost?.build ?? 0)}
+                  </TableCell>
+                  <TableCell className={classes.numeric}>
+                    {formatCost(row.stageCost?.gate ?? 0)}
+                  </TableCell>
+                  <TableCell className={classes.numeric}>
+                    {formatCost(row.stageCost?.run ?? 0)}
+                  </TableCell>
+                </>
+              ) : (
+                <>
+                  <TableCell className={classes.numeric}>
+                    {formatCost(row.cpuCost)}
+                  </TableCell>
+                  <TableCell className={classes.numeric}>
+                    {formatCost(row.memoryCost)}
+                  </TableCell>
+                  <TableCell className={classes.numeric}>
+                    {formatEfficiency(row.efficiency)}
+                  </TableCell>
+                </>
+              )}
               <TableCell className={classes.numeric}>
                 {formatCost(row.total)}
               </TableCell>

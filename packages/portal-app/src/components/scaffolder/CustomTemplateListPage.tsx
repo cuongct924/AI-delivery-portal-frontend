@@ -120,13 +120,13 @@ const KNOWN_CARD_TYPES = [
 // here is on-screen order within each lane, mirroring PLATFORM_TYPES.
 const MLOPS_TEMPLATE_NAMES = [
   'train-track-register',
-  'register-deploy',
+  'evaluate-deploy-model',
   'setup-model-monitoring',
 ];
 const LLMOPS_TEMPLATE_NAMES = [
-  'llm-draft-register',
-  'llm-evaluate-deploy',
-  'deploy-llm',
+  'llm-draft-ingest',
+  'llm-evaluate-activate',
+  'llm-serve-deploy',
 ];
 const AI_WORKFLOW_TEMPLATE_NAMES = [
   ...MLOPS_TEMPLATE_NAMES,

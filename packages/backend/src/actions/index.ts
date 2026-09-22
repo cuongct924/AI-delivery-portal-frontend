@@ -11,6 +11,7 @@ import { coreServices, createBackendModule } from '@backstage/backend-plugin-api
 import { scaffolderActionsExtensionPoint } from '@backstage/plugin-scaffolder-node';
 import { openChoreoTokenServiceRef } from '@openchoreo/openchoreo-auth';
 import {
+  createConfirmPromotionAction,
   createEnrichDatasetFeaturesAction,
   createModelSummaryAction,
   createPolicyCheckAction,
@@ -25,8 +26,10 @@ import {
 } from './mlopsActions';
 import {
   createActivatePromptAction,
+  createDraftEvalSetAction,
   createDraftPromptAction,
   createEvaluatePromptAction,
+  createFetchEvalSetAction,
   createPrepareLlmDeployManifestAction,
   createRagActivateAction,
   createRagEvaluateAction,
@@ -56,6 +59,7 @@ export default createBackendModule({
           createRecordDeployAction({ config, tokenService }),
           createPromoteModelAction({ config, tokenService }),
           createRollbackPromotionAction({ config, tokenService }),
+          createConfirmPromotionAction({ config, tokenService }),
           createSetupMonitoringAction({ config, tokenService }),
           createRagIngestAction({ config, tokenService }),
           createRagEvaluateAction({ config, tokenService }),
@@ -63,6 +67,8 @@ export default createBackendModule({
           createDraftPromptAction({ config, tokenService }),
           createEvaluatePromptAction({ config, tokenService }),
           createActivatePromptAction({ config, tokenService }),
+          createDraftEvalSetAction({ config, tokenService }),
+          createFetchEvalSetAction({ config, tokenService }),
         );
       },
     });

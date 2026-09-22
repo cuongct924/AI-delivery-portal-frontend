@@ -25,10 +25,13 @@ spec:
   type: team
   children: []
 ---
-# Deploys via register-deploy (Golden Path #2, MLflow-registered models) —
-# maps 1:1 to ArgoCD's mlops-team tenant
-# (infra/argocd/appproject-{dev,staging,prod}-mlops-team.yaml) and
-# Kargo's mlops-team Warehouse/Stages (infra/kargo/).
+# Deploys via evaluate-deploy-model (Golden Path #2, MLflow-registered
+# models). No infra-level tenant boundary anymore — the backend repo's real
+# OpenChoreoInferenceAdapter deploys to the one shared "serving" Component
+# regardless of owner group (see adapters/factory.py's get_inference_adapter
+# docstring); this Group exists only as the Catalog spec.owner for
+# MLflow-registered models. ArgoCD AppProject / Kargo Warehouse per-team
+# tenancy was retired when this repo moved fully to OpenChoreo.
 apiVersion: backstage.io/v1alpha1
 kind: Group
 metadata:
@@ -38,10 +41,11 @@ spec:
   type: team
   children: []
 ---
-# Deploys via deploy-llm ("Serving LLM") — maps 1:1 to ArgoCD's
-# llmops-team tenant
-# (infra/argocd/appproject-{dev,staging,prod}-llmops-team.yaml) and
-# Kargo's llmops-team Warehouse/Stages (infra/kargo/).
+# Deploys via llm-serve-deploy ("Serving LLM"). Same no-per-team-tenant
+# situation as mlops-team above — real GPU serving (GpuKServeInferenceAdapter)
+# defaults to namespace="default" and has no OpenChoreo ClusterComponentType
+# yet (see infra/llm-serving/README.md); this Group exists only as the
+# Catalog spec.owner for self-hosted LLM entries.
 apiVersion: backstage.io/v1alpha1
 kind: Group
 metadata:

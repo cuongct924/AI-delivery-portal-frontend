@@ -18053,8 +18053,12 @@ __metadata:
   dependencies:
     "@axe-core/playwright": "npm:^4.11.3"
     "@backstage/cli": "npm:^0.36.2"
+    "@backstage/core-components": "npm:^0.18.10"
+    "@backstage/frontend-plugin-api": "npm:^0.17.0"
+    "@backstage/plugin-home-react": "npm:^0.1.38"
     "@backstage/plugin-notifications": "npm:^0.5.20"
     "@backstage/ui": "npm:^0.15.0"
+    "@openchoreo/backstage-plugin-platform-engineer-core": "workspace:^"
     "@openchoreo/backstage-portal-app": "workspace:^"
     "@playwright/test": "npm:1.56.0"
     "@testing-library/dom": "npm:9.3.4"

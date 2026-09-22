@@ -98,8 +98,20 @@ interface RecordDeployResponse {
   readonly pr_url: string;
 }
 
-/** Response body of `POST {baseUrl}/models/{name}/promote`. */
-interface PromoteResponse {
+/**
+ * Response body of `POST {baseUrl}/models/{name}/promote` and
+ * `POST {baseUrl}/models/{name}/promote-rollback` — a rendered manifest,
+ * nothing written to the cluster yet.
+ */
+interface PreparePromotionResponse {
+  readonly file_name: string;
+  readonly content: string;
+  readonly environment: string;
+  readonly project_release: string;
+}
+
+/** Response body of `POST {baseUrl}/models/{name}/promote/confirm`. */
+interface ConfirmPromotionResponse {
   readonly project: string;
   readonly component: string;
   readonly environments: Record<string, string | null>;
@@ -374,6 +386,12 @@ export function createTriggerTrainingAction({
             base_model_name: ctx.input.baseModelName,
           },
           tokenService,
+          // Guards against a retried Scaffolder step (timeout, double-click)
+          // starting a *second* real training run — trigger_workflow() names
+          // each WorkflowRun from a timestamp, so a naive retry would never
+          // collide on its own. ctx.task.id is stable across retries of the
+          // same task.
+          { 'Idempotency-Key': ctx.task.id },
         );
       ctx.logger.info(`Triggered training workflow "${workflowName}"`);
 
@@ -897,17 +915,21 @@ export function createRecordDeployAction({ config, tokenService }: ActionDeps) {
 }
 
 /**
- * `orchestration:promote-model` — the *only* real path that reaches
- * OpenChoreoPromotionAdapter.promote() (adapters/openchoreo_promotion_adapter.py):
- * a Dev running this Golden Path template themselves. That's the whole
- * "manual approval" gate for a staging/prod promotion — no agent/MCP tool
- * calls this action or the endpoint behind it.
+ * `orchestration:promote-model` — renders the ProjectReleaseBinding
+ * manifest that would promote the model currently bound in the source
+ * environment to the next one. Writes nothing yet: a
+ * `publish:github:pull-request` step publishes the result as a PR, and
+ * `orchestration:confirm-promotion` (below) is what actually applies it,
+ * once that PR is reviewed/merged — same PR-then-confirm shape as
+ * `orchestration:prepare-deploy-manifest`/`record-deploy` for dev. See
+ * adapters/delivery/openchoreo_promotion_adapter.py's module docstring for
+ * why staging/prod promotion is PR-gated.
  */
 export function createPromoteModelAction({ config, tokenService }: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:promote-model',
     description:
-      'Promotes the model currently bound in the source environment to the next one.',
+      'Renders the ProjectReleaseBinding manifest that would promote the model to the next environment.',
     schema: {
       input: {
         modelName: z => z.string({ description: 'Registered model name' }),
@@ -918,40 +940,47 @@ export function createPromoteModelAction({ config, tokenService }: ActionDeps) {
           }),
       },
       output: {
-        environments: z =>
-          z.record(z.string(), z.string().nullable(), {
-            description:
-              'Release bound in each environment after the promotion',
+        filePath: z =>
+          z.string({
+            description: 'Workspace-relative path the manifest was written to',
           }),
-        prodPendingApproval: z =>
-          z.boolean({
-            description: 'True when staging is ahead of production',
-          }),
+        environment: z => z.string({ description: 'Echoes targetEnvironment' }),
+        projectRelease: z =>
+          z.string({ description: 'Release the manifest would bind in environment' }),
       },
     },
     async handler(ctx) {
       const baseUrl = getBaseUrl(config);
-      const { environments, prod_pending_approval: prodPendingApproval } =
-        await postJson<PromoteResponse>(
-          `${baseUrl}/models/${ctx.input.modelName}/promote`,
-          { target_environment: ctx.input.targetEnvironment },
-          tokenService,
-        );
-      ctx.logger.info(
-        `Promoted "${ctx.input.modelName}" to ${ctx.input.targetEnvironment}`,
+      const {
+        file_name: fileName,
+        content,
+        environment,
+        project_release: projectRelease,
+      } = await postJson<PreparePromotionResponse>(
+        `${baseUrl}/models/${ctx.input.modelName}/promote`,
+        { target_environment: ctx.input.targetEnvironment },
+        tokenService,
       );
-      ctx.output('environments', environments);
-      ctx.output('prodPendingApproval', prodPendingApproval);
+      const absolutePath = path.join(ctx.workspacePath, fileName);
+      await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+      await fs.writeFile(absolutePath, content, 'utf-8');
+      ctx.logger.info(
+        `Wrote promotion manifest for "${ctx.input.modelName}" -> ${ctx.input.targetEnvironment} to "${fileName}"`,
+      );
+      ctx.output('filePath', fileName);
+      ctx.output('environment', environment);
+      ctx.output('projectRelease', projectRelease);
     },
   });
 }
 
 /**
  * `orchestration:rollback-promotion` — the staging/prod counterpart to
- * action=rollback (which only ever touches dev). Undoes the last
- * promote()/rollback-promotion() for one environment via
+ * action=rollback (which only ever touches dev). Renders the manifest that
+ * would undo the last promotion for one environment via
  * adapters/openchoreo_promotion_adapter.py's annotation-based one-level
- * undo — see that module's docstring.
+ * undo (see that module's docstring) — same render-then-confirm shape as
+ * `orchestration:promote-model` above.
  */
 export function createRollbackPromotionAction({
   config,
@@ -960,7 +989,7 @@ export function createRollbackPromotionAction({
   return createTemplateAction({
     id: 'orchestration:rollback-promotion',
     description:
-      'Undoes the last promotion for one environment, moving it back to what was bound there before.',
+      'Renders the manifest that would undo the last promotion for one environment.',
     schema: {
       input: {
         modelName: z => z.string({ description: 'Registered model name' }),
@@ -970,9 +999,70 @@ export function createRollbackPromotionAction({
           }),
       },
       output: {
+        filePath: z =>
+          z.string({
+            description: 'Workspace-relative path the manifest was written to',
+          }),
+        environment: z => z.string({ description: 'Echoes environment' }),
+        projectRelease: z =>
+          z.string({ description: 'Release the manifest would restore in environment' }),
+      },
+    },
+    async handler(ctx) {
+      const baseUrl = getBaseUrl(config);
+      const {
+        file_name: fileName,
+        content,
+        environment,
+        project_release: projectRelease,
+      } = await postJson<PreparePromotionResponse>(
+        `${baseUrl}/models/${ctx.input.modelName}/promote-rollback`,
+        { environment: ctx.input.environment },
+        tokenService,
+      );
+      const absolutePath = path.join(ctx.workspacePath, fileName);
+      await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+      await fs.writeFile(absolutePath, content, 'utf-8');
+      ctx.logger.info(
+        `Wrote rollback manifest for "${ctx.input.modelName}" in ${ctx.input.environment} to "${fileName}"`,
+      );
+      ctx.output('filePath', fileName);
+      ctx.output('environment', environment);
+      ctx.output('projectRelease', projectRelease);
+    },
+  });
+}
+
+/**
+ * `orchestration:confirm-promotion` — applies a manifest rendered by
+ * `orchestration:promote-model`/`rollback-promotion`: the actual
+ * OpenChoreo/cluster write, and the point where delivery-metrics events
+ * are recorded. Run this step once the PR `publish:github:pull-request`
+ * opened has been reviewed and merged — same honor-system timing as
+ * `orchestration:record-deploy` for dev (nothing here detects the actual
+ * GitHub merge event).
+ */
+export function createConfirmPromotionAction({ config, tokenService }: ActionDeps) {
+  return createTemplateAction({
+    id: 'orchestration:confirm-promotion',
+    description:
+      'Applies a rendered ProjectReleaseBinding manifest and records the delivery-metrics event for it.',
+    schema: {
+      input: {
+        modelName: z => z.string({ description: 'Registered model name' }),
+        environment: z => z.string({ description: 'Environment to write' }),
+        projectRelease: z => z.string({ description: 'Release to bind there' }),
+        eventType: z =>
+          z
+            .enum(['deploy', 'rollback'], {
+              description: 'Which DORA deployment-event label to record',
+            })
+            .optional(),
+      },
+      output: {
         environments: z =>
           z.record(z.string(), z.string().nullable(), {
-            description: 'Release bound in each environment after the rollback',
+            description: 'Release bound in each environment after applying it',
           }),
         prodPendingApproval: z =>
           z.boolean({
@@ -983,13 +1073,20 @@ export function createRollbackPromotionAction({
     async handler(ctx) {
       const baseUrl = getBaseUrl(config);
       const { environments, prod_pending_approval: prodPendingApproval } =
-        await postJson<PromoteResponse>(
-          `${baseUrl}/models/${ctx.input.modelName}/promote-rollback`,
-          { environment: ctx.input.environment },
+        await postJson<ConfirmPromotionResponse>(
+          `${baseUrl}/models/${ctx.input.modelName}/promote/confirm`,
+          {
+            environment: ctx.input.environment,
+            project_release: ctx.input.projectRelease,
+            event_type: ctx.input.eventType,
+          },
           tokenService,
+          // Guards a retried/re-run confirm step against double-recording
+          // the same delivery-metrics deployment event.
+          { 'Idempotency-Key': ctx.task.id },
         );
       ctx.logger.info(
-        `Rolled back "${ctx.input.modelName}"'s promotion in ${ctx.input.environment}`,
+        `Confirmed "${ctx.input.modelName}"'s promotion in ${ctx.input.environment}`,
       );
       ctx.output('environments', environments);
       ctx.output('prodPendingApproval', prodPendingApproval);

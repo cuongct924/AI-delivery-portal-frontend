@@ -223,7 +223,7 @@ interface GroupField {
   llmModelPicker?: boolean;
   /**
    * Live GET /llm-deploy/validate-model lookup below this field — the
-   * frontend half of deploy-llm's gated-model guardrail: surfaces whether
+   * frontend half of llm-serve-deploy's gated-model guardrail: surfaces whether
    * the typed `huggingFaceModelId` exists and whether it is gated
    * (`is_gated=true` means the `hfTokenSecretRef` field becomes required
    * server-side). Advisory only — same non-blocking contract as
@@ -266,7 +266,7 @@ const GROUP_ICONS = {
   tune: TuneIcon,
   function: FunctionsIcon,
   list: FilterListIcon,
-  // "bolt"/"query_stats" were already used by templates/register-deploy's
+  // "bolt"/"query_stats" were already used by templates/evaluate-deploy-model's
   // Action/Monitoring groups before these 2 entries existed — silently
   // rendering no icon (GROUP_ICONS[group.icon] === undefined) since
   // group.icon comes from YAML, not something tsc could catch. Fixed
@@ -465,6 +465,35 @@ function groupDatasetsBySource(
     groups.get(dataset.source)!.push(dataset);
   }
   return order.map(source => [source, groups.get(source)!]);
+}
+
+/**
+ * The one dataset (if any) that `source` + `architecture`'s required file
+ * type + `useCase`'s own `data/<...>-<useCase>/` directory (see
+ * data/README.md) all narrow down to — mirrors the datasetPicker branch's
+ * own scoping in renderField below, kept as one function so the auto-select
+ * effect and the picker's option list can never drift apart. Returns
+ * `undefined` (never guesses) when useCase isn't set yet, or when the
+ * narrowing lands on zero or more than one dataset — same fail-open
+ * contract as the `matching.length > 0` guard in renderField.
+ */
+function findDatasetForUseCase(
+  datasets: DatasetInfo[],
+  dataSource: string,
+  architecture: unknown,
+  useCase: unknown,
+): DatasetInfo | undefined {
+  if (typeof useCase !== 'string' || useCase.length === 0) return undefined;
+  const wantsZip = architecture === 'cv';
+  const suffix = `-${useCase}`;
+  const matches = datasets.filter(
+    d =>
+      d.source === dataSource &&
+      (typeof architecture !== 'string' ||
+        d.name.toLowerCase().endsWith('.zip') === wantsZip) &&
+      (d.name.split('/')[0] ?? '').endsWith(suffix),
+  );
+  return matches.length === 1 ? matches[0] : undefined;
 }
 
 /**
@@ -1507,7 +1536,7 @@ interface ActionOption {
   Icon: typeof FlashOnIcon;
 }
 
-/** Evaluate & Deploy Model's own 4 `action` values — see the GroupField.actionPicker doc comment for why these are hardcoded here rather than read from the field's schema. */
+/** Evaluate & Deploy Model's own 6 `action` values — see the GroupField.actionPicker doc comment for why these are hardcoded here rather than read from the field's schema. */
 const ACTION_OPTIONS: ActionOption[] = [
   {
     value: 'deploy',
@@ -1524,14 +1553,26 @@ const ACTION_OPTIONS: ActionOption[] = [
   {
     value: 'promote',
     label: 'Promote',
-    caption: 'Move a release to the next environment',
+    caption: 'Open a PR to move a release to the next environment',
     Icon: TrendingUpIcon,
+  },
+  {
+    value: 'promote-confirm',
+    label: 'Promote — confirm',
+    caption: 'Apply a promotion PR once it is merged',
+    Icon: CheckCircleIcon,
   },
   {
     value: 'promote-rollback',
     label: 'Promote rollback',
-    caption: 'Undo the last promotion (staging/prod)',
+    caption: 'Open a PR to undo the last promotion (staging/prod)',
     Icon: RestoreIcon,
+  },
+  {
+    value: 'promote-rollback-confirm',
+    label: 'Promote rollback — confirm',
+    caption: 'Apply a rollback PR once it is merged',
+    Icon: CheckCircleIcon,
   },
 ];
 
@@ -2115,7 +2156,7 @@ function ModelVersionCheckPanel({
 }
 
 /**
- * Live HuggingFace model check for deploy-llm's `huggingFaceModelId` field —
+ * Live HuggingFace model check for llm-serve-deploy's `huggingFaceModelId` field —
  * see useHuggingFaceModelInfo. Tells the Dev whether the typed id resolves
  * and whether it is gated (gated => `hfTokenSecretRef` becomes required
  * server-side). Advisory only; the real check stays the backend's own
@@ -2169,7 +2210,7 @@ function HuggingFaceModelValidatorPanel({
 }
 
 /**
- * GPU suggestion for deploy-llm's compute fields — reads the param count +
+ * GPU suggestion for llm-serve-deploy's compute fields — reads the param count +
  * architecture hints from useHuggingFaceModelInfo plus the step's
  * quantization/maxContextLength, then surfaces GET
  * /llm-deploy/gpu-recommendation's cheapest fitting gpuType/gpuCount (or its
@@ -2244,7 +2285,7 @@ function GpuRecommendationPanel({
 }
 
 /**
- * Rollout gate for deploy-llm's `deployStrategy` field — see
+ * Rollout gate for llm-serve-deploy's `deployStrategy` field — see
  * useRolloutEligibility. When there is no prior deploy, canary / a-b /
  * blue-green will be rejected server-side, so this warns before submit
  * instead of after the whole wizard runs.
@@ -2664,6 +2705,23 @@ function DeploySummaryPanel({
       <>
         Will undo the last promotion to <strong>{rollbackEnvironment}</strong>{' '}
         for <strong>{modelName}</strong>, one step back.
+      </>
+    );
+  } else if (action === 'promote-confirm' || action === 'promote-rollback-confirm') {
+    const confirmEnvironment =
+      typeof data.confirmEnvironment === 'string' && data.confirmEnvironment
+        ? data.confirmEnvironment
+        : '(environment not chosen yet)';
+    const confirmProjectRelease =
+      typeof data.confirmProjectRelease === 'string' && data.confirmProjectRelease
+        ? data.confirmProjectRelease
+        : '(project release not entered yet)';
+    sentence = (
+      <>
+        Will bind <strong>{modelName}</strong> to{' '}
+        <strong>{confirmProjectRelease}</strong> in{' '}
+        <strong>{confirmEnvironment}</strong> — only run this after merging
+        the PR a prior promote/promote-rollback run opened.
       </>
     );
   } else {
@@ -3223,23 +3281,44 @@ function StepLayout(
   });
 
   // Keeps `dataSource` pointed at a source GET /datasets actually returned
-  // (auto-picks the first one once the list loads / whenever the current
-  // value stops being valid — e.g. that adapter went away), and clears
-  // `datasetUri` the moment it no longer belongs to the current
-  // `dataSource` OR no longer matches `architecture`'s required file type
-  // (e.g. switching architecture from cv to sklearn after already picking
-  // a .zip) — same "never let a stale cross-field value survive" contract
-  // as the effect above, scoped to just this one pair. Runs on every
-  // render (idempotent, like the effect above) since "is the current value
-  // still valid" has to be rechecked against the latest `datasets` fetch,
-  // not just once.
+  // (auto-picks one once the list loads / whenever the current value stops
+  // being valid — e.g. that adapter went away), and keeps `datasetUri` in
+  // sync with it: auto-filled to the one dataset `useCase` (chosen in
+  // General Information) resolves to via findDatasetForUseCase, or cleared
+  // when it no longer belongs to the current `dataSource` / no longer
+  // matches `architecture`'s required file type (e.g. switching
+  // architecture from cv to sklearn after already picking a .zip) and
+  // useCase doesn't resolve it to a replacement. Runs on every render
+  // (idempotent, like the effect above) since "is the current value still
+  // valid" has to be rechecked against the latest `datasets` fetch, not
+  // just once.
   useEffect(() => {
     if (dataSources.length === 0 || !properties.dataSource) return;
     if (
       typeof data.dataSource !== 'string' ||
       !dataSources.includes(data.dataSource)
     ) {
-      onChange({ ...data, dataSource: dataSources[0], datasetUri: undefined });
+      // Prefer MinIO ("s3") — that's where the real per-use-case datasets
+      // live (scripts/setup-3node-infra.sh seeds MinIO from data/); "local"
+      // is only a fallback for a dev machine running the API directly
+      // without the cluster's MinIO reachable (see
+      // LocalFileObjectStorageAdapter's own doc comment).
+      const defaultSource = dataSources.includes('s3')
+        ? 's3'
+        : dataSources[0];
+      onChange({ ...data, dataSource: defaultSource, datasetUri: undefined });
+      return;
+    }
+    const matchForUseCase = findDatasetForUseCase(
+      datasets,
+      data.dataSource,
+      data.architecture,
+      data.useCase,
+    );
+    if (matchForUseCase) {
+      if (data.datasetUri !== matchForUseCase.uri) {
+        onChange({ ...data, datasetUri: matchForUseCase.uri });
+      }
       return;
     }
     const wantsZip = data.architecture === 'cv';

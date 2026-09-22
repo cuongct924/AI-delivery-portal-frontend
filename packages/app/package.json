@@ -20,8 +20,12 @@
   },
   "dependencies": {
     "@backstage/cli": "^0.36.2",
+    "@backstage/core-components": "^0.18.10",
+    "@backstage/frontend-plugin-api": "^0.17.0",
+    "@backstage/plugin-home-react": "^0.1.38",
     "@backstage/plugin-notifications": "^0.5.20",
     "@backstage/ui": "^0.15.0",
+    "@openchoreo/backstage-plugin-platform-engineer-core": "workspace:^",
     "@openchoreo/backstage-portal-app": "workspace:^",
     "react": "18.3.1",
     "react-dom": "18.3.1",

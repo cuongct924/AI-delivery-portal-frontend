@@ -3,8 +3,10 @@ import { PaletteColor } from '@material-ui/core/styles/createPalette';
 import {
   DoraClassification,
   DoraDataAvailability,
+  DoraDeployment,
   DoraGranularity,
   DoraLifecyclePhase,
+  DoraWorkloadType,
 } from '../../types';
 
 /** Formats a millisecond duration as a compact human string (e.g. 45m, 3.2h, 2.1d). */
@@ -79,9 +81,184 @@ export function deltaColor(theme: Theme, isImprovement: boolean): string {
  * good; longer lead time, higher failure rate, and slower recovery are not.
  */
 export function isPositiveDeltaGood(
-  metric: 'deploymentFrequency' | 'leadTime' | 'changeFailureRate' | 'mttr',
+  metric:
+    | 'deploymentFrequency'
+    | 'leadTime'
+    | 'changeFailureRate'
+    | 'mttr'
+    | 'reworkRate',
 ): boolean {
   return metric === 'deploymentFrequency';
+}
+
+export type DoraWorkloadTypeFilter = DoraWorkloadType | 'all';
+
+export const WORKLOAD_TYPE_LABELS: Record<DoraWorkloadTypeFilter, string> = {
+  all: 'All',
+  service: 'Software Service',
+  ml_model: 'ML Model',
+  llm_app: 'LLM App',
+};
+
+export function isAiWorkload(workloadType: DoraWorkloadTypeFilter): boolean {
+  return workloadType === 'ml_model' || workloadType === 'llm_app';
+}
+
+export const DEVOPS_ACCENT_COLOR = '#3457d5';
+export const MLOPS_ACCENT_COLOR = '#7b4fe0';
+export const LLM_APP_ACCENT_COLOR = '#5b53db';
+
+export const WORKLOAD_TYPE_COLORS: Record<DoraWorkloadType, string> = {
+  service: DEVOPS_ACCENT_COLOR,
+  ml_model: MLOPS_ACCENT_COLOR,
+  llm_app: LLM_APP_ACCENT_COLOR,
+};
+
+export function workloadTypeCounts(
+  deployments: readonly DoraDeployment[],
+): Record<DoraWorkloadType, number> {
+  const counts: Record<DoraWorkloadType, number> = {
+    service: 0,
+    ml_model: 0,
+    llm_app: 0,
+  };
+  for (const deployment of deployments) {
+    if (deployment.workloadType) {
+      counts[deployment.workloadType] += 1;
+    }
+  }
+  return counts;
+}
+
+export function deploymentVersionLabel(deployment: DoraDeployment): string {
+  return (
+    deployment.modelVersion ??
+    deployment.promptVersion ??
+    deployment.ragIndexVersion ??
+    deployment.componentRelease
+  );
+}
+
+const CHANGE_TYPE_LABELS: Record<string, string> = {
+  model: 'Model weights',
+  prompt: 'Prompt',
+  rag_index: 'RAG index',
+  infra: 'Infra/config',
+};
+
+const CHANGE_TYPE_COLORS: Record<string, string> = {
+  model: MLOPS_ACCENT_COLOR,
+  prompt: '#0e8a7d',
+  rag_index: '#c1622e',
+  infra: DEVOPS_ACCENT_COLOR,
+};
+
+export interface MixSlice {
+  key: string;
+  label: string;
+  pct: number;
+  color: string;
+}
+
+function mixFromCounts(counts: Record<string, number>): MixSlice[] {
+  const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
+  if (total === 0) {
+    return [];
+  }
+  return Object.entries(counts)
+    .filter(([, count]) => count > 0)
+    .sort(([, a], [, b]) => b - a)
+    .map(([key, count]) => ({
+      key,
+      label: CHANGE_TYPE_LABELS[key] ?? key,
+      pct: Math.round((count / total) * 100),
+      color: CHANGE_TYPE_COLORS[key] ?? '#8890a0',
+    }));
+}
+
+export function changeTypeMix(deployments: readonly DoraDeployment[]): MixSlice[] {
+  const counts: Record<string, number> = {};
+  for (const deployment of deployments) {
+    if (!deployment.changeType) {
+      continue;
+    }
+    counts[deployment.changeType] = (counts[deployment.changeType] ?? 0) + 1;
+  }
+  return mixFromCounts(counts);
+}
+
+const RECOVERY_STRATEGY_LABELS: Record<string, string> = {
+  rollback: 'Rollback',
+  fallback: 'Fallback',
+  guardrail: 'Guardrail patch',
+  retrain: 'Retrain run',
+};
+
+const RECOVERY_STRATEGY_COLORS: Record<string, string> = {
+  rollback: '#7b4fe0',
+  fallback: '#3457d5',
+  guardrail: '#c1622e',
+  retrain: '#0e8a7d',
+};
+
+export function recoveryStrategyMix(
+  deployments: readonly DoraDeployment[],
+): MixSlice[] {
+  const counts: Record<string, number> = {};
+  for (const deployment of deployments) {
+    if (!deployment.recoveryStrategy) {
+      continue;
+    }
+    counts[deployment.recoveryStrategy] =
+      (counts[deployment.recoveryStrategy] ?? 0) + 1;
+  }
+  const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
+  if (total === 0) {
+    return [];
+  }
+  return Object.entries(counts)
+    .filter(([, count]) => count > 0)
+    .sort(([, a], [, b]) => b - a)
+    .map(([key, count]) => ({
+      key,
+      label: RECOVERY_STRATEGY_LABELS[key] ?? key,
+      pct: Math.round((count / total) * 100),
+      color: RECOVERY_STRATEGY_COLORS[key] ?? '#8890a0',
+    }));
+}
+
+export function deploymentsPerWeek(
+  deployments: readonly DoraDeployment[],
+  rangeDays: number,
+): number {
+  const weeks = rangeDays / 7;
+  return weeks > 0 ? deployments.length / weeks : 0;
+}
+
+export function leadTimeP50Ms(
+  deployments: readonly DoraDeployment[],
+): number | null {
+  const values = deployments
+    .map(d => d.leadTimeMs)
+    .filter((v): v is number => v !== null && v !== undefined)
+    .sort((a, b) => a - b);
+  if (values.length === 0) {
+    return null;
+  }
+  const mid = Math.floor(values.length / 2);
+  return values.length % 2 === 0
+    ? (values[mid - 1] + values[mid]) / 2
+    : values[mid];
+}
+
+export function failureRate(
+  deployments: readonly DoraDeployment[],
+): number | null {
+  if (deployments.length === 0) {
+    return null;
+  }
+  const failed = deployments.filter(d => d.outcome === 'failed').length;
+  return failed / deployments.length;
 }
 
 export interface InsightsTimeRangeOption {
@@ -155,14 +332,6 @@ export async function mapWithConcurrency<T, R>(
 }
 
 /** Max concurrent breakdown metric requests (see `mapWithConcurrency`). */
-/** A change-failure-rate bucket as the observer returns it. */
-export interface CfrSeriesPoint {
-  bucketStart: string;
-  rate: number;
-  failed: number;
-  total: number;
-}
-
 /**
  * The change-failure-rate series is zero-filled, so a bucket that deployed
  * nothing still carries `rate: 0`. Plotted raw that reads as "nothing failed"
@@ -172,7 +341,7 @@ export interface CfrSeriesPoint {
  * breaks the line instead of running it flat along the axis.
  */
 export function nullUnmeasuredRates(
-  points: readonly CfrSeriesPoint[] | undefined,
+  points: readonly { bucketStart: string; rate: number; total: number }[] | undefined,
 ): Array<Record<string, string | number | null>> {
   return (points ?? []).map(point => ({
     ...point,
@@ -186,7 +355,7 @@ export function nullUnmeasuredRates(
  * baseline rather than register as absent.
  */
 export function measuredRates(
-  points: readonly CfrSeriesPoint[] | undefined,
+  points: readonly { rate: number; total: number }[] | undefined,
 ): number[] {
   return (points ?? []).filter(p => p.total > 0).map(p => p.rate);
 }

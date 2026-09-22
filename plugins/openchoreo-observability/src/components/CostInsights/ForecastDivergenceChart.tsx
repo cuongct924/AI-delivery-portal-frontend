@@ -6,6 +6,7 @@ import {
   ComposedChart,
   LabelList,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -57,11 +58,14 @@ const useStyles = makeStyles(theme => ({
 export interface ForecastDivergenceChartProps {
   forecast: ForecastData | null;
   title?: string;
+  /** Monthly budget, drawn as a horizontal reference line when set. */
+  budget?: number | null;
 }
 
 export const ForecastDivergenceChart: FC<ForecastDivergenceChartProps> = ({
   forecast,
   title = 'Accumulated cost and forecast',
+  budget = null,
 }) => {
   const classes = useStyles();
   const theme = useTheme();
@@ -178,6 +182,19 @@ export const ForecastDivergenceChart: FC<ForecastDivergenceChartProps> = ({
               width={64}
               tick={{ fontSize: 12, fill: theme.palette.text.secondary }}
             />
+            {budget !== null && budget > 0 && (
+              <ReferenceLine
+                y={budget}
+                stroke={theme.palette.error.main}
+                strokeDasharray="4 4"
+                label={{
+                  value: `budget ${formatCostUsd(budget)}`,
+                  position: 'insideTopRight',
+                  fontSize: 11,
+                  fill: theme.palette.error.main,
+                }}
+              />
+            )}
             <Tooltip
               content={({ active, payload, label }) => {
                 if (!active || !payload?.length) return null;

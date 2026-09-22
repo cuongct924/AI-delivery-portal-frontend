@@ -140,6 +140,11 @@ export const CostEfficiencyScatter: FC<CostEfficiencyScatterProps> = ({
   };
 
   const anySaving = rows.some(r => (r.saving ?? 0) > 0);
+  // When rows carry an Evaluate Gate quality score, the x-axis becomes
+  // cost-vs-quality (a Pareto view) instead of cost-vs-efficiency.
+  const byQuality = rows.some(r => r.quality !== undefined);
+  const xValue = (row: CostRow): number =>
+    byQuality ? row.quality ?? 0 : row.efficiency ?? 0;
 
   const points: Point[] = useMemo(
     () =>
@@ -147,16 +152,16 @@ export const CostEfficiencyScatter: FC<CostEfficiencyScatterProps> = ({
         .slice()
         .sort((a, b) => b.total - a.total)
         .map((row, i) => ({
-          x: Math.round((row.efficiency ?? 0) * 100),
+          x: Math.round(xValue(row) * 100),
           y: row.total,
           z: anySaving ? row.saving ?? 0 : row.total,
           rank: i + 1,
           label: row.label,
           saving: row.saving ?? 0,
-          color: effColor(row.efficiency ?? 0),
+          color: effColor(xValue(row)),
         })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rows, anySaving, dark],
+    [rows, anySaving, dark, byQuality],
   );
 
   if (points.length === 0) {
@@ -172,9 +177,13 @@ export const CostEfficiencyScatter: FC<CostEfficiencyScatterProps> = ({
   return (
     <Paper variant="outlined" className={classes.container}>
       <ChartTitle
-        title={title}
+        title={byQuality ? 'Cost vs quality' : title}
         className={classes.header}
-        info="Each bubble is one dimension: x is resource efficiency, y is spend, and bubble size is the estimated saving. Low-efficiency, high-spend bubbles are worth reviewing first."
+        info={
+          byQuality
+            ? 'Each bubble is one artifact version: x is its Evaluate Gate quality score, y is spend, and bubble size is the estimated saving. Versions toward the top-left are expensive for their quality.'
+            : 'Each bubble is one dimension: x is resource efficiency, y is spend, and bubble size is the estimated saving. Low-efficiency, high-spend bubbles are worth reviewing first.'
+        }
       />
       <div className={classes.body}>
         <div className={classes.chart}>
@@ -188,7 +197,7 @@ export const CostEfficiencyScatter: FC<CostEfficiencyScatterProps> = ({
                 domain={[0, 100]}
                 tick={{ fontSize: 12, fill: theme.palette.text.secondary }}
                 label={{
-                  value: 'Efficiency →',
+                  value: byQuality ? 'Quality →' : 'Efficiency →',
                   position: 'insideBottom',
                   offset: -12,
                   fontSize: 12,
@@ -224,7 +233,10 @@ export const CostEfficiencyScatter: FC<CostEfficiencyScatterProps> = ({
                         {p.rank}. {p.label}
                       </div>
                       <div>cost {formatCostUsd(p.y)}</div>
-                      <div>efficiency {formatEfficiency(p.x / 100)}</div>
+                      <div>
+                        {byQuality ? 'quality' : 'efficiency'}{' '}
+                        {formatEfficiency(p.x / 100)}
+                      </div>
                       <div>potential saving {formatCostUsd(p.saving)}</div>
                     </div>
                   );

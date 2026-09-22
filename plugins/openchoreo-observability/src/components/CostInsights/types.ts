@@ -8,6 +8,73 @@ import type { CostResourceProfile } from '../../types';
  */
 export type CostScopeLevel = 'namespace' | 'project' | 'component';
 
+/**
+ * The lifecycle stage a cost belongs to. AI artifacts have all three; a plain
+ * software service only ever has `run` (its infra cost), so the same page
+ * renders fewer columns for it instead of needing a separate view.
+ * - `build`: one-time cost to produce a version (train, RAG ingest, eval-set draft)
+ * - `gate`:  cost of the Evaluate Gate run (LLM-as-judge tokens)
+ * - `run`:   recurring cost to operate a version (serving, monitoring, tokens)
+ */
+export type CostStage = 'build' | 'gate' | 'run';
+
+/** `all` is the unfiltered view; the summary then breaks down by stage. */
+export type CostStageFilter = CostStage | 'all';
+
+/**
+ * What the table rows are grouped by. `infra` keeps the original
+ * namespace/project/component/environment grouping; the others re-key rows by
+ * the AI artifact, owning team, or business domain the cost is attributed to.
+ */
+export type CostDimension = 'artifact' | 'team' | 'domain' | 'infra';
+
+export const COST_STAGES: CostStage[] = ['build', 'gate', 'run'];
+
+export const COST_STAGE_LABELS: Record<CostStageFilter, string> = {
+  all: 'All stages',
+  build: 'Build',
+  gate: 'Gate',
+  run: 'Run',
+};
+
+export const COST_DIMENSIONS: CostDimension[] = [
+  'artifact',
+  'team',
+  'domain',
+  'infra',
+];
+
+export const COST_DIMENSION_LABELS: Record<CostDimension, string> = {
+  artifact: 'Artifact',
+  team: 'Team',
+  domain: 'Domain',
+  infra: 'Infrastructure',
+};
+
+export const DEFAULT_COST_STAGE: CostStageFilter = 'all';
+export const DEFAULT_COST_DIMENSION: CostDimension = 'infra';
+
+/** A spend spike the platform flags against its own recent baseline. */
+export interface CostAnomaly {
+  id: string;
+  /** Dimension value the anomaly was detected on (artifact/team/domain name). */
+  dimension: string;
+  stage: CostStage;
+  observed: number;
+  expected: number;
+  /** Signed percent over the expected baseline. */
+  deltaPct: number;
+  detectedAt: string;
+}
+
+/** A budget the scope is measured against, for the forecast burn line. */
+export interface CostBudget {
+  amount: number;
+  period: 'month';
+  /** Human label of what the budget covers (team/domain/artifact). */
+  scope: string;
+}
+
 export interface CostScope {
   namespace?: string;
   project?: string;
@@ -64,6 +131,13 @@ export interface CostRow {
   saving?: number;
   /** Percent change vs the previous equal-length window (null if unknown). */
   deltaPct: number | null;
+  /**
+   * Evaluate Gate quality score in 0..1, when the artifact has one. Drives the
+   * cost/quality Pareto view; absent for plain infra rows.
+   */
+  quality?: number;
+  /** Per-stage cost split, so the table can show Build/Gate/Run columns. */
+  stageCost?: Record<CostStage, number>;
   recommendation?: CostRowRecommendation;
   /**
    * True when the environment's ReleaseBinding was updated after the selected
@@ -81,6 +155,18 @@ export interface CostSummary {
   efficiency: number;
   /** Aggregate reclaimable spend across the scope. */
   totalSaving: number;
+  /** One-time cost to produce versions (train / RAG ingest / eval-set draft). */
+  buildCost?: number;
+  /** Evaluate Gate cost (LLM-as-judge tokens). */
+  gateCost?: number;
+  /** Recurring cost to operate versions (serving / monitoring / tokens). */
+  runCost?: number;
+  /** Projected month-end spend at the current rate. */
+  forecastTotal?: number;
+  /** Monthly budget for the scope, when one is set. */
+  budget?: number | null;
+  /** Number of spend anomalies flagged in the window. */
+  anomalyCount?: number;
 }
 
 /** One stacked-bar time bucket: `{ timestamp, [dimensionValue]: cost }`. */
@@ -113,6 +199,10 @@ export interface ForecastData {
 
 export interface CostInsightsData {
   level: CostScopeLevel;
+  /** Active stage filter; `all` means the summary breaks down by stage. */
+  stage?: CostStageFilter;
+  /** Active row dimension; `infra` keeps the level-based grouping. */
+  dimension?: CostDimension;
   summary: CostSummary;
   rows: CostRow[];
   series: CostSeriesPoint[];
@@ -120,4 +210,8 @@ export interface CostInsightsData {
   seriesKeys: string[];
   /** Forecast-divergence chart data; null when the window can't be projected. */
   forecast: ForecastData | null;
+  /** Spend anomalies flagged in the window. */
+  anomalies?: CostAnomaly[];
+  /** Budget the scope is measured against, when one is set. */
+  budget?: CostBudget | null;
 }

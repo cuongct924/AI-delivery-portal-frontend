@@ -11,7 +11,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createTemplateAction } from '@backstage/plugin-scaffolder-node';
-import { ActionDeps, getBaseUrl, postJson } from './actionsHttpClient';
+import {
+  ActionDeps,
+  authHeaders,
+  getBaseUrl,
+  postJson,
+} from './actionsHttpClient';
 
 /** Response body of `POST {baseUrl}/llm-deploy/prepare`. */
 interface PrepareLlmDeployResponse {
@@ -39,6 +44,7 @@ interface RagEvaluateResponse {
 /** Response body of `POST {baseUrl}/rag/activate`. */
 interface RagActivateResponse {
   readonly collection: string;
+  readonly environment: string;
   readonly active_version: string;
 }
 
@@ -63,7 +69,22 @@ interface EvaluatePromptResponse {
 /** Response body of `POST {baseUrl}/prompts/{name}/activate`. */
 interface ActivatePromptResponse {
   readonly name: string;
+  readonly environment: string;
   readonly active_version: string;
+}
+
+/** Response body of `POST {baseUrl}/eval-sets`. */
+interface DraftEvalSetResponse {
+  readonly name: string;
+  readonly version: string;
+  readonly questions: string[];
+}
+
+/** Response body of `GET {baseUrl}/eval-sets/{name}/latest`. */
+interface EvalSetVersionResponse {
+  readonly name: string;
+  readonly version: string;
+  readonly questions: string[];
 }
 
 /**
@@ -341,6 +362,20 @@ export function createRagActivateAction({ config, tokenService }: ActionDeps) {
         collection: z => z.string({ description: 'Qdrant collection name' }),
         indexVersion: z =>
           z.string({ description: 'RAG index version to activate' }),
+        environment: z =>
+          z
+            .string({
+              description:
+                '"development" | "staging" | "production" — tracked independently; defaults to "production", the environment chat.py actually reads from',
+            })
+            .optional(),
+        isRollback: z =>
+          z
+            .boolean({
+              description:
+                'True for a rollback to a previously-active version — skips no server-side check, only tags the DORA deployment event as "rollback" instead of "deploy"',
+            })
+            .optional(),
       },
       output: {
         activeVersion: z =>
@@ -356,11 +391,13 @@ export function createRagActivateAction({ config, tokenService }: ActionDeps) {
         {
           collection: ctx.input.collection,
           index_version: ctx.input.indexVersion,
+          environment: ctx.input.environment,
+          is_rollback: ctx.input.isRollback,
         },
         tokenService,
       );
       ctx.logger.info(
-        `Activated RAG index "${result.collection}" version ${result.active_version}`,
+        `Activated RAG index "${result.collection}" version ${result.active_version} (${result.environment})`,
       );
       ctx.output('activeVersion', result.active_version);
     },
@@ -492,6 +529,20 @@ export function createActivatePromptAction({
       input: {
         name: z => z.string({ description: 'Persona key' }),
         version: z => z.string({ description: 'Prompt version to activate' }),
+        environment: z =>
+          z
+            .string({
+              description:
+                '"development" | "staging" | "production" — tracked independently; defaults to "production", the environment chat.py actually reads from',
+            })
+            .optional(),
+        isRollback: z =>
+          z
+            .boolean({
+              description:
+                'True for a rollback to a previously-active version — skips no server-side check, only tags the DORA deployment event as "rollback" instead of "deploy"',
+            })
+            .optional(),
       },
       output: {
         activeVersion: z =>
@@ -502,13 +553,93 @@ export function createActivatePromptAction({
       const baseUrl = getBaseUrl(config);
       const result = await postJson<ActivatePromptResponse>(
         `${baseUrl}/prompts/${encodeURIComponent(ctx.input.name)}/activate`,
-        { version: ctx.input.version },
+        {
+          version: ctx.input.version,
+          environment: ctx.input.environment,
+          is_rollback: ctx.input.isRollback,
+        },
         tokenService,
       );
       ctx.logger.info(
-        `Activated prompt "${result.name}" version ${result.active_version}`,
+        `Activated prompt "${result.name}" version ${result.active_version} (${result.environment})`,
       );
       ctx.output('activeVersion', result.active_version);
+    },
+  });
+}
+
+/**
+ * `orchestration:draft-eval-set` — registers a new version of a named,
+ * reusable set of eval questions (see routers/eval_sets.py), so two
+ * versions of a prompt/RAG index are graded against the same benchmark
+ * instead of whatever questions happened to be typed into that run's form.
+ */
+export function createDraftEvalSetAction({ config, tokenService }: ActionDeps) {
+  return createTemplateAction({
+    id: 'orchestration:draft-eval-set',
+    description: 'Registers a new version of a named, reusable eval-case set.',
+    schema: {
+      input: {
+        name: z => z.string({ description: 'Eval-set name' }),
+        questions: z =>
+          z.array(z.string(), { description: 'Questions to run through the LLM judge' }),
+      },
+      output: {
+        version: z =>
+          z.string({ description: 'Newly registered eval-set version' }),
+      },
+    },
+    async handler(ctx) {
+      const baseUrl = getBaseUrl(config);
+      const result = await postJson<DraftEvalSetResponse>(
+        `${baseUrl}/eval-sets`,
+        { name: ctx.input.name, questions: ctx.input.questions },
+        tokenService,
+      );
+      ctx.logger.info(
+        `Drafted eval-set "${result.name}" version ${result.version}`,
+      );
+      ctx.output('version', result.version);
+    },
+  });
+}
+
+/**
+ * `orchestration:fetch-eval-set` — fetches the latest version of a named
+ * eval-set's questions, for llm-evaluate-activate to feed into
+ * evaluate-prompt/rag-evaluate instead of a freshly-typed `evalCases` list.
+ */
+export function createFetchEvalSetAction({ config, tokenService }: ActionDeps) {
+  return createTemplateAction({
+    id: 'orchestration:fetch-eval-set',
+    description: "Fetches a named eval-set's latest version of questions.",
+    schema: {
+      input: {
+        name: z => z.string({ description: 'Eval-set name' }),
+      },
+      output: {
+        version: z => z.string({ description: "The fetched version's number" }),
+        questions: z =>
+          z.array(z.string(), { description: "The eval-set's questions" }),
+      },
+    },
+    async handler(ctx) {
+      const baseUrl = getBaseUrl(config);
+      const url = `${baseUrl}/eval-sets/${encodeURIComponent(ctx.input.name)}/latest`;
+      const response = await fetch(url, {
+        headers: await authHeaders(tokenService),
+      });
+      if (!response.ok) {
+        throw new Error(
+          `GET eval-set failed with ${response.status}: ${await response.text()}`,
+        );
+      }
+      const result = (await response.json()) as EvalSetVersionResponse;
+      ctx.logger.info(
+        `Fetched eval-set "${result.name}" version ${result.version} (${result.questions.length} questions)`,
+      );
+      ctx.output('version', result.version);
+      ctx.output('questions', result.questions);
     },
   });
 }

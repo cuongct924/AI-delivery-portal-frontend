@@ -264,12 +264,15 @@ export type DoraClassification =
   | 'Low'
   | 'Unknown';
 
+export type DoraWorkloadType = 'service' | 'ml_model' | 'llm_app';
+
 /** Scope of a DORA query: namespace-only = org level; add project/component to narrow. */
 export interface DoraSearchScope {
   namespace: string;
   project?: string;
   component?: string;
   environment?: string;
+  workloadType?: DoraWorkloadType;
 }
 
 export interface DoraFrequencySummary {
@@ -308,6 +311,14 @@ export interface DoraMttrSummary {
   deltaPct: number | null;
 }
 
+export interface DoraReworkRateSummary {
+  rate: number;
+  reworked: number;
+  total: number;
+  classification: DoraClassification;
+  deltaPct: number | null;
+}
+
 /**
  * Why the metrics beside it might be empty, reported on every response. An empty
  * result is otherwise ambiguous: a scope that deployed nothing looks exactly
@@ -340,6 +351,7 @@ export interface DoraMetricsResponse {
     leadTime?: DoraLeadTimeSummary;
     changeFailureRate?: DoraChangeFailureRateSummary;
     mttr?: DoraMttrSummary;
+    reworkRate?: DoraReworkRateSummary;
   };
   series: {
     /** Zero-filled: one entry per bucket in the window. */
@@ -365,6 +377,13 @@ export interface DoraMetricsResponse {
       p50Ms: number;
       count: number;
     }[];
+    /** Zero-filled: one entry per bucket in the window. */
+    reworkRate?: {
+      bucketStart: string;
+      rate: number;
+      reworked: number;
+      total: number;
+    }[];
   };
 }
 
@@ -383,6 +402,7 @@ export interface DoraDeployment {
   failureReason: string;
   incidentId: string;
   leadTimeMs: number | null;
+  workloadType?: DoraWorkloadType | null;
   changeType?: 'infra' | 'model' | 'rag_index' | 'prompt' | null;
   driftTriggered?: boolean;
   evalCoverage?: number | null;
@@ -433,6 +453,17 @@ export interface CostItem {
   memoryCost: number;
   /** Resource efficiency ratio in the range 0..1. */
   efficiency: number;
+  /**
+   * Lifecycle stage this cost belongs to. Optional so the observer's existing
+   * infra-only payload keeps working — absent means `run`.
+   */
+  stage?: 'build' | 'gate' | 'run';
+  /** Owning team, for the `team` dimension. Falls back to the project. */
+  team?: string;
+  /** Business domain, for the `domain` dimension. Falls back to the project. */
+  businessDomain?: string;
+  /** AI artifact name, for the `artifact` dimension. Falls back to the component. */
+  artifact?: string;
 }
 
 /** Current or recommended resource allocation + its cost, from the observer. */

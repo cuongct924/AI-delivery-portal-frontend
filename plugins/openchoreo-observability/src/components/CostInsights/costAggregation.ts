@@ -7,6 +7,11 @@ import type {
   CostSummary,
   CostSeriesPoint,
   CostInsightsData,
+  CostStage,
+  CostStageFilter,
+  CostDimension,
+  CostBudget,
+  CostAnomaly,
   ForecastData,
   ForecastPoint,
 } from './types';
@@ -54,8 +59,8 @@ export function expandSelection(selection: CostScopeSelection): {
   };
 }
 
-/** The field a cost item is grouped by at the given level. */
-export function dimensionOf(item: CostItem, level: CostScopeLevel): string {
+/** The field a cost item is grouped by at the given level (infra dimension). */
+function infraDimensionOf(item: CostItem, level: CostScopeLevel): string {
   switch (level) {
     case 'namespace':
       return item.project;
@@ -67,8 +72,51 @@ export function dimensionOf(item: CostItem, level: CostScopeLevel): string {
   }
 }
 
+/**
+ * The field a cost item is grouped by. `infra` keeps the level-based grouping;
+ * the AI dimensions re-key rows by artifact/team/domain, each falling back to a
+ * sensible infra field when the observer payload doesn't carry it yet.
+ */
+export function dimensionOf(
+  item: CostItem,
+  level: CostScopeLevel,
+  dimension: CostDimension = 'infra',
+): string {
+  switch (dimension) {
+    case 'artifact':
+      return item.artifact ?? item.component;
+    case 'team':
+      return item.team ?? item.project;
+    case 'domain':
+      return item.businessDomain ?? item.project;
+    case 'infra':
+    default:
+      return infraDimensionOf(item, level);
+  }
+}
+
+/** The lifecycle stage a cost item belongs to; absent means `run`. */
+export function stageOf(item: CostItem): CostStage {
+  return item.stage ?? 'run';
+}
+
+/** Keep only the items in the selected stage (`all` keeps everything). */
+export function filterByStage(
+  items: CostItem[],
+  stage: CostStageFilter,
+): CostItem[] {
+  return stage === 'all' ? items : items.filter(i => stageOf(i) === stage);
+}
+
 const itemTotal = (item: CostItem): number =>
   (item.cpuCost ?? 0) + (item.memoryCost ?? 0);
+
+/** Per-stage cost totals, for the summary's Build/Gate/Run breakdown. */
+export function stageTotals(items: CostItem[]): Record<CostStage, number> {
+  const totals: Record<CostStage, number> = { build: 0, gate: 0, run: 0 };
+  for (const item of items) totals[stageOf(item)] += itemTotal(item);
+  return totals;
+}
 
 /**
  * Cost-weighted average efficiency across items. Efficiency of a bigger spend
@@ -114,10 +162,11 @@ function groupBy<T>(items: T[], keyFn: (item: T) => string): Map<string, T[]> {
 function totalsByDimension(
   items: CostItem[],
   level: CostScopeLevel,
+  dimension: CostDimension = 'infra',
 ): Map<string, number> {
   const totals = new Map<string, number>();
   for (const item of items) {
-    const dim = dimensionOf(item, level);
+    const dim = dimensionOf(item, level, dimension);
     totals.set(dim, (totals.get(dim) ?? 0) + itemTotal(item));
   }
   return totals;
@@ -172,14 +221,17 @@ export function aggregateRows(
   level: CostScopeLevel,
   recommendations: CostRecommendationItem[] = [],
   staleRecommendationEnvs: Map<string, string> = new Map(),
+  dimension: CostDimension = 'infra',
 ): CostRow[] {
-  const prevTotals = totalsByDimension(previousItems, level);
+  const prevTotals = totalsByDimension(previousItems, level, dimension);
   const recTotals = recommendedTotalsByDimension(
     recommendations,
     level,
     staleRecommendationEnvs,
   );
-  const grouped = groupBy(currentItems, item => dimensionOf(item, level));
+  const grouped = groupBy(currentItems, item =>
+    dimensionOf(item, level, dimension),
+  );
 
   // Recommendations are only meaningful at the component level, where rows are
   // environments. Sum the recommended cost per environment.
@@ -252,6 +304,7 @@ export function aggregateRows(
       efficiency: weightedEfficiency(items),
       saving,
       deltaPct: percentChange(total, prevTotals.get(key)),
+      stageCost: stageTotals(items),
       recommendation,
       recommendationStale,
       recommendationStaleSince,
@@ -268,12 +321,13 @@ export function computeSummary(
   recommendations: CostRecommendationItem[],
   level: CostScopeLevel,
   staleRecommendationEnvs: Map<string, string>,
+  dimension: CostDimension = 'infra',
 ): CostSummary {
   const total = totalCost(currentItems);
   const prevTotal = totalCost(previousItems);
   // Only dimensions with a (non-stale) recommendation contribute saving, each
   // clamped at its own cost so unrelated spend isn't counted as reclaimable.
-  const currentTotals = totalsByDimension(currentItems, level);
+  const currentTotals = totalsByDimension(currentItems, level, dimension);
   const recTotals = recommendedTotalsByDimension(
     recommendations,
     level,
@@ -283,11 +337,15 @@ export function computeSummary(
   for (const [dim, recDimTotal] of recTotals) {
     totalSaving += Math.max(0, (currentTotals.get(dim) ?? 0) - recDimTotal);
   }
+  const stages = stageTotals(currentItems);
   return {
     totalCost: total,
     deltaPct: percentChange(total, prevTotal || undefined),
     efficiency: weightedEfficiency(currentItems),
     totalSaving,
+    buildCost: stages.build,
+    gateCost: stages.gate,
+    runCost: stages.run,
   };
 }
 
@@ -300,6 +358,7 @@ export function computeSummary(
 export function buildSeries(
   items: CostItem[],
   level: CostScopeLevel,
+  dimension: CostDimension = 'infra',
 ): { series: CostSeriesPoint[]; seriesKeys: string[] } {
   // Normalise to the parsed instant so equivalent timestamps in different
   // textual forms (across per-environment responses) collapse into one bucket.
@@ -315,7 +374,7 @@ export function buildSeries(
     .map(([timestamp, bucketItems]) => {
       const point: CostSeriesPoint = { timestamp };
       for (const item of bucketItems) {
-        const dim = dimensionOf(item, level);
+        const dim = dimensionOf(item, level, dimension);
         seriesKeys.add(dim);
         point[dim] = ((point[dim] as number) ?? 0) + itemTotal(item);
       }
@@ -456,6 +515,14 @@ export function buildCostInsightsData(params: {
   /** Start of the current calendar month, for the forecast window. */
   monthStart: Date;
   now: Date;
+  /** Active stage filter; `all` keeps every stage. */
+  stage?: CostStageFilter;
+  /** Active row dimension; `infra` keeps the level-based grouping. */
+  dimension?: CostDimension;
+  /** Budget the scope is measured against, surfaced on the forecast. */
+  budget?: CostBudget | null;
+  /** Spend anomalies flagged in the window. */
+  anomalies?: CostAnomaly[];
 }): CostInsightsData {
   const {
     level,
@@ -468,50 +535,71 @@ export function buildCostInsightsData(params: {
     monthToDateRecommendations = [],
     monthStart,
     now,
+    stage = 'all',
+    dimension = 'infra',
+    budget = null,
+    anomalies = [],
   } = params;
 
-  const { series, seriesKeys } = buildSeries(
-    seriesItems ?? currentItems,
-    level,
-  );
+  // Stage is a view filter: it narrows every downstream aggregate, so a
+  // "Build" view shows only build spend in the summary, table and graph.
+  const current = filterByStage(currentItems, stage);
+  const previous = filterByStage(previousItems, stage);
+  const seriesSource = filterByStage(seriesItems ?? currentItems, stage);
+  const mtd = filterByStage(monthToDateItems, stage);
+
+  const { series, seriesKeys } = buildSeries(seriesSource, level, dimension);
   const summary = computeSummary(
-    currentItems,
-    previousItems,
+    current,
+    previous,
     recommendations,
     level,
     staleRecommendationEnvs,
+    dimension,
   );
   // The "if applied" forecast uses a month-to-date saving fraction: recommendations
   // measured over month start to now vs the month-to-date cost, so the curve is
   // independent of the selected time range (which only drives the breakdown below).
   const mtdSummary = computeSummary(
-    monthToDateItems,
+    mtd,
     [],
     monthToDateRecommendations,
     level,
     staleRecommendationEnvs,
+    dimension,
   );
   const savingFraction =
     mtdSummary.totalCost > 0
       ? mtdSummary.totalSaving / mtdSummary.totalCost
       : 0;
+  const forecast = buildForecast({
+    mtdItems: mtd,
+    savingFraction,
+    monthStart,
+    now,
+  });
   return {
     level,
-    summary,
+    stage,
+    dimension,
+    summary: {
+      ...summary,
+      forecastTotal: forecast?.atCurrentTotal,
+      budget: budget?.amount ?? null,
+      anomalyCount: anomalies.length,
+    },
     rows: aggregateRows(
-      currentItems,
-      previousItems,
+      current,
+      previous,
       level,
       recommendations,
       staleRecommendationEnvs,
+      dimension,
     ),
     series,
     seriesKeys,
-    forecast: buildForecast({
-      mtdItems: monthToDateItems,
-      savingFraction,
-      monthStart,
-      now,
-    }),
+    forecast,
+    anomalies,
+    budget,
   };
 }

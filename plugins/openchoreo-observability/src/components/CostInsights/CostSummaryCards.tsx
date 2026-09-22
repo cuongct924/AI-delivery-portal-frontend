@@ -1,5 +1,5 @@
 import { FC } from 'react';
-import { Typography, makeStyles } from '@material-ui/core';
+import { Grid, Paper, Typography, makeStyles } from '@material-ui/core';
 import ArrowUpwardIcon from '@material-ui/icons/ArrowUpward';
 import ArrowDownwardIcon from '@material-ui/icons/ArrowDownward';
 import type { CostSummary } from './types';
@@ -25,7 +25,117 @@ const useStyles = makeStyles(theme => ({
   down: { color: theme.palette.success.main },
   deltaIcon: { fontSize: 16 },
   muted: { color: theme.palette.text.secondary },
+  card: {
+    height: '100%',
+    padding: theme.spacing(2),
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(0.5),
+  },
+  cardValue: {
+    fontWeight: 700,
+    fontSize: '1.35rem',
+    lineHeight: 1.1,
+    color: theme.palette.text.primary,
+  },
+  cardHint: { fontSize: '0.75rem', color: theme.palette.text.secondary },
+  over: { color: theme.palette.error.main },
+  under: { color: theme.palette.success.main },
 }));
+
+interface KpiCardProps {
+  label: string;
+  value: string;
+  hint?: string;
+  valueClassName?: string;
+}
+
+const KpiCard: FC<KpiCardProps> = ({ label, value, hint, valueClassName }) => {
+  const classes = useStyles();
+  return (
+    <Paper variant="outlined" className={classes.card}>
+      <Typography className={classes.label}>{label}</Typography>
+      <Typography className={`${classes.cardValue} ${valueClassName ?? ''}`}>
+        {value}
+      </Typography>
+      {hint && <Typography className={classes.cardHint}>{hint}</Typography>}
+    </Paper>
+  );
+};
+
+/**
+ * The KPI row: total spend plus the Build/Run split, forecast-vs-budget burn,
+ * reclaimable saving and anomaly count. Every card is derived from the same
+ * summary, so a stage filter narrows all of them together.
+ */
+export const CostSummaryCards: FC<{ summary: CostSummary }> = ({ summary }) => {
+  const classes = useStyles();
+  const budget = summary.budget ?? null;
+  const forecast = summary.forecastTotal ?? null;
+  const overBudget = budget !== null && forecast !== null && forecast > budget;
+  const burnPct =
+    budget !== null && budget > 0 && forecast !== null
+      ? Math.round((forecast / budget) * 100)
+      : null;
+
+  const forecastValue = (): string => {
+    if (forecast === null) return '—';
+    if (budget === null) return formatUsd(forecast);
+    return `${formatUsd(forecast)} / ${formatUsd(budget)}`;
+  };
+  const forecastHint = (): string => {
+    if (burnPct === null) return 'No budget set';
+    return `${burnPct}% of monthly budget`;
+  };
+
+  return (
+    <Grid container spacing={2}>
+      <Grid item xs={12} sm={6} md={2}>
+        <KpiCard label="Total cost" value={formatUsd(summary.totalCost)} />
+      </Grid>
+      <Grid item xs={12} sm={6} md={2}>
+        <KpiCard
+          label="Build"
+          value={formatUsd(summary.buildCost ?? 0)}
+          hint="One-time, per version"
+        />
+      </Grid>
+      <Grid item xs={12} sm={6} md={2}>
+        <KpiCard
+          label="Run"
+          value={formatUsd(summary.runCost ?? 0)}
+          hint="Recurring, per period"
+        />
+      </Grid>
+      <Grid item xs={12} sm={6} md={2}>
+        <KpiCard
+          label="Forecast vs budget"
+          value={forecastValue()}
+          hint={forecastHint()}
+          valueClassName={overBudget ? classes.over : undefined}
+        />
+      </Grid>
+      <Grid item xs={12} sm={6} md={2}>
+        <KpiCard
+          label="Potential saving"
+          value={formatUsd(summary.totalSaving)}
+          hint="Reclaimable via right-sizing"
+          valueClassName={summary.totalSaving > 0 ? classes.under : undefined}
+        />
+      </Grid>
+      <Grid item xs={12} sm={6} md={2}>
+        <KpiCard
+          label="Anomalies"
+          value={String(summary.anomalyCount ?? 0)}
+          hint="Spend spikes in window"
+          valueClassName={
+            (summary.anomalyCount ?? 0) > 0 ? classes.over : undefined
+          }
+        />
+      </Grid>
+    </Grid>
+  );
+};
 
 const DeltaChip: FC<{ deltaPct: number | null }> = ({ deltaPct }) => {
   const classes = useStyles();

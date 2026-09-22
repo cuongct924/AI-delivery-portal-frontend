@@ -8,6 +8,15 @@ metadata:
     Internal Developer Platform for MLOps/LLMOps — Backstage Portal +
     orchestration-api + MCP servers + Adapter layer, wired to real local
     infrastructure (MLflow, Qdrant, Prometheus, Keycloak).
+  annotations:
+    # Docs (architecture, troubleshooting, glossary) live in the separate
+    # backend repo (mkdocs.yml + docs/ at its root), not co-located with
+    # this entity's own Location — a URL ref instead of dir:. avoids a
+    # relative path across repo boundaries (fragile: only valid when both
+    # repos happen to be checked out as local siblings, and meaningless in
+    # CI/production). Requires that repo's main branch to actually have
+    # mkdocs.yml + docs/ pushed — see its own CLAUDE.md.
+    backstage.io/techdocs-ref: url:https://github.com/cuongct924/AI-delivery-portal-backend/tree/main/
 spec:
   owner: group:platform-team
 ---
@@ -143,7 +152,7 @@ metadata:
   name: llmops-golden-paths-mcp
   description: >
     LLMOps Lifecycle MCP tools: draft_prompt, evaluate_prompt,
-    activate_prompt, rag_ingest, rag_evaluate, rag_activate.
+    activate_prompt, rag_ingest, rag_evaluate, rag_activate, draft_eval_set.
   annotations:
     mcp/endpoint: http://llmops-golden-paths-server:9002/mcp
     mcp/transport: streamable-http
@@ -244,7 +253,7 @@ spec:
   owner: group:mlops-team
   system: ai-delivery-portal
 ---
-# The actual consumer of the two prompt Resources below — makes their
+# The actual consumer of the prompt Resource below — makes its
 # "dependencyOf" relation (and thus the Prompts list's "App liên kết"
 # column) point at something real instead of an invented placeholder.
 apiVersion: backstage.io/v1alpha1
@@ -255,22 +264,23 @@ metadata:
     Portal-native chat UI (@backstage-community/plugin-mcp-chat) — talks to
     the LiteLLM gateway and the llmops-golden-paths/mlops-golden-paths/
     observability MCP servers via
-    services/orchestration-api/routers/chat.py, using the "mlops"/"k8s"
-    prompts below as its system prompt per persona (tool list filtered per
-    persona server-side — persona_tool_scope.py).
+    services/orchestration-api/routers/chat.py, using the "mlops" prompt
+    below as its system prompt (tool list filtered server-side —
+    persona_tool_scope.py). The "k8s" persona was removed — OpenChoreo's
+    own built-in MCP server now covers pod/log/event lookups.
 spec:
   type: service
   lifecycle: experimental
   owner: group:platform-team
   system: ai-delivery-portal
-  dependsOn: [resource:default/mlops, resource:default/k8s]
+  dependsOn: [resource:default/mlops]
 ---
 # Sample data for the Catalog's Kind=Resource / type=prompt filter — a real
 # prompt draft (POST /prompts) will register into MLflow's Prompt Registry
 # once routers/prompts.py is backed by MlflowPromptRegistryAdapter, but
 # isn't yet synced into this Catalog as an entity (no Catalog provider for
-# it exists). These two are hand-added, same reasoning as
-# fraud-detection/churn-prediction above — delete once a real sync exists.
+# it exists). Hand-added, same reasoning as fraud-detection/churn-prediction
+# above — delete once a real sync exists.
 apiVersion: backstage.io/v1alpha1
 kind: Resource
 metadata:
@@ -287,21 +297,4 @@ metadata:
 spec:
   type: prompt
   owner: group:mlops-team
-  system: ai-delivery-portal
----
-apiVersion: backstage.io/v1alpha1
-kind: Resource
-metadata:
-  name: k8s
-  description: "K8s Assistant persona prompt — see services/orchestration-api/routers/prompts.py"
-  tags:
-    - prompt
-    - llmops
-  annotations:
-    mlflow.org/prompt-version: "1"
-    mlflow.org/prompt-alias: production
-    viettel.ai/updated-at: "2026-09-06"
-spec:
-  type: prompt
-  owner: group:platform-team
   system: ai-delivery-portal

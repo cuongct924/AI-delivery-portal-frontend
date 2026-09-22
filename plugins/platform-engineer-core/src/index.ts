@@ -13,6 +13,7 @@ export type {
   ObservabilityPlane,
 } from './types';
 export {
+  ClusterTopologyWidget,
   DeveloperPortalWidget,
   InfrastructureWidget,
   AgentHealthWidget,

@@ -1,11 +1,11 @@
 apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
-  name: llm-draft-register
-  title: 'Draft Prompt / Ingest RAG Data'
+  name: llm-draft-ingest
+  title: 'Draft Prompt / Ingest RAG Data / Draft Eval Set'
   description: >
-    Drafts a new prompt version, or ingests documents into a new RAG index
-    version.
+    Drafts a new prompt version, ingests documents into a new RAG index
+    version, or registers a new version of a reusable eval-case set.
   tags:
     - llmops
 
@@ -14,7 +14,7 @@ spec:
   type: service
 
   parameters:
-    - title: 'Draft Prompt / Ingest RAG Data'
+    - title: 'Draft Prompt / Ingest RAG Data / Draft Eval Set'
       required:
         - artifactKind
       properties:
@@ -26,6 +26,8 @@ spec:
               title: 'Prompt - system prompt for a persona'
             - const: rag-index
               title: 'RAG Index - ingest documents into a Qdrant collection'
+            - const: eval-set
+              title: 'Eval Set - reusable set of eval questions for the Evaluate Gate'
           description: >
             Choose the artifact type to create.
       # promptName/personaTitle/promptContent and collectionName/sourcePaths/
@@ -87,8 +89,17 @@ spec:
                 type: array
                 items:
                   type: string
+                # docs/playbook-ai-delivery-portal.md is deliberately NOT a
+                # default here — it's exam-defense prep notes written for a
+                # mentor/thesis-committee audience ("em đã...", scope-
+                # justification framing), not operational documentation. If
+                # RAG-ingested, the chat assistant would answer real
+                # engineering questions in that register instead of giving
+                # actual operational guidance. Use the docs below instead.
                 default:
-                  - docs/playbook-ai-delivery-portal.md
+                  - docs/architecture-overview.md
+                  - docs/troubleshooting-faq.md
+                  - docs/glossary-openchoreo.md
                 description: >
                   Relative repository paths to source documents. Add one file
                   per line; no JSON wrapper is needed.
@@ -109,6 +120,34 @@ spec:
                   Characters shared by adjacent chunks to preserve context
                   across boundaries. Usually set to 10-15% of chunkSize
                   (80-120 for 800).
+        - if:
+            required: [artifactKind]
+            properties:
+              artifactKind:
+                const: eval-set
+          then:
+            required:
+              - evalSetName
+              - evalSetQuestions
+            properties:
+              evalSetName:
+                title: Eval-set name
+                type: string
+                description: >
+                  Reused by "Evaluate & Activate Prompt / RAG Version" —
+                  pick this same name there instead of retyping questions
+                  every run, so successive versions of an artifact are
+                  graded against the same benchmark.
+              evalSetQuestions:
+                title: Questions
+                type: array
+                items:
+                  type: string
+                default:
+                  - How does IDP manage the model lifecycle?
+                description: >
+                  Questions to run through the LLM judge. Add one per line;
+                  no JSON wrapper is needed.
       # Reuse the StepLayout field extension without changing field names or values.
       ui:field: StepLayout
       ui:options:
@@ -131,6 +170,10 @@ spec:
               - name: chunkOverlap
                 width: 3
               - sourcePaths
+          - title: 'Eval Set (when Artifact kind = Eval Set)'
+            fields:
+              - evalSetName
+              - evalSetQuestions
 
   steps:
     - id: draft-prompt
@@ -152,6 +195,14 @@ spec:
         chunkSize: ${{ parameters.chunkSize }}
         chunkOverlap: ${{ parameters.chunkOverlap }}
 
+    - id: draft-eval-set
+      name: 'Draft the eval set'
+      action: orchestration:draft-eval-set
+      if: ${{ parameters.artifactKind === 'eval-set' }}
+      input:
+        name: ${{ parameters.evalSetName }}
+        questions: ${{ parameters.evalSetQuestions }}
+
   output:
     text:
       - title: Result
@@ -163,7 +214,7 @@ spec:
           Run **"Evaluate & Activate Prompt / RAG Version"** with:
           `artifactKind=prompt`, `promptName=${{ parameters.promptName }}`,
           `promptVersion=${{ steps['draft-prompt'].output.version }}`.
-          {% else %}
+          {% elif parameters.artifactKind === 'rag-index' %}
           **${{ parameters.collectionName }}** index version
           **${{ steps['rag-ingest'].output.indexVersion }}**
           (${{ steps['rag-ingest'].output.chunksIngested }} chunks) ingested and is not active.
@@ -172,4 +223,12 @@ spec:
           `artifactKind=rag-index`,
           `collectionName=${{ parameters.collectionName }}`,
           `indexVersion=${{ steps['rag-ingest'].output.indexVersion }}`.
+          {% else %}
+          Eval set **${{ parameters.evalSetName }}** version
+          **${{ steps['draft-eval-set'].output.version }}** registered
+          (${{ parameters.evalSetQuestions.length }} questions).
+
+          Run **"Evaluate & Activate Prompt / RAG Version"** and enter
+          `evalSetName=${{ parameters.evalSetName }}` instead of retyping
+          eval cases — it always uses this set's latest version.
           {% endif %}

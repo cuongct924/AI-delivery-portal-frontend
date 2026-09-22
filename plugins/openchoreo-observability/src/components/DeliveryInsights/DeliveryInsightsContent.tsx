@@ -1,19 +1,28 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Button,
+  Divider,
   Grid,
   MenuItem,
+  Switch,
   TextField,
   Typography,
 } from '@material-ui/core';
+import { makeStyles } from '@material-ui/core/styles';
 import RefreshIcon from '@material-ui/icons/Refresh';
 import { Alert } from '@material-ui/lab';
 import { Progress } from '@backstage/core-components';
-import { DoraGranularity, DoraSearchScope } from '../../types';
+import {
+  DoraDeployment,
+  DoraGranularity,
+  DoraSearchScope,
+  DoraWorkloadType,
+} from '../../types';
 import { useDoraInsights } from './useDoraInsights';
 import { InsightsLevel, useDoraBreakdown } from './useDoraBreakdown';
 import { useLatestDoraDeployment } from './useLatestDoraDeployment';
+import { useDoraWorkloadBreakdown } from './useDoraWorkloadBreakdown';
 import { DoraMetricTile } from './DoraMetricTile';
 import { DoraTrendChart } from './DoraTrendChart';
 import { DoraBreakdownTable } from './DoraBreakdownTable';
@@ -22,16 +31,39 @@ import { ScopeFilters, type ScopeSelection } from '../ScopeFilters';
 import { useNamespaceEnvironments } from '../CostInsights/useNamespaceEnvironments';
 import {
   INSIGHTS_TIME_RANGES,
+  WORKLOAD_TYPE_COLORS,
+  WORKLOAD_TYPE_LABELS,
   buildWaterfallData,
+  changeTypeMix,
+  deploymentsPerWeek,
+  deploymentVersionLabel,
+  DEVOPS_ACCENT_COLOR,
+  DoraWorkloadTypeFilter,
+  failureRate,
   fillSeriesGaps,
   formatDurationMs,
   dataAvailabilityWarning,
   formatPercent,
   granularitiesForRange,
+  isAiWorkload,
+  leadTimeP50Ms,
+  recoveryStrategyMix,
   resolveGranularity,
   measuredRates,
   nullUnmeasuredRates,
+  workloadTypeCounts,
 } from './utils';
+
+type DoraLens = 'devops' | 'mlops';
+type LensCardId = 'freq' | 'lead' | 'cfr' | 'mttr' | 'rework';
+const WORKLOAD_TYPE_OPTIONS: DoraWorkloadTypeFilter[] = [
+  'all',
+  'service',
+  'ml_model',
+  'llm_app',
+];
+const NO_WORKLOAD_DATA_SUB =
+  'No workload-classified deployments in this window yet.';
 
 const GRANULARITY_LABELS: Record<DoraGranularity, string> = {
   daily: 'Daily',
@@ -46,8 +78,118 @@ const CHART_COLORS = {
   leadTimeP95: '#98df8a',
   cfr: '#d62728',
   mttr: '#9467bd',
+  reworkRate: '#e377c2',
   leadTimePhase: '#ff7f0e',
 };
+
+const useStyles = makeStyles(theme => ({
+  filterBar: {
+    flexWrap: 'wrap',
+    rowGap: theme.spacing(1.5),
+  },
+  metricsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+    gap: theme.spacing(2),
+  },
+  filterDivider: {
+    height: 32,
+    alignSelf: 'center',
+  },
+  panel: {
+    border: `1px solid ${theme.palette.divider}`,
+    borderRadius: 12,
+    padding: theme.spacing(2, 2.25),
+  },
+  panelDim: {
+    opacity: 0.5,
+    pointerEvents: 'none',
+  },
+  compareRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1.5),
+    margin: theme.spacing(1.5, 0),
+  },
+  verCard: {
+    flex: 1,
+    border: `1px solid ${theme.palette.divider}`,
+    borderRadius: 10,
+    padding: theme.spacing(1, 1.5),
+    background: theme.palette.action.hover,
+  },
+  verCardCurrent: {
+    borderColor: DEVOPS_ACCENT_COLOR,
+  },
+  metricDiff: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: theme.spacing(1.25),
+  },
+  diffTile: {
+    background: theme.palette.action.hover,
+    borderRadius: 9,
+    padding: theme.spacing(1, 1.25),
+  },
+  barTrack: {
+    height: 6,
+    borderRadius: 3,
+    background: theme.palette.action.hover,
+    overflow: 'hidden',
+  },
+  barFill: {
+    height: '100%',
+  },
+  workloadGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: theme.spacing(2),
+  },
+  workloadCard: {
+    border: `1px solid ${theme.palette.divider}`,
+    borderRadius: 10,
+    padding: theme.spacing(1.5, 1.75),
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(1),
+  },
+  workloadCardHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    fontSize: 12.5,
+    fontWeight: 600,
+    color: theme.palette.text.secondary,
+  },
+  workloadCardDot: {
+    width: 8,
+    height: 8,
+    borderRadius: '50%',
+    flex: 'none',
+  },
+  workloadCardValueRow: {
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: 6,
+  },
+  workloadCardValue: {
+    fontSize: 26,
+    fontWeight: 700,
+    fontFamily:
+      "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+    fontVariantNumeric: 'tabular-nums',
+  },
+  workloadCardShare: {
+    fontSize: 12,
+    color: theme.palette.text.secondary,
+  },
+  workloadCardMeta: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    fontSize: 11.5,
+    color: theme.palette.text.secondary,
+  },
+}));
 
 /**
  * The API reports a missing observer URL as a component-scoped error, but an
@@ -87,9 +229,11 @@ export interface DeliveryInsightsContentProps {
   granularity: DoraGranularity;
   /** Environment name, or '' for all environments. */
   envFilter: string;
+  workloadType: DoraWorkloadTypeFilter;
   onRangeDaysChange: (days: number) => void;
   onGranularityChange: (granularity: DoraGranularity) => void;
   onEnvFilterChange: (environment: string) => void;
+  onWorkloadTypeChange: (workloadType: DoraWorkloadTypeFilter) => void;
   /**
    * Drill into a breakdown row one level down (a project or component). Absent
    * at component level, where rows are environments and apply as a filter.
@@ -114,11 +258,14 @@ export const DeliveryInsightsContent = ({
   rangeDays,
   granularity,
   envFilter,
+  workloadType,
   onRangeDaysChange,
   onGranularityChange,
   onEnvFilterChange,
+  onWorkloadTypeChange,
   onDrill,
 }: DeliveryInsightsContentProps) => {
+  const classes = useStyles();
   // The environment filter narrows the headline tiles/charts, and the
   // project/component breakdown children inherit it. The per-environment cards
   // below do not: they scope each card explicitly, so they stay a comparison
@@ -162,6 +309,133 @@ export const DeliveryInsightsContent = ({
     () => buildWaterfallData(latestDeployment?.leadTimeBreakdown),
     [latestDeployment],
   );
+
+  const aiWorkloadSelected = isAiWorkload(workloadType);
+  const lensLocked = !aiWorkloadSelected;
+
+  const [lensByCard, setLensByCard] = useState<Record<LensCardId, DoraLens>>({
+    freq: 'devops',
+    lead: 'devops',
+    cfr: 'devops',
+    mttr: 'devops',
+    rework: 'devops',
+  });
+  useEffect(() => {
+    const next: DoraLens = aiWorkloadSelected ? 'mlops' : 'devops';
+    setLensByCard({
+      freq: next,
+      lead: next,
+      cfr: next,
+      mttr: next,
+      rework: next,
+    });
+  }, [aiWorkloadSelected]);
+  const lensFor = (card: LensCardId): DoraLens =>
+    lensLocked ? 'devops' : lensByCard[card];
+  const lensControlFor = (card: LensCardId) => ({
+    active: lensFor(card),
+    locked: lensLocked,
+    onChange: (next: DoraLens) =>
+      setLensByCard(prev => ({ ...prev, [card]: next })),
+  });
+
+  const { deployments: allWorkloadDeployments } = useDoraWorkloadBreakdown(
+    environmentReady ? effectiveScope : null,
+    rangeDays,
+  );
+  const workloadDeployments = useMemo(
+    () =>
+      aiWorkloadSelected
+        ? allWorkloadDeployments.filter(d => d.workloadType === workloadType)
+        : [],
+    [allWorkloadDeployments, aiWorkloadSelected, workloadType],
+  );
+  const workloadCounts = useMemo(
+    () => workloadTypeCounts(allWorkloadDeployments),
+    [allWorkloadDeployments],
+  );
+  const workloadStats = useMemo(() => {
+    const totalCount = Object.values(workloadCounts).reduce((a, b) => a + b, 0);
+    const stats: Record<
+      DoraWorkloadType,
+      { count: number; sharePct: number; failRate: number | null; leadP50: number | null }
+    > = {
+      service: { count: 0, sharePct: 0, failRate: null, leadP50: null },
+      ml_model: { count: 0, sharePct: 0, failRate: null, leadP50: null },
+      llm_app: { count: 0, sharePct: 0, failRate: null, leadP50: null },
+    };
+    (['service', 'ml_model', 'llm_app'] as const).forEach(wl => {
+      const forType = allWorkloadDeployments.filter(d => d.workloadType === wl);
+      stats[wl] = {
+        count: workloadCounts[wl],
+        sharePct: totalCount > 0 ? Math.round((workloadCounts[wl] / totalCount) * 100) : 0,
+        failRate: failureRate(forType),
+        leadP50: leadTimeP50Ms(forType),
+      };
+    });
+    return stats;
+  }, [allWorkloadDeployments, workloadCounts]);
+  const workloadChangeMix = useMemo(
+    () => (lensLocked ? [] : changeTypeMix(workloadDeployments)),
+    [lensLocked, workloadDeployments],
+  );
+  const workloadRecoveryMix = useMemo(
+    () => (lensLocked ? [] : recoveryStrategyMix(workloadDeployments)),
+    [lensLocked, workloadDeployments],
+  );
+  const workloadFreqPerWeek = deploymentsPerWeek(workloadDeployments, rangeDays);
+  const workloadLeadP50 = leadTimeP50Ms(workloadDeployments);
+  const workloadFailRate = failureRate(workloadDeployments);
+
+  const currentDeployment = workloadDeployments[0] ?? null;
+  const baselineOptions = useMemo(() => {
+    const seen = new Map<string, DoraDeployment>();
+    for (const deployment of workloadDeployments.slice(1)) {
+      const label = deploymentVersionLabel(deployment);
+      if (!seen.has(label)) {
+        seen.set(label, deployment);
+      }
+    }
+    return Array.from(seen.entries());
+  }, [workloadDeployments]);
+
+  const [baselineEnabled, setBaselineEnabled] = useState(false);
+  const [baselineVersion, setBaselineVersion] = useState('');
+  useEffect(() => {
+    if (!baselineOptions.some(([label]) => label === baselineVersion)) {
+      setBaselineVersion(baselineOptions[0]?.[0] ?? '');
+    }
+  }, [baselineOptions, baselineVersion]);
+  const baselineDeployment =
+    baselineOptions.find(([label]) => label === baselineVersion)?.[1] ?? null;
+  const showBaselinePanel =
+    baselineEnabled && aiWorkloadSelected && currentDeployment && baselineDeployment;
+
+  const deploymentInfoByName = useMemo(() => {
+    if (level === 'component') {
+      return new Map<string, { workloadType: DoraWorkloadType | null | undefined; version: string }>();
+    }
+    const latestByName = new Map<string, DoraDeployment>();
+    for (const deployment of allWorkloadDeployments) {
+      const key =
+        level === 'domain' ? deployment.projectName : deployment.componentName;
+      const existing = latestByName.get(key);
+      if (!existing || deployment.deployedAt > existing.deployedAt) {
+        latestByName.set(key, deployment);
+      }
+    }
+    const result = new Map<
+      string,
+      { workloadType: DoraWorkloadType | null | undefined; version: string }
+    >();
+    latestByName.forEach((deployment, key) => {
+      result.set(key, {
+        workloadType: deployment.workloadType,
+        version: deploymentVersionLabel(deployment),
+      });
+    });
+    return result;
+  }, [allWorkloadDeployments, level]);
 
   // The breakdown knows which environments have data, but only by name. The
   // catalog holds the display name, which is what every other filter shows
@@ -239,6 +513,14 @@ export const DeliveryInsightsContent = ({
     () => measuredRates(data?.series?.changeFailureRate),
     [data?.series?.changeFailureRate],
   );
+  const reworkSeries = useMemo(
+    () => nullUnmeasuredRates(data?.series?.reworkRate),
+    [data?.series?.reworkRate],
+  );
+  const reworkSparkData = useMemo(
+    () => measuredRates(data?.series?.reworkRate),
+    [data?.series?.reworkRate],
+  );
 
   if (!scope || !level) {
     return <Progress />;
@@ -255,14 +537,132 @@ export const DeliveryInsightsContent = ({
   }`;
   const labels = BREAKDOWN_LABELS[level];
 
+  const workloadCopy = (mlModelText: string, llmText: string) =>
+    workloadType === 'ml_model' ? mlModelText : llmText;
+
+  const freqLens = lensFor('freq');
+  const freqIsMlops = freqLens === 'mlops';
+  const freqNoData = freqIsMlops && workloadDeployments.length === 0;
+  let freqValue: string;
+  let freqSub: string | undefined;
+  if (freqIsMlops) {
+    freqValue = freqNoData ? '—' : `${workloadFreqPerWeek.toFixed(1)}/wk`;
+    freqSub = freqNoData
+      ? NO_WORKLOAD_DATA_SUB
+      : workloadCopy(
+          'model weight promotions to serving',
+          'prompt, RAG-index & fine-tune releases',
+        );
+  } else {
+    freqValue = frequency ? `${frequency.perDay.toFixed(2)}/day` : '—';
+    freqSub = frequency
+      ? `${frequency.total} deployments · ${cmpLabel}`
+      : undefined;
+  }
+
+  const leadLens = lensFor('lead');
+  const leadIsMlops = leadLens === 'mlops';
+  const leadNoData = leadIsMlops && workloadLeadP50 === null;
+  const leadValue = leadIsMlops
+    ? formatDurationMs(workloadLeadP50)
+    : formatDurationMs(leadTime?.p50Ms);
+  let leadSub: string | undefined;
+  if (leadIsMlops) {
+    leadSub = leadNoData
+      ? NO_WORKLOAD_DATA_SUB
+      : workloadCopy(
+          'data prep → train → eval → serving (p50)',
+          'prompt/RAG change → live (p50)',
+        );
+  } else {
+    leadSub = leadTime
+      ? `p50, commit→deploy · ${Math.round(leadTime.coverage * 100)}% commit coverage`
+      : undefined;
+  }
+
+  const cfrLens = lensFor('cfr');
+  const cfrIsMlops = cfrLens === 'mlops';
+  const cfrMlopsRate = cfr?.semanticCfr ?? workloadFailRate;
+  const cfrNoData = cfrIsMlops && cfrMlopsRate === null;
+  let cfrValue: string;
+  let cfrSub: string | undefined;
+  if (cfrIsMlops) {
+    cfrValue = cfrNoData ? '—' : formatPercent(cfrMlopsRate);
+    cfrSub = cfrNoData
+      ? NO_WORKLOAD_DATA_SUB
+      : 'accuracy drop, drift or guardrail-block';
+  } else {
+    cfrValue = cfr && cfr.total > 0 ? formatPercent(cfr.rate) : '—';
+    cfrSub = cfr ? `${cfr.failed} of ${cfr.total} failed` : undefined;
+  }
+  const cfrSemanticDriven =
+    cfrIsMlops &&
+    (cfr?.semanticCfr ?? 0) > (cfr?.infraCfr ?? 0) &&
+    (cfr?.semanticCfr ?? 0) > 0;
+
+  const mttrLens = lensFor('mttr');
+  const mttrIsMlops = mttrLens === 'mlops';
+  const mttrSubFallback = mttr
+    ? `incident → restore · ${mttr.recoveries} recoveries`
+    : undefined;
+  const mttrSub = mttrIsMlops
+    ? workloadCopy(
+        'rollback to prior model version or retrain re-run',
+        'prompt rollback or guardrail patch',
+      )
+    : mttrSubFallback;
+
+  const reworkLens = lensFor('rework');
+  const reworkIsMlops = reworkLens === 'mlops';
+  const reworkSummary = summary?.reworkRate;
+  const reworkValue =
+    reworkSummary && reworkSummary.total > 0
+      ? formatPercent(reworkSummary.rate)
+      : '—';
+  const reworkSubFallback = reworkSummary
+    ? `${reworkSummary.reworked} of ${reworkSummary.total} needed rework`
+    : 'Awaiting reworkCount/reworkWindowMs from the observer';
+  const reworkSub = reworkIsMlops
+    ? workloadCopy(
+        'retraining re-run within 24h of eval regression',
+        'prompt or RAG-index patched again within 24h',
+      )
+    : reworkSubFallback;
+
   return (
     <Box>
-      <Box display="flex" alignItems="center" style={{ gap: 12 }} mb={2}>
+      <Box
+        display="flex"
+        alignItems="center"
+        className={classes.filterBar}
+        style={{ gap: 12 }}
+        mb={2}
+      >
         <ScopeFilters
           scope={scope ?? {}}
           onScopeChange={onScopeChange}
           queryKeyPrefix="insights-scope"
         />
+        <TextField
+          select
+          size="small"
+          variant="outlined"
+          label="Workload type"
+          value={workloadType}
+          onChange={event =>
+            onWorkloadTypeChange(event.target.value as DoraWorkloadTypeFilter)
+          }
+          style={{ minWidth: 160 }}
+        >
+          {WORKLOAD_TYPE_OPTIONS.map(option => (
+            <MenuItem key={option} value={option}>
+              {WORKLOAD_TYPE_LABELS[option]}
+            </MenuItem>
+          ))}
+        </TextField>
+
+        <Divider orientation="vertical" flexItem className={classes.filterDivider} />
+
         <TextField
           select
           size="small"
@@ -312,7 +712,9 @@ export const DeliveryInsightsContent = ({
             </MenuItem>
           ))}
         </TextField>
+
         <Box flexGrow={1} />
+
         <Button
           size="small"
           startIcon={<RefreshIcon />}
@@ -343,75 +745,67 @@ export const DeliveryInsightsContent = ({
         <Progress />
       ) : (
         <>
-          <Grid container spacing={2}>
-            <Grid item xs={12} sm={6} md={3}>
-              <DoraMetricTile
-                title="Deployment Frequency"
-                value={frequency ? `${frequency.perDay.toFixed(2)}/day` : '—'}
-                classification={frequency?.classification ?? 'Unknown'}
-                deltaPct={frequency?.deltaPct ?? null}
-                positiveDeltaIsGood
-                subText={
-                  frequency
-                    ? `${frequency.total} deployments · ${cmpLabel}`
-                    : undefined
-                }
-                sparkData={series?.deploymentFrequency?.map(p => p.count)}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6} md={3}>
-              <DoraMetricTile
-                title="Lead Time for Changes"
-                value={formatDurationMs(leadTime?.p50Ms)}
-                classification={leadTime?.classification ?? 'Unknown'}
-                deltaPct={leadTime?.deltaPct ?? null}
-                positiveDeltaIsGood={false}
-                subText={
-                  leadTime
-                    ? `p50, commit→deploy · ${Math.round(
-                        leadTime.coverage * 100,
-                      )}% commit coverage`
-                    : undefined
-                }
-                sparkData={series?.leadTime?.map(p => p.p50Ms)}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6} md={3}>
-              <DoraMetricTile
-                title="Change Failure Rate"
-                value={cfr && cfr.total > 0 ? formatPercent(cfr.rate) : '—'}
-                classification={cfr?.classification ?? 'Unknown'}
-                deltaPct={cfr?.deltaPct ?? null}
-                positiveDeltaIsGood={false}
-                subText={
-                  cfr ? `${cfr.failed} of ${cfr.total} failed` : undefined
-                }
-                sparkData={cfrSparkData}
-                secondaryBadge={
-                  cfr?.semanticCfr !== undefined &&
-                  cfr.semanticCfr !== null &&
-                  cfr.semanticCfr > (cfr.infraCfr ?? 0)
-                    ? { label: 'Semantic-driven', tone: 'warning' }
-                    : undefined
-                }
-              />
-            </Grid>
-            <Grid item xs={12} sm={6} md={3}>
-              <DoraMetricTile
-                title="Mean Time to Recovery"
-                value={formatDurationMs(mttr?.meanMs)}
-                classification={mttr?.classification ?? 'Unknown'}
-                deltaPct={mttr?.deltaPct ?? null}
-                positiveDeltaIsGood={false}
-                subText={
-                  mttr
-                    ? `incident→restore · ${mttr.recoveries} recoveries`
-                    : undefined
-                }
-                sparkData={series?.mttr?.map(p => p.meanMs)}
-              />
-            </Grid>
-          </Grid>
+          <Box className={classes.metricsGrid}>
+            <DoraMetricTile
+              title="Deployment Frequency"
+              value={freqValue}
+              classification={frequency?.classification ?? 'Unknown'}
+              deltaPct={frequency?.deltaPct ?? null}
+              positiveDeltaIsGood
+              subText={freqSub}
+              sparkData={series?.deploymentFrequency?.map(p => p.count)}
+              lens={lensControlFor('freq')}
+              breakdown={freqIsMlops ? workloadChangeMix : undefined}
+            />
+            <DoraMetricTile
+              title="Lead Time for Changes"
+              value={leadValue}
+              classification={leadTime?.classification ?? 'Unknown'}
+              deltaPct={leadTime?.deltaPct ?? null}
+              positiveDeltaIsGood={false}
+              subText={leadSub}
+              sparkData={series?.leadTime?.map(p => p.p50Ms)}
+              lens={lensControlFor('lead')}
+              breakdown={leadIsMlops ? workloadChangeMix : undefined}
+            />
+            <DoraMetricTile
+              title="Change Failure Rate"
+              value={cfrValue}
+              classification={cfr?.classification ?? 'Unknown'}
+              deltaPct={cfr?.deltaPct ?? null}
+              positiveDeltaIsGood={false}
+              subText={cfrSub}
+              sparkData={cfrSparkData}
+              secondaryBadge={
+                cfrSemanticDriven
+                  ? { label: 'Semantic-driven', tone: 'warning' }
+                  : undefined
+              }
+              lens={lensControlFor('cfr')}
+              breakdown={cfrIsMlops ? workloadChangeMix : undefined}
+            />
+            <DoraMetricTile
+              title="Mean Time to Recovery"
+              value={formatDurationMs(mttr?.meanMs)}
+              classification={mttr?.classification ?? 'Unknown'}
+              deltaPct={mttr?.deltaPct ?? null}
+              positiveDeltaIsGood={false}
+              subText={mttrSub}
+              sparkData={series?.mttr?.map(p => p.meanMs)}
+              lens={lensControlFor('mttr')}
+              breakdown={mttrIsMlops ? workloadRecoveryMix : undefined}
+            />
+            <DoraMetricTile
+              title="Deployment Rework Rate"
+              value={reworkValue}
+              classification={reworkSummary?.classification ?? 'Unknown'}
+              deltaPct={reworkSummary?.deltaPct ?? null}
+              positiveDeltaIsGood={false}
+              subText={reworkSub}
+              sparkData={reworkSparkData}
+              lens={lensControlFor('rework')}
+            />
+          </Box>
 
           <Box mt={1}>
             <Grid container spacing={2}>
@@ -491,6 +885,23 @@ export const DeliveryInsightsContent = ({
                   emptyMessage="No recovery episodes in the selected window"
                 />
               </Grid>
+              <Grid item xs={12} md={6}>
+                <DoraTrendChart
+                  title="Deployment Rework Rate"
+                  granularity={granularity}
+                  data={reworkSeries}
+                  series={[
+                    {
+                      dataKey: 'rate',
+                      label: 'Rework rate',
+                      color: CHART_COLORS.reworkRate,
+                    },
+                  ]}
+                  variant="line"
+                  valueFormatter={value => formatPercent(value)}
+                  emptyMessage="Awaiting reworkCount/reworkWindowMs from the observer"
+                />
+              </Grid>
               {waterfallData.length > 0 && (
                 <Grid item xs={12} md={6}>
                   <DoraTrendChart
@@ -512,6 +923,166 @@ export const DeliveryInsightsContent = ({
             </Grid>
           </Box>
 
+          {aiWorkloadSelected && (
+          <>
+          <Box
+            mt={3}
+            mb={1.5}
+            display="flex"
+            alignItems="center"
+            justifyContent="space-between"
+            flexWrap="wrap"
+            style={{ gap: 12 }}
+          >
+            <Typography variant="subtitle1" style={{ fontWeight: 650 }}>
+              Version baseline comparison
+            </Typography>
+            <Box display="flex" alignItems="center" style={{ gap: 8 }}>
+              <Typography variant="caption" color="textSecondary" noWrap>
+                Compare to baseline
+              </Typography>
+              <Switch
+                size="small"
+                color="primary"
+                checked={baselineEnabled}
+                onChange={event => setBaselineEnabled(event.target.checked)}
+              />
+              {baselineEnabled && (
+                <TextField
+                  select
+                  size="small"
+                  variant="outlined"
+                  value={baselineVersion}
+                  onChange={event => setBaselineVersion(event.target.value)}
+                  disabled={baselineOptions.length === 0}
+                  style={{ minWidth: 140 }}
+                >
+                  {baselineOptions.map(([label]) => (
+                    <MenuItem key={label} value={label}>
+                      {label}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              )}
+            </Box>
+          </Box>
+          <Box
+            className={`${classes.panel} ${
+              showBaselinePanel ? '' : classes.panelDim
+            }`}
+          >
+            <Typography variant="caption" color="textSecondary">
+              Model quality, not delivery process — kept separate from the
+              DORA cards above on purpose.
+            </Typography>
+            {currentDeployment && baselineDeployment ? (
+              <>
+                <Box className={classes.compareRow}>
+                  <Box className={`${classes.verCard} ${classes.verCardCurrent}`}>
+                    <Typography variant="caption" color="textSecondary">
+                      CURRENT
+                    </Typography>
+                    <Typography variant="body2" style={{ fontWeight: 600 }}>
+                      {deploymentVersionLabel(currentDeployment)}
+                    </Typography>
+                  </Box>
+                  <Typography variant="body2" color="textSecondary">
+                    ⇄
+                  </Typography>
+                  <Box className={classes.verCard}>
+                    <Typography variant="caption" color="textSecondary">
+                      BASELINE
+                    </Typography>
+                    <Typography variant="body2" style={{ fontWeight: 600 }}>
+                      {deploymentVersionLabel(baselineDeployment)}
+                    </Typography>
+                  </Box>
+                </Box>
+                <Box className={classes.metricDiff}>
+                  <Box className={classes.diffTile}>
+                    <Typography variant="caption" color="textSecondary">
+                      Eval score
+                    </Typography>
+                    <Typography variant="body2" style={{ fontWeight: 700 }}>
+                      {baselineDeployment.evalScore ?? '—'} →{' '}
+                      {currentDeployment.evalScore ?? '—'}
+                    </Typography>
+                  </Box>
+                  <Box className={classes.diffTile}>
+                    <Typography variant="caption" color="textSecondary">
+                      Drift score
+                    </Typography>
+                    <Typography variant="body2" style={{ fontWeight: 700 }}>
+                      {baselineDeployment.driftScore ?? '—'} →{' '}
+                      {currentDeployment.driftScore ?? '—'}
+                    </Typography>
+                  </Box>
+                </Box>
+              </>
+            ) : (
+              <Typography variant="body2" color="textSecondary" style={{ marginTop: 12 }}>
+                Turn on "Compare to baseline" and pick a version to compare.
+              </Typography>
+            )}
+          </Box>
+          </>
+          )}
+
+          <Box mt={3} mb={1.5}>
+            <Typography variant="subtitle1" style={{ fontWeight: 650 }}>
+              Deployments by workload type
+            </Typography>
+          </Box>
+          <Box className={classes.panel}>
+            <Box className={classes.workloadGrid}>
+              {(['service', 'ml_model', 'llm_app'] as const).map(wl => {
+                const stat = workloadStats[wl];
+                const color = WORKLOAD_TYPE_COLORS[wl];
+                return (
+                  <Box key={wl} className={classes.workloadCard}>
+                    <Box className={classes.workloadCardHeader}>
+                      <Box
+                        className={classes.workloadCardDot}
+                        style={{ background: color }}
+                      />
+                      {WORKLOAD_TYPE_LABELS[wl]}
+                    </Box>
+                    <Box className={classes.workloadCardValueRow}>
+                      <span className={classes.workloadCardValue}>
+                        {stat.count}
+                      </span>
+                      <span className={classes.workloadCardShare}>
+                        {stat.sharePct}% of deployments
+                      </span>
+                    </Box>
+                    <Box className={classes.barTrack}>
+                      <Box
+                        className={classes.barFill}
+                        style={{ width: `${stat.sharePct}%`, background: color }}
+                      />
+                    </Box>
+                    <Box className={classes.workloadCardMeta}>
+                      <span>Change failure rate</span>
+                      <b>{formatPercent(stat.failRate)}</b>
+                    </Box>
+                    <Box className={classes.workloadCardMeta}>
+                      <span>Lead time p50</span>
+                      <b>{formatDurationMs(stat.leadP50)}</b>
+                    </Box>
+                  </Box>
+                );
+              })}
+            </Box>
+            <Typography
+              variant="caption"
+              color="textSecondary"
+              style={{ display: 'block', marginTop: 12 }}
+            >
+              {rangeDays}d window, current scope
+            </Typography>
+          </Box>
+
+
           <Box mt={3} mb={1.5}>
             <Typography variant="subtitle1" style={{ fontWeight: 650 }}>
               {labels.title}
@@ -525,6 +1096,9 @@ export const DeliveryInsightsContent = ({
             onDrill={level === 'component' ? undefined : onDrill}
             onSelectEnvironment={
               level === 'component' ? onEnvFilterChange : undefined
+            }
+            deploymentInfoByName={
+              level === 'component' ? undefined : deploymentInfoByName
             }
           />
 

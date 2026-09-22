@@ -1,16 +1,43 @@
 import { Box, Card, CardContent, Chip, Typography } from '@material-ui/core';
+import { ToggleButton, ToggleButtonGroup } from '@material-ui/lab';
 import ArrowDownwardIcon from '@material-ui/icons/ArrowDownward';
 import ArrowUpwardIcon from '@material-ui/icons/ArrowUpward';
 import { makeStyles, useTheme } from '@material-ui/core/styles';
 import { DoraClassification } from '../../types';
-import { classificationColors, deltaColor } from './utils';
+import {
+  classificationColors,
+  deltaColor,
+  DEVOPS_ACCENT_COLOR,
+  MixSlice,
+  MLOPS_ACCENT_COLOR,
+} from './utils';
 
 const SPARK_W = 84;
 const SPARK_H = 30;
+const MONO_FONT_STACK =
+  "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 
 const useStyles = makeStyles(theme => ({
   card: {
     height: '100%',
+    borderRadius: 12,
+    overflow: 'visible',
+  },
+  badgeCard: {
+    borderColor: theme.palette.warning.main,
+  },
+  badgeRibbon: {
+    position: 'absolute',
+    top: -9,
+    left: 14,
+    fontSize: 9,
+    fontWeight: 800,
+    letterSpacing: '0.07em',
+    textTransform: 'uppercase',
+    background: theme.palette.warning.main,
+    color: theme.palette.getContrastText(theme.palette.warning.main),
+    padding: '2px 7px',
+    borderRadius: 100,
   },
   header: {
     display: 'flex',
@@ -23,8 +50,10 @@ const useStyles = makeStyles(theme => ({
     color: theme.palette.text.secondary,
   },
   value: {
-    fontWeight: 600,
+    fontWeight: 700,
     marginTop: theme.spacing(1),
+    fontFamily: MONO_FONT_STACK,
+    fontVariantNumeric: 'tabular-nums',
   },
   chip: {
     fontWeight: 600,
@@ -52,6 +81,53 @@ const useStyles = makeStyles(theme => ({
   },
   subText: {
     color: theme.palette.text.secondary,
+    minHeight: theme.spacing(3.5),
+  },
+  lensToggle: {
+    marginTop: theme.spacing(1),
+    height: 26,
+    background: theme.palette.action.hover,
+    borderRadius: 8,
+    padding: 2,
+    '& .MuiToggleButtonGroup-groupedHorizontal:not(:first-child)': {
+      borderLeft: 'none',
+      marginLeft: 0,
+    },
+  },
+  lensButton: {
+    fontSize: 10.5,
+    fontWeight: 700,
+    padding: '2px 9px',
+    textTransform: 'none',
+    border: 'none',
+    borderRadius: '6px !important',
+    color: theme.palette.text.secondary,
+  },
+  mixBar: {
+    display: 'flex',
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginTop: theme.spacing(1.25),
+    background: theme.palette.action.hover,
+  },
+  mixLegend: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: theme.spacing(1),
+    marginTop: theme.spacing(0.5),
+  },
+  mixLegendItem: {
+    display: 'flex',
+    alignItems: 'center',
+    fontSize: 10.5,
+    color: theme.palette.text.secondary,
+  },
+  mixDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 2,
+    marginRight: 4,
   },
 }));
 
@@ -70,6 +146,13 @@ export interface DoraMetricTileProps {
   sparkData?: number[];
   /** ML/LLM callout beside the classification chip, e.g. "drift-driven cadence". */
   secondaryBadge?: { label: string; tone: 'info' | 'warning' };
+  lens?: {
+    active: 'devops' | 'mlops';
+    locked: boolean;
+    onChange: (lens: 'devops' | 'mlops') => void;
+  };
+  breakdown?: MixSlice[];
+  badge?: string;
 }
 
 const Sparkline = ({ data }: { data: number[] }) => {
@@ -116,6 +199,9 @@ export const DoraMetricTile = ({
   subText,
   sparkData,
   secondaryBadge,
+  lens,
+  breakdown,
+  badge,
 }: DoraMetricTileProps) => {
   const classes = useStyles();
   const theme = useTheme();
@@ -127,10 +213,11 @@ export const DoraMetricTile = ({
 
   return (
     <Card
-      className={classes.card}
+      className={`${classes.card} ${badge ? classes.badgeCard : ''}`}
       variant="outlined"
       style={{ position: 'relative' }}
     >
+      {badge && <Box className={classes.badgeRibbon}>{badge}</Box>}
       {sparkData && <Sparkline data={sparkData} />}
       <CardContent>
         <Box className={classes.header}>
@@ -157,6 +244,44 @@ export const DoraMetricTile = ({
             />
           </Box>
         </Box>
+        {lens && (
+          <ToggleButtonGroup
+            size="small"
+            exclusive
+            value={lens.active}
+            className={classes.lensToggle}
+            onChange={(_, next) => {
+              if (next && !lens.locked) {
+                lens.onChange(next);
+              }
+            }}
+          >
+            <ToggleButton
+              value="devops"
+              disabled={lens.locked}
+              className={classes.lensButton}
+              style={
+                lens.active === 'devops'
+                  ? { background: `${DEVOPS_ACCENT_COLOR}22`, color: DEVOPS_ACCENT_COLOR }
+                  : undefined
+              }
+            >
+              DevOps
+            </ToggleButton>
+            <ToggleButton
+              value="mlops"
+              disabled={lens.locked}
+              className={classes.lensButton}
+              style={
+                lens.active === 'mlops'
+                  ? { background: `${MLOPS_ACCENT_COLOR}22`, color: MLOPS_ACCENT_COLOR }
+                  : undefined
+              }
+            >
+              MLOps/LLMOps
+            </ToggleButton>
+          </ToggleButtonGroup>
+        )}
         <Typography variant="h4" className={classes.value}>
           {value}
         </Typography>
@@ -185,6 +310,29 @@ export const DoraMetricTile = ({
             </Typography>
           )}
         </Box>
+        {breakdown && breakdown.length > 0 && (
+          <>
+            <Box className={classes.mixBar}>
+              {breakdown.map(slice => (
+                <Box
+                  key={slice.key}
+                  style={{ width: `${slice.pct}%`, background: slice.color }}
+                />
+              ))}
+            </Box>
+            <Box className={classes.mixLegend}>
+              {breakdown.map(slice => (
+                <Box key={slice.key} className={classes.mixLegendItem}>
+                  <Box
+                    className={classes.mixDot}
+                    style={{ background: slice.color }}
+                  />
+                  {slice.label} {slice.pct}%
+                </Box>
+              ))}
+            </Box>
+          </>
+        )}
       </CardContent>
     </Card>
   );

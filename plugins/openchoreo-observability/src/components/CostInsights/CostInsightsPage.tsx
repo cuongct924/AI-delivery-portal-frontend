@@ -32,14 +32,22 @@ import {
 } from './CostInsightsFilters';
 import { CostInsightsTable } from './CostInsightsTable';
 import { CostInsightsGraphs } from './CostInsightsGraphs';
+import { CostSummaryCards } from './CostSummaryCards';
+import { CostActionPanel } from './CostActionPanel';
 import { ForecastDivergenceChart } from './ForecastDivergenceChart';
 import { useNamespaceEnvironments } from './useNamespaceEnvironments';
 import { useDimensionTitles } from './useDimensionTitles';
 import { useCostInsights } from './useCostInsights';
-import type {
-  CostComponentRef,
-  CostProjectRef,
-  CostScopeSelection,
+import {
+  COST_DIMENSIONS,
+  COST_STAGES,
+  DEFAULT_COST_DIMENSION,
+  DEFAULT_COST_STAGE,
+  type CostComponentRef,
+  type CostDimension,
+  type CostProjectRef,
+  type CostScopeSelection,
+  type CostStageFilter,
 } from './types';
 
 // Cost Analysis is a heavier feature (report views, FinOps chat). Load it lazily
@@ -229,6 +237,16 @@ const CostInsightsInsightsTab = () => {
   const titles = useDimensionTitles(level, scopes);
 
   const granularity = searchParams.get('granularity') || DEFAULT_GRANULARITY;
+  const stageParam = searchParams.get('stage');
+  const stage: CostStageFilter =
+    stageParam && (COST_STAGES as string[]).includes(stageParam)
+      ? (stageParam as CostStageFilter)
+      : DEFAULT_COST_STAGE;
+  const dimensionParam = searchParams.get('dimension');
+  const dimension: CostDimension =
+    dimensionParam && (COST_DIMENSIONS as string[]).includes(dimensionParam)
+      ? (dimensionParam as CostDimension)
+      : DEFAULT_COST_DIMENSION;
   const { timeRange, customStartTime, customEndTime } = parseUrlTimeRange(
     searchParams,
     COST_DEFAULT_TIME_RANGE,
@@ -294,6 +312,24 @@ const CostInsightsInsightsTab = () => {
     [update],
   );
 
+  const onStageChange = useCallback(
+    (next: CostStageFilter) =>
+      update(params => {
+        if (next === DEFAULT_COST_STAGE) params.delete('stage');
+        else params.set('stage', next);
+      }),
+    [update],
+  );
+
+  const onDimensionChange = useCallback(
+    (next: CostDimension) =>
+      update(params => {
+        if (next === DEFAULT_COST_DIMENSION) params.delete('dimension');
+        else params.set('dimension', next);
+      }),
+    [update],
+  );
+
   // --- Cost data ---
   const { data, loading, isRefetching, error, refresh } = useCostInsights({
     scopes,
@@ -303,6 +339,8 @@ const CostInsightsInsightsTab = () => {
     customStartTime,
     customEndTime,
     granularity,
+    stage,
+    dimension,
   });
 
   // Optimize/Apply acts on a single ReleaseBinding, so it's only offered when
@@ -322,6 +360,10 @@ const CostInsightsInsightsTab = () => {
           environmentsLoading={envsLoading}
           selectedEnvironments={selectedEnvironments}
           onEnvironmentsChange={onEnvironmentsChange}
+          stage={stage}
+          onStageChange={onStageChange}
+          dimension={dimension}
+          onDimensionChange={onDimensionChange}
           onRefresh={refresh}
           refreshing={loading || isRefetching}
           disabled={noScope}
@@ -372,9 +414,15 @@ const CostInsightsInsightsTab = () => {
       {!loading && data && (
         <Box position="relative">
           <RefreshOverlay active={isRefetching} label="Refreshing cost data" />
+          <Box className={classes.section}>
+            <CostSummaryCards summary={data.summary} />
+          </Box>
           {/* Forecast covers the whole month, so it sits above the time range. */}
           <Box className={classes.section}>
-            <ForecastDivergenceChart forecast={data.forecast} />
+            <ForecastDivergenceChart
+              forecast={data.forecast}
+              budget={data.budget?.amount ?? null}
+            />
           </Box>
           <Box className={`${classes.section} ${classes.timeRangeRow}`}>
             <Typography variant="body2" color="textSecondary">
@@ -405,6 +453,15 @@ const CostInsightsInsightsTab = () => {
               singleComponent={
                 data.level === 'component' && scopes.length === 1
               }
+              stage={stage}
+            />
+          </Box>
+          <Box className={classes.section}>
+            <CostActionPanel
+              anomalies={data.anomalies ?? []}
+              budget={data.budget ?? null}
+              forecastTotal={data.summary.forecastTotal ?? null}
+              totalSaving={data.summary.totalSaving}
             />
           </Box>
         </Box>

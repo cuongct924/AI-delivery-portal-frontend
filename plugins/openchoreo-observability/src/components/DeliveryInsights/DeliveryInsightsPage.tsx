@@ -6,13 +6,20 @@ import { ScopeSelection } from '../ScopeFilters';
 import { DoraGranularity, DoraSearchScope } from '../../types';
 import { DeliveryInsightsContent } from './DeliveryInsightsContent';
 import { InsightsLevel } from './useDoraBreakdown';
-import { INSIGHTS_TIME_RANGES } from './utils';
+import { DoraWorkloadTypeFilter, INSIGHTS_TIME_RANGES } from './utils';
 
 const DEFAULT_NAMESPACE = 'default';
 const DEFAULT_RANGE_DAYS = 30;
 const DEFAULT_GRANULARITY: DoraGranularity = 'daily';
+const DEFAULT_WORKLOAD_TYPE: DoraWorkloadTypeFilter = 'all';
 
 const GRANULARITIES: DoraGranularity[] = ['daily', 'weekly', 'monthly'];
+const WORKLOAD_TYPES: DoraWorkloadTypeFilter[] = [
+  'all',
+  'service',
+  'ml_model',
+  'llm_app',
+];
 
 /**
  * The DORA query level implied by how deep the scope selection goes. The
@@ -63,6 +70,13 @@ export const DeliveryInsightsPage = () => {
   const granularity = GRANULARITIES.includes(granularityParam)
     ? granularityParam
     : DEFAULT_GRANULARITY;
+
+  const workloadParam = searchParams.get(
+    'workload',
+  ) as DoraWorkloadTypeFilter;
+  const workloadType = WORKLOAD_TYPES.includes(workloadParam)
+    ? workloadParam
+    : DEFAULT_WORKLOAD_TYPE;
 
   const scope: DoraSearchScope = useMemo(
     () => ({ namespace, project, component }),
@@ -124,6 +138,15 @@ export const DeliveryInsightsPage = () => {
     [update],
   );
 
+  const onWorkloadTypeChange = useCallback(
+    (next: DoraWorkloadTypeFilter) =>
+      update(params => {
+        if (next === DEFAULT_WORKLOAD_TYPE) params.delete('workload');
+        else params.set('workload', next);
+      }),
+    [update],
+  );
+
   // Drill one level deeper by clicking a breakdown row: namespace to project,
   // project to component. Component-level rows are environments, which the
   // content applies as the environment filter instead.
@@ -150,9 +173,11 @@ export const DeliveryInsightsPage = () => {
             rangeDays={rangeDays}
             granularity={granularity}
             envFilter={environment}
+            workloadType={workloadType}
             onRangeDaysChange={onRangeDaysChange}
             onGranularityChange={onGranularityChange}
             onEnvFilterChange={onEnvFilterChange}
+            onWorkloadTypeChange={onWorkloadTypeChange}
             onDrill={onDrill}
           />
         </Box>

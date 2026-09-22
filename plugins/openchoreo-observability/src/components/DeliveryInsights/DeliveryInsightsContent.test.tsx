@@ -38,6 +38,10 @@ jest.mock('./useLatestDoraDeployment', () => ({
   useLatestDoraDeployment: () => null,
 }));
 
+jest.mock('./useDoraWorkloadBreakdown', () => ({
+  useDoraWorkloadBreakdown: () => ({ deployments: [], loading: false }),
+}));
+
 jest.mock('../CostInsights/useNamespaceEnvironments', () => ({
   useNamespaceEnvironments: () => ({ environments: [] }),
 }));
@@ -60,9 +64,11 @@ const render = (envFilter: string, level: InsightsLevel = 'domain') =>
       rangeDays={30}
       granularity="daily"
       envFilter={envFilter}
+      workloadType="all"
       onRangeDaysChange={() => {}}
       onGranularityChange={() => {}}
       onEnvFilterChange={() => {}}
+      onWorkloadTypeChange={() => {}}
     />,
   );
 

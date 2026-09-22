@@ -11,13 +11,15 @@ import {
 } from '@material-ui/core';
 import { makeStyles, useTheme } from '@material-ui/core/styles';
 import { Progress } from '@backstage/core-components';
-import { DoraClassification } from '../../types';
+import { DoraClassification, DoraWorkloadType } from '../../types';
 import { DoraBreakdownRow } from './useDoraBreakdown';
 import {
   classificationColors,
   deltaColor,
   formatDurationMs,
   formatPercent,
+  WORKLOAD_TYPE_COLORS,
+  WORKLOAD_TYPE_LABELS,
 } from './utils';
 
 const useStyles = makeStyles(theme => ({
@@ -98,6 +100,10 @@ export interface DoraBreakdownTableProps {
    * the caller applies it as the environment filter.
    */
   onSelectEnvironment?: (environment: string) => void;
+  deploymentInfoByName?: Map<
+    string,
+    { workloadType: DoraWorkloadType | null | undefined; version: string }
+  >;
 }
 
 /**
@@ -113,8 +119,10 @@ export const DoraBreakdownTable = ({
   error,
   onDrill,
   onSelectEnvironment,
+  deploymentInfoByName,
 }: DoraBreakdownTableProps) => {
   const classes = useStyles();
+  const showDeploymentInfo = Boolean(deploymentInfoByName);
   const theme = useTheme();
   const ratingColors = classificationColors(theme);
 
@@ -147,6 +155,8 @@ export const DoraBreakdownTable = ({
         <TableHead>
           <TableRow>
             <TableCell>{childLabel}</TableCell>
+            {showDeploymentInfo && <TableCell>Workload</TableCell>}
+            {showDeploymentInfo && <TableCell>Version</TableCell>}
             <TableCell align="right">Deployments</TableCell>
             <TableCell align="right">Lead time p50</TableCell>
             <TableCell align="right">Change failure rate</TableCell>
@@ -175,6 +185,7 @@ export const DoraBreakdownTable = ({
               }
             };
             const clickable = drillable || Boolean(onSelectEnvironment);
+            const deploymentInfo = deploymentInfoByName?.get(row.name);
             return (
               <TableRow
                 key={row.name}
@@ -187,6 +198,28 @@ export const DoraBreakdownTable = ({
                     {row.name}
                   </span>
                 </TableCell>
+                {showDeploymentInfo && (
+                  <TableCell>
+                    {deploymentInfo?.workloadType ? (
+                      <Chip
+                        size="small"
+                        label={WORKLOAD_TYPE_LABELS[deploymentInfo.workloadType]}
+                        className={classes.chip}
+                        style={{
+                          backgroundColor: `${WORKLOAD_TYPE_COLORS[deploymentInfo.workloadType]}22`,
+                          color: WORKLOAD_TYPE_COLORS[deploymentInfo.workloadType],
+                        }}
+                      />
+                    ) : (
+                      '—'
+                    )}
+                  </TableCell>
+                )}
+                {showDeploymentInfo && (
+                  <TableCell className={classes.num}>
+                    {deploymentInfo?.version ?? '—'}
+                  </TableCell>
+                )}
                 <TableCell align="right" className={classes.num}>
                   <Box display="inline-flex" alignItems="center">
                     <span className={classes.sparkTrack}>

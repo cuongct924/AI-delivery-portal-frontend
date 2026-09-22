@@ -4,8 +4,10 @@ import path from 'node:path';
 import { ConfigReader } from '@backstage/config';
 import {
   createActivatePromptAction,
+  createDraftEvalSetAction,
   createDraftPromptAction,
   createEvaluatePromptAction,
+  createFetchEvalSetAction,
   createPrepareLlmDeployManifestAction,
   createRagActivateAction,
   createRagEvaluateAction,
@@ -289,6 +291,63 @@ describe('orchestration:rag-activate', () => {
   });
 });
 
+describe('orchestration:rag-activate environment', () => {
+  it('forwards environment', async () => {
+    const fetchMock = mockFetchResponses([
+      {
+        ok: true,
+        body: { collection: 'smoke-test', environment: 'staging', active_version: '1' },
+      },
+    ]);
+    const action = createRagActivateAction({ config });
+    const { ctx, outputs } = createMockContext<typeof action>(
+      { collection: 'smoke-test', indexVersion: '1', environment: 'staging' },
+      '/tmp/workspace',
+    );
+
+    await action.handler(ctx);
+
+    expect(outputs.activeVersion).toBe('1');
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BASE_URL}/rag/activate`,
+      expect.objectContaining({
+        body: JSON.stringify({
+          collection: 'smoke-test',
+          index_version: '1',
+          environment: 'staging',
+        }),
+      }),
+    );
+  });
+});
+
+describe('orchestration:rag-activate rollback', () => {
+  it('forwards isRollback as is_rollback', async () => {
+    const fetchMock = mockFetchResponses([
+      { ok: true, body: { collection: 'smoke-test', active_version: '1' } },
+    ]);
+    const action = createRagActivateAction({ config });
+    const { ctx, outputs } = createMockContext<typeof action>(
+      { collection: 'smoke-test', indexVersion: '1', isRollback: true },
+      '/tmp/workspace',
+    );
+
+    await action.handler(ctx);
+
+    expect(outputs.activeVersion).toBe('1');
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BASE_URL}/rag/activate`,
+      expect.objectContaining({
+        body: JSON.stringify({
+          collection: 'smoke-test',
+          index_version: '1',
+          is_rollback: true,
+        }),
+      }),
+    );
+  });
+});
+
 describe('orchestration:draft-prompt', () => {
   it('posts the draft and outputs the new version', async () => {
     const fetchMock = mockFetchResponses([
@@ -388,6 +447,99 @@ describe('orchestration:activate-prompt', () => {
       expect.objectContaining({
         body: JSON.stringify({ version: '2' }),
       }),
+    );
+  });
+
+  it('forwards isRollback as is_rollback', async () => {
+    const fetchMock = mockFetchResponses([
+      { ok: true, body: { name: 'mlops', active_version: '1' } },
+    ]);
+    const action = createActivatePromptAction({ config });
+    const { ctx, outputs } = createMockContext<typeof action>(
+      { name: 'mlops', version: '1', isRollback: true },
+      '/tmp/workspace',
+    );
+
+    await action.handler(ctx);
+
+    expect(outputs.activeVersion).toBe('1');
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BASE_URL}/prompts/mlops/activate`,
+      expect.objectContaining({
+        body: JSON.stringify({ version: '1', is_rollback: true }),
+      }),
+    );
+  });
+
+  it('forwards environment', async () => {
+    const fetchMock = mockFetchResponses([
+      { ok: true, body: { name: 'mlops', environment: 'staging', active_version: '1' } },
+    ]);
+    const action = createActivatePromptAction({ config });
+    const { ctx, outputs } = createMockContext<typeof action>(
+      { name: 'mlops', version: '1', environment: 'staging' },
+      '/tmp/workspace',
+    );
+
+    await action.handler(ctx);
+
+    expect(outputs.activeVersion).toBe('1');
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BASE_URL}/prompts/mlops/activate`,
+      expect.objectContaining({
+        body: JSON.stringify({ version: '1', environment: 'staging' }),
+      }),
+    );
+  });
+});
+
+describe('orchestration:draft-eval-set', () => {
+  it('posts the name/questions and outputs the new version', async () => {
+    const fetchMock = mockFetchResponses([
+      {
+        ok: true,
+        body: { name: 'idp-basics', version: '1', questions: ['q1', 'q2'] },
+      },
+    ]);
+    const action = createDraftEvalSetAction({ config });
+    const { ctx, outputs } = createMockContext<typeof action>(
+      { name: 'idp-basics', questions: ['q1', 'q2'] },
+      '/tmp/workspace',
+    );
+
+    await action.handler(ctx);
+
+    expect(outputs.version).toBe('1');
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BASE_URL}/eval-sets`,
+      expect.objectContaining({
+        body: JSON.stringify({ name: 'idp-basics', questions: ['q1', 'q2'] }),
+      }),
+    );
+  });
+});
+
+describe('orchestration:fetch-eval-set', () => {
+  it('fetches the latest version and outputs its questions', async () => {
+    const fetchMock = mockFetchResponses([
+      {
+        ok: true,
+        body: { name: 'idp-basics', version: '3', questions: ['q1', 'q2'] },
+      },
+    ]);
+    const action = createFetchEvalSetAction({ config });
+    const { ctx, outputs } = createMockContext<typeof action>(
+      { name: 'idp-basics' },
+      '/tmp/workspace',
+    );
+
+    await action.handler(ctx);
+
+    expect(outputs.version).toBe('3');
+    expect(outputs.questions).toEqual(['q1', 'q2']);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BASE_URL}/eval-sets/idp-basics/latest`,
+      expect.objectContaining({ headers: expect.any(Object) }),
     );
   });
 });

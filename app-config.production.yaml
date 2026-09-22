@@ -258,7 +258,7 @@ catalog:
       rules:
         - allow: [Template]
     - type: file
-      target: /app/templates/register-deploy/template.yaml
+      target: /app/templates/evaluate-deploy-model/template.yaml
       rules:
         - allow: [Template]
     - type: file
@@ -266,15 +266,15 @@ catalog:
       rules:
         - allow: [Template]
     - type: file
-      target: /app/templates/deploy-llm/template.yaml
+      target: /app/templates/llm-serve-deploy/template.yaml
       rules:
         - allow: [Template]
     - type: file
-      target: /app/templates/llm-draft-register/template.yaml
+      target: /app/templates/llm-draft-ingest/template.yaml
       rules:
         - allow: [Template]
     - type: file
-      target: /app/templates/llm-evaluate-deploy/template.yaml
+      target: /app/templates/llm-evaluate-activate/template.yaml
       rules:
         - allow: [Template]
 

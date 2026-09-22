@@ -1,6 +1,7 @@
 import { createFrontendModule } from '@backstage/frontend-plugin-api';
 import { HomePageWidgetBlueprint } from '@backstage/plugin-home-react/alpha';
 import { MarkdownContent } from '@backstage/core-components';
+import { ClusterTopologyWidget } from '@openchoreo/backstage-plugin-platform-engineer-core';
 
 const content = `
 ## AI Delivery Portal
@@ -13,7 +14,7 @@ Lớp DevEx & orchestration đặt trên hệ sinh thái AI Platform — Backsta
 - **[Train, Track & Register](/create/templates/default/train-track-register)** —
   validate dataset, train/fine-tune trên Argo Workflows, track run trong
   MLflow, đăng ký model version và mở PR Catalog entry
-- **[Register & Deploy](/create/templates/default/register-deploy)** —
+- **[Evaluate & Deploy Model](/create/templates/default/evaluate-deploy-model)** —
   chạy Evaluate Gate trên model version đã đăng ký, deploy qua
   direct/canary/A-B/blue-green (PR-gated hoặc instant)
 
@@ -36,7 +37,24 @@ const gettingStartedWidget = HomePageWidgetBlueprint.make({
   },
 });
 
+const clusterTopologyWidget = HomePageWidgetBlueprint.make({
+  name: 'cluster-topology',
+  params: {
+    name: 'ClusterTopology',
+    title: 'Cluster Topology',
+    description:
+      'k3d node/plane layout (control plane, data plane portal, AI platform data plane, workflow plane)',
+    layout: {
+      width: { minColumns: 6, defaultColumns: 12 },
+      height: { minRows: 4, defaultRows: 4 },
+    },
+    components: async () => ({
+      Content: () => <ClusterTopologyWidget />,
+    }),
+  },
+});
+
 export const homeModule = createFrontendModule({
   pluginId: 'home',
-  extensions: [gettingStartedWidget],
+  extensions: [gettingStartedWidget, clusterTopologyWidget],
 });

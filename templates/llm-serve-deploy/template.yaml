@@ -1,7 +1,7 @@
 apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
-  name: deploy-llm
+  name: llm-serve-deploy
   title: "Serve LLM (Self-hosted)"
   description: >
     Deploys a self-hosted LLM (vLLM, from a HuggingFace Hub model id) as a
@@ -22,7 +22,7 @@ spec:
     # param count AND quantization/maxContextLength together). Split across
     # two steps, GpuRecommendationPanel would never see the model id and
     # would render nothing. Visual separation still comes from StepLayout
-    # groups, same as register-deploy's single-step / multi-group layout.
+    # groups, same as evaluate-deploy-model's single-step / multi-group layout.
     - title: Model & Compute
       required:
         - modelName
@@ -322,7 +322,7 @@ spec:
       if: ${{ parameters.releaseStrategy === 'pr-gated' }}
       input:
         repoUrl: ${{ parameters.repoUrl }}
-        branchName: deploy-llm-${{ parameters.modelName }}
+        branchName: llm-serve-deploy-${{ parameters.modelName }}
         title: "Serve LLM ${{ parameters.modelName }} (${{ parameters.huggingFaceModelId }})"
         description: >
           Adds the KServe InferenceService manifest for

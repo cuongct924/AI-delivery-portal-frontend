@@ -1,0 +1,367 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: llm-evaluate-activate
+  title: "Evaluate & Activate Prompt / RAG Version"
+  description: >
+    Evaluates a drafted prompt or RAG index version with an LLM judge and
+    activates it immediately if it passes — or rolls back to a previously
+    registered version instantly, with no re-evaluation.
+  tags:
+    - llmops
+
+spec:
+  owner: user:guest
+  type: service
+
+  parameters:
+    - title: What to do
+      required:
+        - action
+        - artifactKind
+        - targetEnvironment
+      properties:
+        # Tracked independently per environment (IVersionRegistryAdapter) —
+        # applies to both actions below (both ultimately activate), so it
+        # lives here unconditionally rather than duplicated into each allOf
+        # branch. Defaults to "production" — routers/chat.py always reads
+        # production, so a run with this left untouched has exactly the
+        # same real-world effect it always did, before environments existed.
+        targetEnvironment:
+          title: Target environment
+          type: string
+          enum: [development, staging, production]
+          default: production
+          description: >
+            Tracked independently — activating in "development" or
+            "staging" doesn't touch what "production" (what real chat
+            traffic uses) is currently serving. Pick a non-production
+            environment to try a version first.
+        # Same shape as evaluate-deploy-model's own `action` field — one
+        # template, one endpoint pair (evaluate/activate), branched by what
+        # the Dev actually wants to happen. "rollback" reuses promptVersion/
+        # indexVersion below for "the version to reactivate" instead of
+        # "the version to evaluate" — same field, different meaning per
+        # action, same convention evaluate-deploy-model uses for modelVersion.
+        action:
+          title: Action
+          type: string
+          enum: [evaluate-activate, rollback]
+          default: evaluate-activate
+          description: >
+            "evaluate-activate" runs the LLM judge against a drafted version
+            and activates it only if it passes. "rollback" reactivates an
+            already-registered version immediately, with no re-evaluation —
+            for undoing a bad activation fast, without waiting on the gate.
+        artifactKind:
+          title: Artifact kind
+          type: string
+          oneOf:
+            - const: prompt
+              title: 'Prompt - a persona''s drafted system prompt version'
+            - const: rag-index
+              title: 'RAG Index - a Qdrant collection''s drafted index version'
+          description: >
+            Choose which drafted artifact to evaluate and, if it passes,
+            activate — or to roll back.
+      # promptName/promptVersion and collectionName/indexVersion only exist
+      # in the resolved schema once artifactKind actually picks their
+      # branch — same fix as llm-draft-ingest's own Prompt/RAG Index
+      # panels, which previously stayed visible together regardless of
+      # artifactKind because their fields were declared unconditionally in
+      # the base `properties` above instead of gated behind this allOf.
+      # `required: [action, artifactKind]` on each `if` keeps neither panel
+      # showing before both choices are made.
+      allOf:
+        - if:
+            required: [action]
+            properties:
+              action:
+                const: evaluate-activate
+          then:
+            required:
+              - evalCases
+            properties:
+              # Optional — set this to reuse a named set drafted via
+              # llm-draft-ingest (artifactKind=eval-set) instead of typing
+              # evalCases below. When set, the fetch-eval-set step's
+              # questions win and evalCases is ignored (see the ternary in
+              # evaluate-prompt/evaluate-rag's `evalCases` input below) —
+              # this keeps two versions of the same artifact graded against
+              # the same benchmark instead of whatever was typed this run.
+              evalSetName:
+                title: Eval set name (optional)
+                type: string
+                description: >
+                  Reuses a named eval-set's latest version instead of the
+                  questions typed below — drafted via "Draft Prompt / Ingest
+                  RAG Data / Draft Eval Set" (artifactKind=eval-set).
+              evalCases:
+                title: Eval cases
+                type: array
+                items:
+                  type: string
+                default:
+                  - How does IDP manage the model lifecycle?
+                description: >
+                  Questions to run through the LLM judge. Ignored when
+                  "Eval set name" above is set. Add one per line; no JSON
+                  wrapper is needed.
+              model:
+                title: Judge model
+                type: string
+                default: claude-sonnet-5
+                description: >
+                  Any model_name registered in
+                  infra/llm-gateways/litellm-config.yaml — including a
+                  self-hosted model deployed via the Serving LLM Golden
+                  Path, not just Claude.
+        - if:
+            required: [action, artifactKind]
+            properties:
+              action:
+                const: evaluate-activate
+              artifactKind:
+                const: prompt
+          then:
+            required:
+              - promptName
+              - promptVersion
+            properties:
+              promptName:
+                title: Persona key
+                type: string
+                description: The persona drafted in Golden Path #1 (Draft Prompt).
+              promptVersion:
+                title: Prompt version
+                type: string
+                description: The version number Golden Path #1's output reported.
+        - if:
+            required: [action, artifactKind]
+            properties:
+              action:
+                const: evaluate-activate
+              artifactKind:
+                const: rag-index
+          then:
+            required:
+              - collectionName
+              - indexVersion
+            properties:
+              collectionName:
+                title: Qdrant collection
+                type: string
+                description: The collection ingested in Golden Path #1 (Ingest RAG Index).
+              indexVersion:
+                title: RAG index version
+                type: string
+                description: The version number Golden Path #1's output reported.
+        # --- rollback: same two fields, no Evaluate Gate involved — the
+        # version picked here is reactivated directly.
+        - if:
+            required: [action, artifactKind]
+            properties:
+              action:
+                const: rollback
+              artifactKind:
+                const: prompt
+          then:
+            required:
+              - promptName
+              - promptVersion
+            properties:
+              promptName:
+                title: Persona key
+                type: string
+                description: The persona to roll back.
+              promptVersion:
+                title: Version to roll back to
+                type: string
+                description: >
+                  A previously-registered version for this persona —
+                  reactivated immediately, no Evaluate Gate re-run.
+        - if:
+            required: [action, artifactKind]
+            properties:
+              action:
+                const: rollback
+              artifactKind:
+                const: rag-index
+          then:
+            required:
+              - collectionName
+              - indexVersion
+            properties:
+              collectionName:
+                title: Qdrant collection
+                type: string
+                description: The collection to roll back.
+              indexVersion:
+                title: Version to roll back to
+                type: string
+                description: >
+                  A previously-registered version for this collection —
+                  reactivated immediately, no Evaluate Gate re-run.
+      # Same StepLayout field extension llm-draft-ingest/train-track-
+      # register use — only changes how this step looks, field names/values
+      # resolve exactly as before.
+      ui:field: StepLayout
+      ui:options:
+        groups:
+          - title: What to do
+            fields:
+              - action
+              - artifactKind
+              - targetEnvironment
+          - title: 'Prompt (when Artifact kind = Prompt)'
+            fields:
+              - name: promptName
+                width: 6
+                promptNamePicker: true
+              - name: promptVersion
+                width: 6
+                promptVersionPicker: true
+          - title: 'RAG Index (when Artifact kind = RAG Index)'
+            fields:
+              - name: collectionName
+                width: 6
+                ragCollectionPicker: true
+              - name: indexVersion
+                width: 6
+                ragIndexVersionPicker: true
+          # Only exists in the resolved schema when action=evaluate-activate
+          # (see the allOf above) — disappears entirely for rollback instead
+          # of showing a stale/irrelevant eval form.
+          - title: Evaluation
+            fields:
+              - evalSetName
+              - evalCases
+              - name: model
+                width: 6
+                llmModelPicker: true
+
+  steps:
+    - id: fetch-eval-set
+      name: "Fetch the named eval set"
+      action: orchestration:fetch-eval-set
+      if: ${{ parameters.action === 'evaluate-activate' and parameters.evalSetName }}
+      input:
+        name: ${{ parameters.evalSetName }}
+
+    - id: evaluate-prompt
+      name: "Evaluate the prompt"
+      action: orchestration:evaluate-prompt
+      if: ${{ parameters.action === 'evaluate-activate' and parameters.artifactKind === 'prompt' }}
+      input:
+        name: ${{ parameters.promptName }}
+        version: ${{ parameters.promptVersion }}
+        evalCases: ${{ parameters.evalSetName and steps['fetch-eval-set'].output.questions or parameters.evalCases }}
+        model: ${{ parameters.model }}
+
+    - id: evaluate-rag
+      name: "Evaluate the RAG index"
+      action: orchestration:rag-evaluate
+      if: ${{ parameters.action === 'evaluate-activate' and parameters.artifactKind === 'rag-index' }}
+      input:
+        collection: ${{ parameters.collectionName }}
+        indexVersion: ${{ parameters.indexVersion }}
+        evalCases: ${{ parameters.evalSetName and steps['fetch-eval-set'].output.questions or parameters.evalCases }}
+        model: ${{ parameters.model }}
+
+    # Rollback short-circuits `or` before ever touching
+    # steps['evaluate-prompt'].output — that step's own `if` above is false
+    # for action=rollback, so it never ran and has no output to read (same
+    # short-circuit idiom train-track-register's enrich-features step uses).
+    - id: activate-prompt
+      name: "Activate the prompt"
+      action: orchestration:activate-prompt
+      if: ${{ parameters.artifactKind === 'prompt' and (parameters.action === 'rollback' or steps['evaluate-prompt'].output.passed) }}
+      input:
+        name: ${{ parameters.promptName }}
+        version: ${{ parameters.promptVersion }}
+        environment: ${{ parameters.targetEnvironment }}
+        isRollback: ${{ parameters.action === 'rollback' }}
+
+    - id: activate-rag
+      name: "Activate the RAG index"
+      action: orchestration:rag-activate
+      if: ${{ parameters.artifactKind === 'rag-index' and (parameters.action === 'rollback' or steps['evaluate-rag'].output.passed) }}
+      input:
+        collection: ${{ parameters.collectionName }}
+        indexVersion: ${{ parameters.indexVersion }}
+        environment: ${{ parameters.targetEnvironment }}
+        isRollback: ${{ parameters.action === 'rollback' }}
+
+  output:
+    text:
+      - title: Result
+        content: |
+          {% if parameters.action === 'rollback' %}
+          {% if parameters.artifactKind === 'prompt' %}
+          **Rolled back.** Prompt **${{ parameters.promptName }}** is active
+          again at version **${{ parameters.promptVersion }}** in
+          **${{ parameters.targetEnvironment }}** — no Evaluate Gate re-run.
+          {% if parameters.targetEnvironment == 'production' %}
+          `routers/chat.py` now uses this version for persona
+          `${{ parameters.promptName }}`.
+          {% endif %}
+          {% else %}
+          **Rolled back.** RAG index **${{ parameters.collectionName }}** is
+          active again at version **${{ parameters.indexVersion }}** in
+          **${{ parameters.targetEnvironment }}** — no Evaluate Gate re-run.
+          {% if parameters.targetEnvironment == 'production' %}
+          `routers/chat.py` now retrieves from this version when
+          `use_rag=true, rag_collection=${{ parameters.collectionName }}`.
+          {% endif %}
+          {% endif %}
+          {% elif parameters.artifactKind === 'prompt' %}
+          {% if parameters.evalSetName %}
+          Graded against eval set **${{ parameters.evalSetName }}** version
+          **${{ steps['fetch-eval-set'].output.version }}**.
+          {% endif %}
+          Evaluate Gate for prompt **${{ parameters.promptName }}** version
+          **${{ parameters.promptVersion }}**: pass_rate =
+          {{ steps['evaluate-prompt'].output.passRate }}. Cost:
+          {{ steps['evaluate-prompt'].output.totalTokens }} tokens
+          {% if steps['evaluate-prompt'].output.totalCostUsd %}
+          (${{ steps['evaluate-prompt'].output.totalCostUsd }})
+          {% else %}
+          (no pricing entry in litellm-config.yaml for this model)
+          {% endif %}
+          {% if steps['evaluate-prompt'].output.passed %}
+          **Activated** in **${{ parameters.targetEnvironment }}**.
+          {% if parameters.targetEnvironment == 'production' %}
+          `routers/chat.py` now uses this version for persona
+          `${{ parameters.promptName }}`.
+          {% endif %}
+          {% else %}
+          **Not activated** — pass_rate below 0.8. Draft a new version
+          (LLMOps Golden Path #1) and try again, or run this template with
+          **action=rollback** to fall back to a known-good version.
+          {% endif %}
+          {% else %}
+          {% if parameters.evalSetName %}
+          Graded against eval set **${{ parameters.evalSetName }}** version
+          **${{ steps['fetch-eval-set'].output.version }}**.
+          {% endif %}
+          Evaluate Gate for RAG index **${{ parameters.collectionName }}**
+          version **${{ parameters.indexVersion }}**: pass_rate =
+          {{ steps['evaluate-rag'].output.passRate }}. Cost:
+          {{ steps['evaluate-rag'].output.totalTokens }} tokens
+          {% if steps['evaluate-rag'].output.totalCostUsd %}
+          (${{ steps['evaluate-rag'].output.totalCostUsd }})
+          {% else %}
+          (no pricing entry in litellm-config.yaml for this model)
+          {% endif %}
+          {% if steps['evaluate-rag'].output.passed %}
+          **Activated** in **${{ parameters.targetEnvironment }}**.
+          {% if parameters.targetEnvironment == 'production' %}
+          `routers/chat.py` now retrieves from this version when
+          `use_rag=true, rag_collection=${{ parameters.collectionName }}`.
+          {% endif %}
+          {% else %}
+          **Not activated** — pass_rate below 0.8. Ingest a new version
+          (LLMOps Golden Path #1) and try again, or run this template with
+          **action=rollback** to fall back to a known-good version.
+          {% endif %}
+          {% endif %}

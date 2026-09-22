@@ -50,12 +50,14 @@ export async function postJson<T>(
   url: string,
   body: unknown,
   tokenService?: OpenChoreoTokenService,
+  extraHeaders?: Record<string, string>,
 ): Promise<T> {
   const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...(await authHeaders(tokenService)),
+      ...extraHeaders,
     },
     body: JSON.stringify(body),
   });

@@ -11,7 +11,13 @@ import { observabilityApiRef } from '../../api/ObservabilityApi';
 import type { CostItem, CostRecommendationItem } from '../../types';
 import { buildCostInsightsData } from './costAggregation';
 import { fetchBindingInfoByEnv, normalizeEnv } from './optimizeChange';
-import type { CostInsightsData, CostScope, CostScopeLevel } from './types';
+import type {
+  CostInsightsData,
+  CostScope,
+  CostScopeLevel,
+  CostStageFilter,
+  CostDimension,
+} from './types';
 
 export interface UseCostInsightsParams {
   /** Atomic scopes to query (one per selected item at `level`). */
@@ -30,6 +36,10 @@ export interface UseCostInsightsParams {
    * card, which renders just the total.
    */
   summaryOnly?: boolean;
+  /** Lifecycle stage filter; `all` keeps every stage. */
+  stage?: CostStageFilter;
+  /** Row dimension; `infra` keeps the level-based grouping. */
+  dimension?: CostDimension;
 }
 
 /** Stable key for a scope, so the query cache and fan-out stay deterministic. */
@@ -58,6 +68,8 @@ export function useCostInsights(
   const fetchApi = useApi(fetchApiRef);
   const { scopes, level, environments, timeRange, granularity } = params;
   const summaryOnly = params.summaryOnly ?? false;
+  const stage = params.stage ?? 'all';
+  const dimension = params.dimension ?? 'infra';
   // Dedupe so a repeated env or scope can't fan out duplicate requests and
   // double-count the aggregated totals.
   const sortedEnvs = [...new Set(environments)].sort();
@@ -78,6 +90,8 @@ export function useCostInsights(
         params.customEndTime ?? '',
         granularity,
         summaryOnly ? 'summary' : 'full',
+        stage,
+        dimension,
       ],
       async () => {
         const { startTime, endTime } = calculateTimeRange(timeRange, {
@@ -292,6 +306,8 @@ export function useCostInsights(
           staleRecommendationEnvs,
           monthStart,
           now,
+          stage,
+          dimension,
         });
       },
       // No keepPreviousData: a window/view/scope change shows the centered loader

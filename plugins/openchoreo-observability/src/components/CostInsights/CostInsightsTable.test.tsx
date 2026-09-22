@@ -39,13 +39,37 @@ const scope: CostScope = {
 
 describe('CostInsightsTable', () => {
   it('renders the standard columns for a namespace-level view', () => {
-    render(<CostInsightsTable level="namespace" rows={rows} />);
+    render(<CostInsightsTable level="namespace" rows={rows} stage="run" />);
     expect(screen.getByText('Project')).toBeInTheDocument();
     expect(screen.getByText('gcp')).toBeInTheDocument();
     expect(screen.getByText('22.00')).toBeInTheDocument();
     expect(screen.getByText('30%')).toBeInTheDocument(); // efficiency
     expect(screen.getByText('+10%')).toBeInTheDocument(); // delta
     expect(screen.getByText('—')).toBeInTheDocument(); // null delta for shop
+  });
+
+  it('swaps CPU/Memory for a Build/Gate/Run split when every stage is shown', () => {
+    const stagedRows: CostRow[] = [
+      {
+        key: 'gcp',
+        label: 'gcp',
+        cpuCost: 10,
+        memoryCost: 12,
+        total: 22,
+        efficiency: 0.3,
+        deltaPct: 10,
+        stageCost: { build: 15, gate: 2, run: 5 },
+      },
+    ];
+    render(
+      <CostInsightsTable level="namespace" rows={stagedRows} stage="all" />,
+    );
+    expect(screen.getByText('Build (USD)')).toBeInTheDocument();
+    expect(screen.getByText('Gate (USD)')).toBeInTheDocument();
+    expect(screen.getByText('Run (USD)')).toBeInTheDocument();
+    expect(screen.getByText('15.00')).toBeInTheDocument();
+    expect(screen.getByText('2.00')).toBeInTheDocument();
+    expect(screen.getByText('5.00')).toBeInTheDocument();
   });
 
   it('renders the recommendation columns, the resource change and saving, and an Apply button at component level', () => {
@@ -324,6 +348,7 @@ describe('CostInsightsTable', () => {
     render(
       <CostInsightsTable
         level="namespace"
+        stage="run"
         rows={[
           {
             key: 'checkout',

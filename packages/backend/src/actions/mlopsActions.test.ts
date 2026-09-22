@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { ConfigReader } from '@backstage/config';
 import {
+  createConfirmPromotionAction,
   createModelSummaryAction,
   createPolicyCheckAction,
   createPrepareDeployManifestAction,
@@ -51,6 +52,33 @@ describe('orchestration:trigger-training', () => {
     expect(outputs.workflowName).toBe('wf-1');
     expect(outputs.phase).toBe('Succeeded');
     expect(outputs.modelVersion).toBe('3');
+  });
+
+  it("sends the Scaffolder task's id as the Idempotency-Key header", async () => {
+    const fetchMock = mockFetchResponses([
+      { ok: true, body: { workflow_name: 'wf-1' } },
+      { ok: true, body: { name: 'wf-1', phase: 'Succeeded', message: null } },
+      { ok: true, body: { name: 'fraud-detection', version: '3' } },
+    ]);
+    const action = createTriggerTrainingAction({ config, pollIntervalMs: 1 });
+    const { ctx } = createMockContext<typeof action>(
+      {
+        modelName: 'fraud-detection',
+        datasetUri: 'file:///data.csv',
+        taskType: 'classification',
+        algorithm: 'LogisticRegression',
+      },
+      '/tmp/workspace',
+    );
+
+    await action.handler(ctx);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BASE_URL}/trigger-training`,
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'Idempotency-Key': 'test-task' }),
+      }),
+    );
   });
 
   it('throws with the status message when the workflow fails', async () => {
@@ -745,42 +773,47 @@ describe('orchestration:record-deploy', () => {
 });
 
 describe('orchestration:promote-model', () => {
-  it('posts targetEnvironment and outputs the resulting environments map', async () => {
+  it('writes the rendered manifest into the workspace and outputs environment/projectRelease', async () => {
+    const workspacePath = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'mlops-actions-test-'),
+    );
+    const fileName =
+      'infra/openchoreo/namespaces/default/projects/telco-fraud-detection/projectreleasebinding-staging.yaml';
     const fetchMock = mockFetchResponses([
       {
         ok: true,
         body: {
-          project: 'telco-fraud-detection',
-          component: 'serving',
-          environments: {
-            development: 'rel-1',
-            staging: 'rel-1',
-            production: null,
-          },
-          prod_pending_approval: true,
+          file_name: fileName,
+          content: 'kind: ProjectReleaseBinding\n',
+          environment: 'staging',
+          project_release: 'telco-fraud-detection-rel-1',
         },
       },
     ]);
     const action = createPromoteModelAction({ config });
     const { ctx, outputs } = createMockContext<typeof action>(
       { modelName: 'fraud-detection', targetEnvironment: 'staging' },
-      '/tmp/workspace',
+      workspacePath,
     );
 
     await action.handler(ctx);
 
-    expect(outputs.environments).toEqual({
-      development: 'rel-1',
-      staging: 'rel-1',
-      production: null,
-    });
-    expect(outputs.prodPendingApproval).toBe(true);
+    expect(outputs.filePath).toBe(fileName);
+    expect(outputs.environment).toBe('staging');
+    expect(outputs.projectRelease).toBe('telco-fraud-detection-rel-1');
+    const written = await fs.readFile(
+      path.join(workspacePath, fileName),
+      'utf-8',
+    );
+    expect(written).toBe('kind: ProjectReleaseBinding\n');
     expect(fetchMock).toHaveBeenCalledWith(
       `${BASE_URL}/models/fraud-detection/promote`,
       expect.objectContaining({
         body: JSON.stringify({ target_environment: 'staging' }),
       }),
     );
+
+    await fs.rm(workspacePath, { recursive: true, force: true });
   });
 
   it('propagates the error orchestration-api raises for an invalid promotion', async () => {
@@ -798,41 +831,42 @@ describe('orchestration:promote-model', () => {
 });
 
 describe('orchestration:rollback-promotion', () => {
-  it('posts the environment and outputs the resulting environments map', async () => {
+  it('writes the rendered manifest into the workspace and outputs environment/projectRelease', async () => {
+    const workspacePath = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'mlops-actions-test-'),
+    );
+    const fileName =
+      'infra/openchoreo/namespaces/default/projects/telco-fraud-detection/projectreleasebinding-staging.yaml';
     const fetchMock = mockFetchResponses([
       {
         ok: true,
         body: {
-          project: 'telco-fraud-detection',
-          component: 'serving',
-          environments: {
-            development: 'rel-2',
-            staging: 'rel-1',
-            production: null,
-          },
-          prod_pending_approval: true,
+          file_name: fileName,
+          content: 'kind: ProjectReleaseBinding\n',
+          environment: 'staging',
+          project_release: 'telco-fraud-detection-rel-1',
         },
       },
     ]);
     const action = createRollbackPromotionAction({ config });
     const { ctx, outputs } = createMockContext<typeof action>(
       { modelName: 'fraud-detection', environment: 'staging' },
-      '/tmp/workspace',
+      workspacePath,
     );
 
     await action.handler(ctx);
 
-    expect(outputs.environments).toEqual({
-      development: 'rel-2',
-      staging: 'rel-1',
-      production: null,
-    });
+    expect(outputs.filePath).toBe(fileName);
+    expect(outputs.environment).toBe('staging');
+    expect(outputs.projectRelease).toBe('telco-fraud-detection-rel-1');
     expect(fetchMock).toHaveBeenCalledWith(
       `${BASE_URL}/models/fraud-detection/promote-rollback`,
       expect.objectContaining({
         body: JSON.stringify({ environment: 'staging' }),
       }),
     );
+
+    await fs.rm(workspacePath, { recursive: true, force: true });
   });
 
   it('propagates the error orchestration-api raises when nothing to roll back to', async () => {
@@ -840,6 +874,73 @@ describe('orchestration:rollback-promotion', () => {
     const action = createRollbackPromotionAction({ config });
     const { ctx } = createMockContext<typeof action>(
       { modelName: 'fraud-detection', environment: 'staging' },
+      '/tmp/workspace',
+    );
+
+    await expect(action.handler(ctx)).rejects.toThrow(
+      /no prior release recorded/,
+    );
+  });
+});
+
+describe('orchestration:confirm-promotion', () => {
+  it('posts environment/projectRelease and outputs the resulting environments map', async () => {
+    const fetchMock = mockFetchResponses([
+      {
+        ok: true,
+        body: {
+          project: 'telco-fraud-detection',
+          component: 'serving',
+          environments: {
+            development: 'rel-1',
+            staging: 'rel-1',
+            production: null,
+          },
+          prod_pending_approval: true,
+        },
+      },
+    ]);
+    const action = createConfirmPromotionAction({ config });
+    const { ctx, outputs } = createMockContext<typeof action>(
+      {
+        modelName: 'fraud-detection',
+        environment: 'staging',
+        projectRelease: 'telco-fraud-detection-rel-1',
+        eventType: 'deploy',
+      },
+      '/tmp/workspace',
+    );
+
+    await action.handler(ctx);
+
+    expect(outputs.environments).toEqual({
+      development: 'rel-1',
+      staging: 'rel-1',
+      production: null,
+    });
+    expect(outputs.prodPendingApproval).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BASE_URL}/models/fraud-detection/promote/confirm`,
+      expect.objectContaining({
+        body: JSON.stringify({
+          environment: 'staging',
+          project_release: 'telco-fraud-detection-rel-1',
+          event_type: 'deploy',
+        }),
+        headers: expect.objectContaining({ 'Idempotency-Key': 'test-task' }),
+      }),
+    );
+  });
+
+  it('propagates the error orchestration-api raises for an invalid confirmation', async () => {
+    mockFetchResponses([{ ok: false, body: 'no prior release recorded' }]);
+    const action = createConfirmPromotionAction({ config });
+    const { ctx } = createMockContext<typeof action>(
+      {
+        modelName: 'fraud-detection',
+        environment: 'staging',
+        projectRelease: 'telco-fraud-detection-rel-1',
+      },
       '/tmp/workspace',
     );
 

@@ -1,15 +1,38 @@
 import { createTheme } from '@material-ui/core/styles';
+import { DoraDeployment } from '../../types';
 import {
+  changeTypeMix,
   classificationColors,
   dataAvailabilityWarning,
   deltaColor,
+  deploymentsPerWeek,
+  failureRate,
   fillSeriesGaps,
   granularitiesForRange,
+  leadTimeP50Ms,
+  recoveryStrategyMix,
   resolveGranularity,
   mapWithConcurrency,
   measuredRates,
   nullUnmeasuredRates,
 } from './utils';
+
+function deployment(overrides: Partial<DoraDeployment>): DoraDeployment {
+  return {
+    deployedAt: '2026-07-01T00:00:00.000Z',
+    projectName: 'checkout',
+    componentName: 'api',
+    environmentName: 'production',
+    componentRelease: 'rel-1',
+    commit: 'abc123',
+    outcome: 'success',
+    failedBy: '',
+    failureReason: '',
+    incidentId: '',
+    leadTimeMs: null,
+    ...overrides,
+  };
+}
 
 describe('fillSeriesGaps', () => {
   const buckets = [
@@ -242,5 +265,71 @@ describe('theme-derived colors', () => {
     expect(classificationColors(dark).Elite.text).toBe(
       dark.palette.success.light,
     );
+  });
+});
+
+describe('changeTypeMix', () => {
+  it('returns the composition of changeType across deployments', () => {
+    const mix = changeTypeMix([
+      deployment({ changeType: 'prompt' }),
+      deployment({ changeType: 'prompt' }),
+      deployment({ changeType: 'rag_index' }),
+      deployment({ changeType: null }),
+    ]);
+    expect(mix).toEqual([
+      expect.objectContaining({ key: 'prompt', pct: 67 }),
+      expect.objectContaining({ key: 'rag_index', pct: 33 }),
+    ]);
+  });
+
+  it('returns an empty list when nothing carries a changeType', () => {
+    expect(changeTypeMix([deployment({})])).toEqual([]);
+  });
+});
+
+describe('recoveryStrategyMix', () => {
+  it('returns the composition of recoveryStrategy across deployments', () => {
+    const mix = recoveryStrategyMix([
+      deployment({ recoveryStrategy: 'rollback' }),
+      deployment({ recoveryStrategy: 'retrain' }),
+    ]);
+    expect(mix.map(s => s.key).sort()).toEqual(['retrain', 'rollback']);
+  });
+});
+
+describe('deploymentsPerWeek', () => {
+  it('scales a deployment count to a weekly rate', () => {
+    expect(deploymentsPerWeek([deployment({}), deployment({})], 14)).toBe(1);
+  });
+});
+
+describe('leadTimeP50Ms', () => {
+  it('takes the median across deployments with a lead time', () => {
+    expect(
+      leadTimeP50Ms([
+        deployment({ leadTimeMs: 100 }),
+        deployment({ leadTimeMs: null }),
+        deployment({ leadTimeMs: 300 }),
+      ]),
+    ).toBe(200);
+  });
+
+  it('returns null when no deployment carries a lead time', () => {
+    expect(leadTimeP50Ms([deployment({ leadTimeMs: null })])).toBeNull();
+  });
+});
+
+describe('failureRate', () => {
+  it('divides failed deployments by the total', () => {
+    expect(
+      failureRate([
+        deployment({ outcome: 'failed' }),
+        deployment({ outcome: 'success' }),
+      ]),
+    ).toBe(0.5);
+  });
+
+  it('returns null for an empty deployment list', () => {
+    expect(failureRate([])).toBeNull();
   });
 });

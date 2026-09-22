@@ -11,6 +11,7 @@ import { Content } from '@backstage/core-components';
 import { useApi, useRouteRef } from '@backstage/core-plugin-api';
 import { catalogApiRef, entityRouteRef } from '@backstage/plugin-catalog-react';
 import { makeStyles } from '@material-ui/core/styles';
+import Box from '@material-ui/core/Box';
 import MenuItem from '@material-ui/core/MenuItem';
 import Button from '@material-ui/core/Button';
 import Popover from '@material-ui/core/Popover';
@@ -34,12 +35,16 @@ import {
   type ProjectEntry,
   type EntityNode,
 } from '@openchoreo/backstage-plugin-react';
+import { ClusterTopologyWidget } from '../ClusterTopologyWidget';
 
 const useStyles = makeStyles(theme => ({
   content: {
     minHeight: 0,
     display: 'flex',
     flexDirection: 'column',
+  },
+  topologySection: {
+    padding: theme.spacing(2, 3, 0),
   },
   triggerButton: {
     textTransform: 'none',
@@ -432,6 +437,9 @@ export function PlatformOverviewPage() {
 
   return (
     <Content stretch noPadding className={classes.content}>
+      <Box className={classes.topologySection}>
+        <ClusterTopologyWidget />
+      </Box>
       <GraphKindFilter
         selectedKinds={selectedKinds}
         onKindsChange={handleKindsChange}
