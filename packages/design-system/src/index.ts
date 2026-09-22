@@ -68,6 +68,8 @@ export type {
   MultiSelectOption,
   MultiSelectGroup,
 } from './components/MultiSelectFilter';
+export { SingleSelectFilter } from './components/SingleSelectFilter';
+export type { SingleSelectFilterProps } from './components/SingleSelectFilter';
 export {
   VisuallyHidden,
   useVisuallyHiddenStyles,

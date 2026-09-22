@@ -1,15 +1,10 @@
 import { FC } from 'react';
-import {
-  Box,
-  Button,
-  Grid,
-  Tooltip,
-  Typography,
-  makeStyles,
-} from '@material-ui/core';
-import ToggleButton from '@material-ui/lab/ToggleButton';
-import ToggleButtonGroup from '@material-ui/lab/ToggleButtonGroup';
+import { Box, Button, Tooltip, makeStyles } from '@material-ui/core';
 import Refresh from '@material-ui/icons/Refresh';
+import {
+  SingleSelectFilter,
+  type MultiSelectOption,
+} from '@openchoreo/backstage-design-system';
 import { type Environment } from '@openchoreo/backstage-plugin-react';
 import { EnvironmentMultiSelect } from './EnvironmentMultiSelect';
 import {
@@ -17,9 +12,21 @@ import {
   COST_DIMENSION_LABELS,
   COST_STAGES,
   COST_STAGE_LABELS,
+  DEFAULT_COST_DIMENSION,
+  DEFAULT_COST_STAGE,
   type CostDimension,
   type CostStageFilter,
 } from './types';
+
+const STAGE_OPTIONS: MultiSelectOption[] = [
+  { value: 'all', label: COST_STAGE_LABELS.all },
+  ...COST_STAGES.map(s => ({ value: s, label: COST_STAGE_LABELS[s] })),
+];
+
+const DIMENSION_OPTIONS: MultiSelectOption[] = COST_DIMENSIONS.map(d => ({
+  value: d,
+  label: COST_DIMENSION_LABELS[d],
+}));
 
 export const GRANULARITY_OPTIONS: Array<{ value: string; label: string }> = [
   { value: '1h', label: '1 hour' },
@@ -50,34 +57,10 @@ export interface CostInsightsFiltersProps {
 }
 
 const useStyles = makeStyles(theme => ({
-  spacer: { flexGrow: 1 },
-  control: { minWidth: 220 },
-  switchers: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: theme.spacing(2),
-    paddingBottom: theme.spacing(1),
-  },
-  switcher: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: theme.spacing(1),
-  },
-  switcherLabel: {
-    fontSize: '0.75rem',
-    fontWeight: 600,
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-    color: theme.palette.text.secondary,
-  },
-  group: {
-    '& .MuiToggleButton-root': {
-      padding: theme.spacing(0.5, 1.5),
-      textTransform: 'none',
-      fontSize: '0.8rem',
-    },
-  },
+  // `contents` so these controls become direct flex items of the page's filter
+  // row, sharing one line with the scope filters.
+  root: { display: 'contents' },
+  control: { minWidth: 200, marginLeft: theme.spacing(0.5) },
 }));
 
 export const CostInsightsFilters: FC<CostInsightsFiltersProps> = ({
@@ -96,96 +79,52 @@ export const CostInsightsFilters: FC<CostInsightsFiltersProps> = ({
   const classes = useStyles();
 
   return (
-    <>
-      {(onStageChange || onDimensionChange) && (
-        <Box className={classes.switchers}>
-          {onStageChange && (
-            <Box className={classes.switcher}>
-              <Typography className={classes.switcherLabel}>Stage</Typography>
-              <ToggleButtonGroup
-                className={classes.group}
-                size="small"
-                exclusive
-                value={stage}
-                onChange={(_e, next: CostStageFilter | null) => {
-                  if (next) onStageChange(next);
-                }}
-                aria-label="Cost stage"
-              >
-                <ToggleButton value="all" aria-label="All stages">
-                  {COST_STAGE_LABELS.all}
-                </ToggleButton>
-                {COST_STAGES.map(s => (
-                  <ToggleButton
-                    key={s}
-                    value={s}
-                    aria-label={COST_STAGE_LABELS[s]}
-                  >
-                    {COST_STAGE_LABELS[s]}
-                  </ToggleButton>
-                ))}
-              </ToggleButtonGroup>
-            </Box>
-          )}
-
-          {onDimensionChange && (
-            <Box className={classes.switcher}>
-              <Typography className={classes.switcherLabel}>
-                Group by
-              </Typography>
-              <ToggleButtonGroup
-                className={classes.group}
-                size="small"
-                exclusive
-                value={dimension}
-                onChange={(_e, next: CostDimension | null) => {
-                  if (next) onDimensionChange(next);
-                }}
-                aria-label="Cost dimension"
-              >
-                {COST_DIMENSIONS.map(d => (
-                  <ToggleButton
-                    key={d}
-                    value={d}
-                    aria-label={COST_DIMENSION_LABELS[d]}
-                  >
-                    {COST_DIMENSION_LABELS[d]}
-                  </ToggleButton>
-                ))}
-              </ToggleButtonGroup>
-            </Box>
-          )}
-        </Box>
+    <Box className={classes.root}>
+      {onStageChange && (
+        <SingleSelectFilter
+          label="Stage"
+          options={STAGE_OPTIONS}
+          value={stage}
+          onChange={next => onStageChange(next as CostStageFilter)}
+          active={stage !== DEFAULT_COST_STAGE}
+          disabled={disabled}
+        />
       )}
 
-      <Grid container spacing={2} alignItems="center" wrap="nowrap">
-        <Grid item className={classes.spacer} />
+      {onDimensionChange && (
+        <SingleSelectFilter
+          label="Group by"
+          options={DIMENSION_OPTIONS}
+          value={dimension}
+          onChange={next => onDimensionChange(next as CostDimension)}
+          active={dimension !== DEFAULT_COST_DIMENSION}
+          disabled={disabled}
+        />
+      )}
 
-        <Grid item className={classes.control}>
-          <EnvironmentMultiSelect
-            environments={environments}
-            loading={environmentsLoading}
-            value={selectedEnvironments}
-            onChange={onEnvironmentsChange}
-            disabled={disabled}
-          />
-        </Grid>
+      <Box className={classes.control}>
+        <EnvironmentMultiSelect
+          environments={environments}
+          loading={environmentsLoading}
+          value={selectedEnvironments}
+          onChange={onEnvironmentsChange}
+          disabled={disabled}
+          size="small"
+        />
+      </Box>
 
-        {onRefresh && (
-          <Grid item>
-            <Tooltip title="Refresh">
-              <Button
-                variant="outlined"
-                startIcon={<Refresh />}
-                onClick={onRefresh}
-                disabled={disabled || refreshing}
-              >
-                Refresh
-              </Button>
-            </Tooltip>
-          </Grid>
-        )}
-      </Grid>
-    </>
+      {onRefresh && (
+        <Tooltip title="Refresh">
+          <Button
+            variant="outlined"
+            startIcon={<Refresh />}
+            onClick={onRefresh}
+            disabled={disabled || refreshing}
+          >
+            Refresh
+          </Button>
+        </Tooltip>
+      )}
+    </Box>
   );
 };

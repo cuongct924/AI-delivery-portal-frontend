@@ -159,6 +159,7 @@ const COST_INSIGHTS_ID = 'page:openchoreo-observability/cost-insights';
 const DELIVERY_INSIGHTS_ID = 'page:openchoreo-observability/delivery-insights';
 const APIS_ID = 'page:api-docs';
 const CREATE_ID = 'page:scaffolder';
+const DOCS_ID = 'page:techdocs';
 
 export function PortalNavContent({ navItems }: NavContentComponentProps) {
   useSearchModalStyles();
@@ -173,6 +174,7 @@ export function PortalNavContent({ navItems }: NavContentComponentProps) {
   const deliveryInsightsEnabled = useDeliveryInsightsEnabled();
   const apis = navItems.take(APIS_ID);
   const create = navItems.take(CREATE_ID);
+  const docs = navItems.take(DOCS_ID);
 
   return (
     <Sidebar>
@@ -202,6 +204,7 @@ export function PortalNavContent({ navItems }: NavContentComponentProps) {
         />
         {apis && <NavItemLink item={apis} />}
         {create && <NavItemLink item={create} />}
+        {docs && <NavItemLink item={docs} />}
         <SidebarScrollWrapper />
       </SidebarGroup>
       <SidebarDivider />

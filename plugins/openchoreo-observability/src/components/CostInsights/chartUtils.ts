@@ -68,3 +68,28 @@ export const formatBucket = (iso: string): string => {
     minute: '2-digit',
   });
 };
+
+/**
+ * Compact axis tick: "Sep 01" for a day boundary, "12:00" within a day. Keeps
+ * a month-long axis readable instead of repeating the full date+time on every
+ * tick (which overlaps once the buckets are dense).
+ */
+export const formatBucketShort = (iso: string): string => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  if (d.getHours() === 0 && d.getMinutes() === 0) {
+    return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit' });
+  }
+  return d.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
+/** Day-only tick ("Sep 22") for a month-spanning axis, where the time of the
+ * non-midnight endpoints (today, month end) would otherwise be long and clip. */
+export const formatDay = (iso: string): string => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(undefined, { month: 'short', day: '2-digit' });
+};

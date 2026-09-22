@@ -54,7 +54,27 @@ const clusterTopologyWidget = HomePageWidgetBlueprint.make({
   },
 });
 
+// TechDocs on the home page — the platform's own docs (architecture,
+// troubleshooting, glossary) live in the backend repo and are published via
+// TechDocs; this surfaces them without a trip to /docs.
+const techDocsWidget = HomePageWidgetBlueprint.make({
+  name: 'techdocs',
+  params: {
+    name: 'TechDocs',
+    title: 'Documentation',
+    description: 'TechDocs for the platform — architecture, runbooks, glossary',
+    layout: {
+      width: { minColumns: 6, defaultColumns: 12 },
+      height: { minRows: 4, defaultRows: 6 },
+    },
+    components: async () => {
+      const { TechDocsWidget } = await import('./TechDocsWidget');
+      return { Content: TechDocsWidget };
+    },
+  },
+});
+
 export const homeModule = createFrontendModule({
   pluginId: 'home',
-  extensions: [gettingStartedWidget, clusterTopologyWidget],
+  extensions: [gettingStartedWidget, clusterTopologyWidget, techDocsWidget],
 });

@@ -19,6 +19,8 @@ import { HomePagePlatformDetailsCard } from '@openchoreo/backstage-plugin-platfo
 const defaultLayout: LayoutConfiguration[] = [
   { component: 'HomePageStarredEntities', x: 0, y: 0, width: 6, height: 4 },
   { component: 'OpenChoreoRecentlyVisited', x: 6, y: 0, width: 6, height: 4 },
+  // TechDocs widget (contributed by the app's home module).
+  { component: 'TechDocs', x: 0, y: 4, width: 12, height: 6 },
 ];
 
 // Per-breakpoint columns. The default `md: 10` can't fit two width-6 cards, so

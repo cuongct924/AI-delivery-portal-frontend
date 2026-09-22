@@ -1,5 +1,5 @@
 import { FC } from 'react';
-import { Grid, Paper, Typography, makeStyles } from '@material-ui/core';
+import { Box, Paper, Typography, makeStyles } from '@material-ui/core';
 import ArrowUpwardIcon from '@material-ui/icons/ArrowUpward';
 import ArrowDownwardIcon from '@material-ui/icons/ArrowDownward';
 import type { CostSummary } from './types';
@@ -41,6 +41,14 @@ const useStyles = makeStyles(theme => ({
   cardHint: { fontSize: '0.75rem', color: theme.palette.text.secondary },
   over: { color: theme.palette.error.main },
   under: { color: theme.palette.success.main },
+  // Flex (not a 12-col grid) so an odd card count still fills the row evenly
+  // instead of leaving a lone card wrapped onto its own line.
+  grid: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: theme.spacing(2),
+  },
+  cardWrap: { flex: '1 1 150px', minWidth: 0 },
 }));
 
 interface KpiCardProps {
@@ -89,41 +97,48 @@ export const CostSummaryCards: FC<{ summary: CostSummary }> = ({ summary }) => {
   };
 
   return (
-    <Grid container spacing={2}>
-      <Grid item xs={12} sm={6} md={2}>
+    <Box className={classes.grid}>
+      <Box className={classes.cardWrap}>
         <KpiCard label="Total cost" value={formatUsd(summary.totalCost)} />
-      </Grid>
-      <Grid item xs={12} sm={6} md={2}>
+      </Box>
+      <Box className={classes.cardWrap}>
         <KpiCard
           label="Build"
           value={formatUsd(summary.buildCost ?? 0)}
           hint="One-time, per version"
         />
-      </Grid>
-      <Grid item xs={12} sm={6} md={2}>
+      </Box>
+      <Box className={classes.cardWrap}>
+        <KpiCard
+          label="Gate"
+          value={formatUsd(summary.gateCost ?? 0)}
+          hint="Evaluate Gate runs"
+        />
+      </Box>
+      <Box className={classes.cardWrap}>
         <KpiCard
           label="Run"
           value={formatUsd(summary.runCost ?? 0)}
           hint="Recurring, per period"
         />
-      </Grid>
-      <Grid item xs={12} sm={6} md={2}>
+      </Box>
+      <Box className={classes.cardWrap}>
         <KpiCard
           label="Forecast vs budget"
           value={forecastValue()}
           hint={forecastHint()}
           valueClassName={overBudget ? classes.over : undefined}
         />
-      </Grid>
-      <Grid item xs={12} sm={6} md={2}>
+      </Box>
+      <Box className={classes.cardWrap}>
         <KpiCard
           label="Potential saving"
           value={formatUsd(summary.totalSaving)}
           hint="Reclaimable via right-sizing"
           valueClassName={summary.totalSaving > 0 ? classes.under : undefined}
         />
-      </Grid>
-      <Grid item xs={12} sm={6} md={2}>
+      </Box>
+      <Box className={classes.cardWrap}>
         <KpiCard
           label="Anomalies"
           value={String(summary.anomalyCount ?? 0)}
@@ -132,8 +147,8 @@ export const CostSummaryCards: FC<{ summary: CostSummary }> = ({ summary }) => {
             (summary.anomalyCount ?? 0) > 0 ? classes.over : undefined
           }
         />
-      </Grid>
-    </Grid>
+      </Box>
+    </Box>
   );
 };
 

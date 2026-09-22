@@ -22,6 +22,7 @@ import {
   buildColorMap,
   formatAxisCost,
   formatBucket,
+  formatBucketShort,
   savingColor,
 } from './chartUtils';
 import { formatCostUsd } from './format';
@@ -266,8 +267,10 @@ export const CostInsightsGraph: FC<CostInsightsGraphProps> = ({
                 />
                 <XAxis
                   dataKey="timestamp"
-                  tickFormatter={formatBucket}
+                  tickFormatter={formatBucketShort}
                   tick={{ fontSize: 12, fill: theme.palette.text.secondary }}
+                  minTickGap={44}
+                  interval="preserveStartEnd"
                 />
                 <YAxis
                   tickFormatter={formatAxisCost}

@@ -21,15 +21,21 @@
   "dependencies": {
     "@backstage/cli": "^0.36.2",
     "@backstage/core-components": "^0.18.10",
+    "@backstage/core-plugin-api": "^1.12.6",
     "@backstage/frontend-plugin-api": "^0.17.0",
+    "@backstage/plugin-catalog-react": "^3.0.0",
     "@backstage/plugin-home-react": "^0.1.38",
     "@backstage/plugin-notifications": "^0.5.20",
+    "@backstage/plugin-techdocs": "^1.17.6",
     "@backstage/ui": "^0.15.0",
+    "@material-ui/core": "4.12.4",
+    "@material-ui/icons": "4.11.3",
     "@openchoreo/backstage-plugin-platform-engineer-core": "workspace:^",
     "@openchoreo/backstage-portal-app": "workspace:^",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "react-router-dom": "6.30.1"
+    "react-router-dom": "6.30.1",
+    "react-use": "17.6.0"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",

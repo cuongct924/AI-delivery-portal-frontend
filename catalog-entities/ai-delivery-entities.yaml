@@ -10,13 +10,14 @@ metadata:
     infrastructure (MLflow, Qdrant, Prometheus, Keycloak).
   annotations:
     # Docs (architecture, troubleshooting, glossary) live in the separate
-    # backend repo (mkdocs.yml + docs/ at its root), not co-located with
-    # this entity's own Location — a URL ref instead of dir:. avoids a
-    # relative path across repo boundaries (fragile: only valid when both
-    # repos happen to be checked out as local siblings, and meaningless in
-    # CI/production). Requires that repo's main branch to actually have
-    # mkdocs.yml + docs/ pushed — see its own CLAUDE.md.
-    backstage.io/techdocs-ref: url:https://github.com/cuongct924/AI-delivery-portal-backend/tree/main/
+    # backend repo (mkdocs.yml + docs/ at its root). TechDocs' `dir:` ref only
+    # accepts paths *inside* this entity's own Location folder, so a bare
+    # `dir:../../AI-delivery-portal-backend` is rejected by
+    # resolveSafeChildPath ("Relative path is not allowed to refer to a
+    # directory outside its parent"). `catalog-entities/techdocs/` is a synced
+    # copy of that repo's mkdocs.yml + docs/ — refresh it with
+    # `yarn sync:techdocs` (also runs on `yarn start`).
+    backstage.io/techdocs-ref: dir:techdocs
 spec:
   owner: group:platform-team
 ---
@@ -32,7 +33,7 @@ metadata:
     # Metric scraped in infra/monitoring/prometheus.yml, grouped by handler.
     prometheus.io/rule: 'sum(rate(http_requests_total{job="orchestration-api"}[5m])) by (handler)|handler'
     # Real provisioned dashboard — no model-level/KServe data (see infra/monitoring/README.md).
-    grafana/overview-dashboard: "http://localhost:3001/d/orchestration-api/orchestration-api?kiosk"
+    grafana/overview-dashboard: 'http://localhost:3001/d/orchestration-api/orchestration-api?kiosk'
 spec:
   type: service
   lifecycle: experimental
@@ -227,12 +228,12 @@ apiVersion: backstage.io/v1alpha1
 kind: Resource
 metadata:
   name: fraud-detection
-  description: "Model registered via Golden Path #1 (Train -> Track -> Register)"
+  description: 'Model registered via Golden Path #1 (Train -> Track -> Register)'
   tags:
     - ml-model
     - mlops
   annotations:
-    mlflow.org/model-version: "2"
+    mlflow.org/model-version: '2'
 spec:
   type: ml-model
   owner: group:mlops-team
@@ -242,12 +243,12 @@ apiVersion: backstage.io/v1alpha1
 kind: Resource
 metadata:
   name: churn-prediction
-  description: "Model registered via Golden Path #1 (Train -> Track -> Register)"
+  description: 'Model registered via Golden Path #1 (Train -> Track -> Register)'
   tags:
     - ml-model
     - mlops
   annotations:
-    mlflow.org/model-version: "1"
+    mlflow.org/model-version: '1'
 spec:
   type: ml-model
   owner: group:mlops-team
@@ -285,15 +286,15 @@ apiVersion: backstage.io/v1alpha1
 kind: Resource
 metadata:
   name: mlops
-  description: "MLOps Assistant persona prompt — see services/orchestration-api/routers/prompts.py"
+  description: 'MLOps Assistant persona prompt — see services/orchestration-api/routers/prompts.py'
   tags:
     - prompt
     - llmops
   annotations:
-    mlflow.org/prompt-version: "1"
+    mlflow.org/prompt-version: '1'
     mlflow.org/prompt-alias: production
     # Hand-set, not live — see this block's top comment.
-    viettel.ai/updated-at: "2026-09-06"
+    viettel.ai/updated-at: '2026-09-06'
 spec:
   type: prompt
   owner: group:mlops-team

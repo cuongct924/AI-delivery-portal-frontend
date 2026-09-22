@@ -19,6 +19,7 @@ import {
   PALETTE_LIGHT,
   formatAxisCost,
   formatBucket,
+  formatDay,
   savingColor,
 } from './chartUtils';
 import { formatCostUsd } from './format';
@@ -163,7 +164,7 @@ export const ForecastDivergenceChart: FC<ForecastDivergenceChartProps> = ({
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
             data={data}
-            margin={{ top: 24, right: 16, bottom: 8, left: 0 }}
+            margin={{ top: 24, right: 28, bottom: 8, left: 0 }}
           >
             <CartesianGrid
               strokeDasharray="3 3"
@@ -174,8 +175,12 @@ export const ForecastDivergenceChart: FC<ForecastDivergenceChartProps> = ({
               type="number"
               scale="time"
               domain={['dataMin', 'dataMax']}
-              tickFormatter={ms => formatBucket(new Date(ms).toISOString())}
+              tickFormatter={ms => formatDay(new Date(ms).toISOString())}
               tick={{ fontSize: 12, fill: theme.palette.text.secondary }}
+              // Hide ticks that would collide instead of drawing them on top
+              // of each other on a dense (month-long) axis.
+              minTickGap={56}
+              interval="preserveStartEnd"
             />
             <YAxis
               tickFormatter={formatAxisCost}

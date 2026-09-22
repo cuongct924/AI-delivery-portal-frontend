@@ -18054,10 +18054,15 @@ __metadata:
     "@axe-core/playwright": "npm:^4.11.3"
     "@backstage/cli": "npm:^0.36.2"
     "@backstage/core-components": "npm:^0.18.10"
+    "@backstage/core-plugin-api": "npm:^1.12.6"
     "@backstage/frontend-plugin-api": "npm:^0.17.0"
+    "@backstage/plugin-catalog-react": "npm:^3.0.0"
     "@backstage/plugin-home-react": "npm:^0.1.38"
     "@backstage/plugin-notifications": "npm:^0.5.20"
+    "@backstage/plugin-techdocs": "npm:^1.17.6"
     "@backstage/ui": "npm:^0.15.0"
+    "@material-ui/core": "npm:4.12.4"
+    "@material-ui/icons": "npm:4.11.3"
     "@openchoreo/backstage-plugin-platform-engineer-core": "workspace:^"
     "@openchoreo/backstage-portal-app": "workspace:^"
     "@playwright/test": "npm:1.56.0"
@@ -18069,6 +18074,7 @@ __metadata:
     react: "npm:18.3.1"
     react-dom: "npm:18.3.1"
     react-router-dom: "npm:6.30.1"
+    react-use: "npm:17.6.0"
   languageName: unknown
   linkType: soft
 

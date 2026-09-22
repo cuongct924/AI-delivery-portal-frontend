@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useMemo } from 'react';
+import { FC, lazy, Suspense, useCallback, useMemo } from 'react';
 import {
   Link as RouterLink,
   Route,
@@ -45,7 +45,9 @@ import {
   DEFAULT_COST_STAGE,
   type CostComponentRef,
   type CostDimension,
+  type CostInsightsData,
   type CostProjectRef,
+  type CostScope,
   type CostScopeSelection,
   type CostStageFilter,
 } from './types';
@@ -69,6 +71,15 @@ const LEVEL_KIND: Record<string, string> = {
 
 const useStyles = makeStyles(theme => ({
   section: { marginTop: theme.spacing(2) },
+  // One line for every filter: scope (namespace/project/component) + stage +
+  // group-by + environments + refresh.
+  filterRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: theme.spacing(1.5),
+    padding: theme.spacing(1, 0),
+  },
   timeRangeRow: {
     display: 'flex',
     alignItems: 'center',
@@ -220,156 +231,64 @@ function useCostSelection() {
   return { selection, setSelection, update, searchParams };
 }
 
-// The "Insights" tab: cost table/graph views, all state read from the URL.
-const CostInsightsInsightsTab = () => {
+interface InsightsTabProps {
+  data: CostInsightsData | undefined;
+  loading: boolean;
+  isRefetching: boolean;
+  error: string | null;
+  scopeLoading: boolean;
+  envsLoading: boolean;
+  envsError: string | null;
+  selectedEnvironments: string[];
+  noScope: boolean;
+  noEnvironments: boolean;
+  timeRange: string;
+  customStartTime?: string;
+  customEndTime?: string;
+  onTimeRangeChange: (next: {
+    timeRange: string;
+    customStartTime?: string;
+    customEndTime?: string;
+  }) => void;
+  granularity: string;
+  onGranularityChange: (next: string) => void;
+  titles: Record<string, string>;
+  optimizeScope?: CostScope;
+  scopes: CostScope[];
+  stage: CostStageFilter;
+  refresh: () => void;
+}
+
+// The "Insights" tab: cost table/graph views. All state lives on the page so
+// the filter row can sit on one line above the tab bar.
+const CostInsightsInsightsTab: FC<InsightsTabProps> = ({
+  data,
+  loading,
+  isRefetching,
+  error,
+  scopeLoading,
+  envsLoading,
+  envsError,
+  selectedEnvironments,
+  noScope,
+  noEnvironments,
+  timeRange,
+  customStartTime,
+  customEndTime,
+  onTimeRangeChange,
+  granularity,
+  onGranularityChange,
+  titles,
+  optimizeScope,
+  scopes,
+  stage,
+  refresh,
+}) => {
   const classes = useStyles();
   const app = useApp();
-  const { selection, update, searchParams } = useCostSelection();
-
-  // Resolved against the catalog so the scope matches what the dropdowns show.
-  const { resolved, loading: scopeLoading } =
-    useResolvedScopeSelection(selection);
-  const { level, scopes: resolvedScopes } = expandSelection(resolved);
-  // A half-resolved selection would query the parent scope and be superseded
-  // the moment a child tier's options land, so hold until the scope settles.
-  const scopes = scopeLoading ? [] : resolvedScopes;
-  // Raw dimension name to catalog title, so rows read "GCP Microservice Demo".
-  const titles = useDimensionTitles(level, scopes);
-
-  const granularity = searchParams.get('granularity') || DEFAULT_GRANULARITY;
-  const stageParam = searchParams.get('stage');
-  const stage: CostStageFilter =
-    stageParam && (COST_STAGES as string[]).includes(stageParam)
-      ? (stageParam as CostStageFilter)
-      : DEFAULT_COST_STAGE;
-  const dimensionParam = searchParams.get('dimension');
-  const dimension: CostDimension =
-    dimensionParam && (COST_DIMENSIONS as string[]).includes(dimensionParam)
-      ? (dimensionParam as CostDimension)
-      : DEFAULT_COST_DIMENSION;
-  const { timeRange, customStartTime, customEndTime } = parseUrlTimeRange(
-    searchParams,
-    COST_DEFAULT_TIME_RANGE,
-  );
-  // `null` means the param is absent (default to all environments); a present
-  // value — even empty — is an explicit user selection we must preserve.
-  const envsRaw = searchParams.get('envs');
-  const envsParam = useMemo(
-    () => (envsRaw === null ? null : envsRaw.split(',').filter(Boolean)),
-    [envsRaw],
-  );
-
-  // --- Environments across the selected namespaces ---
-  const {
-    environments,
-    loading: envsLoading,
-    error: envsError,
-  } = useNamespaceEnvironments(resolved.namespaces);
-
-  // Default to every environment until the user narrows the selection, so the
-  // page shows aggregated data immediately.
-  const allEnvNames = useMemo(
-    () => environments.map(e => e.name),
-    [environments],
-  );
-  // Absent param means default to all; a present selection (including an explicit
-  // empty one) is honored as-is.
-  const selectedEnvironments = envsParam === null ? allEnvNames : envsParam;
-
-  const onEnvironmentsChange = useCallback(
-    (names: string[]) => {
-      update(params => {
-        // An explicit "all selected" is stored as absent (the default), so the
-        // URL stays clean and keeps meaning "all". Selecting none serializes an
-        // explicit empty value so it survives a reload and the "select
-        // environments" alert can render.
-        const isAll = names.length > 0 && names.length === allEnvNames.length;
-        if (isAll) params.delete('envs');
-        else params.set('envs', names.join(','));
-      });
-    },
-    [update, allEnvNames.length],
-  );
-
-  const onTimeRangeChange = useCallback(
-    (next: {
-      timeRange: string;
-      customStartTime?: string;
-      customEndTime?: string;
-    }) =>
-      update(params =>
-        writeUrlTimeRange(params, next, COST_DEFAULT_TIME_RANGE),
-      ),
-    [update],
-  );
-
-  const onGranularityChange = useCallback(
-    (next: string) =>
-      update(params => {
-        if (next === DEFAULT_GRANULARITY) params.delete('granularity');
-        else params.set('granularity', next);
-      }),
-    [update],
-  );
-
-  const onStageChange = useCallback(
-    (next: CostStageFilter) =>
-      update(params => {
-        if (next === DEFAULT_COST_STAGE) params.delete('stage');
-        else params.set('stage', next);
-      }),
-    [update],
-  );
-
-  const onDimensionChange = useCallback(
-    (next: CostDimension) =>
-      update(params => {
-        if (next === DEFAULT_COST_DIMENSION) params.delete('dimension');
-        else params.set('dimension', next);
-      }),
-    [update],
-  );
-
-  // --- Cost data ---
-  const { data, loading, isRefetching, error, refresh } = useCostInsights({
-    scopes,
-    level,
-    environments: selectedEnvironments,
-    timeRange,
-    customStartTime,
-    customEndTime,
-    granularity,
-    stage,
-    dimension,
-  });
-
-  // Optimize/Apply acts on a single ReleaseBinding, so it's only offered when
-  // exactly one component is in scope.
-  const optimizeScope =
-    level === 'component' && scopes.length === 1 ? scopes[0] : undefined;
-
-  const noScope = !scopeLoading && scopes.length === 0;
-  const noEnvironments =
-    !noScope && !envsLoading && !envsError && environments.length === 0;
 
   return (
     <>
-      <Box className={classes.section}>
-        <CostInsightsFilters
-          environments={environments}
-          environmentsLoading={envsLoading}
-          selectedEnvironments={selectedEnvironments}
-          onEnvironmentsChange={onEnvironmentsChange}
-          stage={stage}
-          onStageChange={onStageChange}
-          dimension={dimension}
-          onDimensionChange={onDimensionChange}
-          onRefresh={refresh}
-          refreshing={loading || isRefetching}
-          disabled={noScope}
-        />
-      </Box>
-
       {noScope && (
         <Box className={classes.section}>
           <Alert severity="info">
@@ -566,19 +485,194 @@ const CostInsightsTabBar = () => {
 };
 
 export const CostInsightsPage = () => {
-  const { selection, setSelection } = useCostSelection();
+  const classes = useStyles();
+  const location = useLocation();
+  const { selection, setSelection, update, searchParams } = useCostSelection();
+  const onInsightsTab = !location.pathname.startsWith(
+    `${COST_INSIGHTS_PATH}/cost-analysis`,
+  );
+
+  // Resolved against the catalog so the scope matches what the dropdowns show.
+  const { resolved, loading: scopeLoading } =
+    useResolvedScopeSelection(selection);
+  const { level, scopes: resolvedScopes } = expandSelection(resolved);
+  // A half-resolved selection would query the parent scope and be superseded
+  // the moment a child tier's options land, so hold until the scope settles.
+  const scopes = scopeLoading ? [] : resolvedScopes;
+  // Raw dimension name to catalog title, so rows read "GCP Microservice Demo".
+  const titles = useDimensionTitles(level, scopes);
+
+  const granularity = searchParams.get('granularity') || DEFAULT_GRANULARITY;
+  const stageParam = searchParams.get('stage');
+  const stage: CostStageFilter =
+    stageParam && (COST_STAGES as string[]).includes(stageParam)
+      ? (stageParam as CostStageFilter)
+      : DEFAULT_COST_STAGE;
+  const dimensionParam = searchParams.get('dimension');
+  const dimension: CostDimension =
+    dimensionParam && (COST_DIMENSIONS as string[]).includes(dimensionParam)
+      ? (dimensionParam as CostDimension)
+      : DEFAULT_COST_DIMENSION;
+  const { timeRange, customStartTime, customEndTime } = parseUrlTimeRange(
+    searchParams,
+    COST_DEFAULT_TIME_RANGE,
+  );
+  // `null` means the param is absent (default to all environments); a present
+  // value — even empty — is an explicit user selection we must preserve.
+  const envsRaw = searchParams.get('envs');
+  const envsParam = useMemo(
+    () => (envsRaw === null ? null : envsRaw.split(',').filter(Boolean)),
+    [envsRaw],
+  );
+
+  // --- Environments across the selected namespaces ---
+  const {
+    environments,
+    loading: envsLoading,
+    error: envsError,
+  } = useNamespaceEnvironments(resolved.namespaces);
+
+  // Default to every environment until the user narrows the selection, so the
+  // page shows aggregated data immediately.
+  const allEnvNames = useMemo(
+    () => environments.map(e => e.name),
+    [environments],
+  );
+  // Absent param means default to all; a present selection (including an explicit
+  // empty one) is honored as-is.
+  const selectedEnvironments = envsParam === null ? allEnvNames : envsParam;
+
+  const onEnvironmentsChange = useCallback(
+    (names: string[]) => {
+      update(params => {
+        // An explicit "all selected" is stored as absent (the default), so the
+        // URL stays clean and keeps meaning "all". Selecting none serializes an
+        // explicit empty value so it survives a reload and the "select
+        // environments" alert can render.
+        const isAll = names.length > 0 && names.length === allEnvNames.length;
+        if (isAll) params.delete('envs');
+        else params.set('envs', names.join(','));
+      });
+    },
+    [update, allEnvNames.length],
+  );
+
+  const onTimeRangeChange = useCallback(
+    (next: {
+      timeRange: string;
+      customStartTime?: string;
+      customEndTime?: string;
+    }) =>
+      update(params =>
+        writeUrlTimeRange(params, next, COST_DEFAULT_TIME_RANGE),
+      ),
+    [update],
+  );
+
+  const onGranularityChange = useCallback(
+    (next: string) =>
+      update(params => {
+        if (next === DEFAULT_GRANULARITY) params.delete('granularity');
+        else params.set('granularity', next);
+      }),
+    [update],
+  );
+
+  const onStageChange = useCallback(
+    (next: CostStageFilter) =>
+      update(params => {
+        if (next === DEFAULT_COST_STAGE) params.delete('stage');
+        else params.set('stage', next);
+      }),
+    [update],
+  );
+
+  const onDimensionChange = useCallback(
+    (next: CostDimension) =>
+      update(params => {
+        if (next === DEFAULT_COST_DIMENSION) params.delete('dimension');
+        else params.set('dimension', next);
+      }),
+    [update],
+  );
+
+  // --- Cost data ---
+  const { data, loading, isRefetching, error, refresh } = useCostInsights({
+    scopes,
+    level,
+    environments: selectedEnvironments,
+    timeRange,
+    customStartTime,
+    customEndTime,
+    granularity,
+    stage,
+    dimension,
+  });
+
+  // Optimize/Apply acts on a single ReleaseBinding, so it's only offered when
+  // exactly one component is in scope.
+  const optimizeScope =
+    level === 'component' && scopes.length === 1 ? scopes[0] : undefined;
+
+  const noScope = !scopeLoading && scopes.length === 0;
+  const noEnvironments =
+    !noScope && !envsLoading && !envsError && environments.length === 0;
 
   return (
     <Page themeId="tool">
       <Header title="Cost Insights" />
       <Content>
-        <CostInsightsScopeFilters
-          selection={selection}
-          onChange={setSelection}
-        />
+        <Box className={classes.filterRow}>
+          <CostInsightsScopeFilters
+            selection={selection}
+            onChange={setSelection}
+          />
+          {onInsightsTab && (
+            <CostInsightsFilters
+              environments={environments}
+              environmentsLoading={envsLoading}
+              selectedEnvironments={selectedEnvironments}
+              onEnvironmentsChange={onEnvironmentsChange}
+              stage={stage}
+              onStageChange={onStageChange}
+              dimension={dimension}
+              onDimensionChange={onDimensionChange}
+              onRefresh={refresh}
+              refreshing={loading || isRefetching}
+              disabled={noScope}
+            />
+          )}
+        </Box>
         <CostInsightsTabBar />
         <Routes>
-          <Route index element={<CostInsightsInsightsTab />} />
+          <Route
+            index
+            element={
+              <CostInsightsInsightsTab
+                data={data}
+                loading={loading}
+                isRefetching={isRefetching}
+                error={error}
+                scopeLoading={scopeLoading}
+                envsLoading={envsLoading}
+                envsError={envsError}
+                selectedEnvironments={selectedEnvironments}
+                noScope={noScope}
+                noEnvironments={noEnvironments}
+                timeRange={timeRange}
+                customStartTime={customStartTime}
+                customEndTime={customEndTime}
+                onTimeRangeChange={onTimeRangeChange}
+                granularity={granularity}
+                onGranularityChange={onGranularityChange}
+                titles={titles}
+                optimizeScope={optimizeScope}
+                scopes={scopes}
+                stage={stage}
+                refresh={refresh}
+              />
+            }
+          />
           <Route path="cost-analysis/*" element={<CostAnalysisTab />} />
         </Routes>
       </Content>

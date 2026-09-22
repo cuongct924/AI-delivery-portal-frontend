@@ -10,7 +10,9 @@
     "node": "20 || 22"
   },
   "scripts": {
+    "prestart": "bash scripts/sync-techdocs.sh",
     "start": "NODE_OPTIONS=--no-node-snapshot dotenv -e .env -- backstage-cli repo start",
+    "sync:techdocs": "bash scripts/sync-techdocs.sh",
     "build:backend": "yarn workspace backend build",
     "build:all": "backstage-cli repo build --all",
     "build-image": "yarn workspace backend build-image",

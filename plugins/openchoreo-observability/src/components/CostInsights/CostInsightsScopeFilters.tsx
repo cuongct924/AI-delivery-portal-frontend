@@ -10,14 +10,11 @@ import {
 } from './useCostScopeOptions';
 import type { CostScopeSelection } from './types';
 
-const useStyles = makeStyles(theme => ({
-  root: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: theme.spacing(1),
-    padding: theme.spacing(1, 0),
-  },
+const useStyles = makeStyles(() => ({
+  // `contents` so the three dropdowns become direct flex items of the page's
+  // filter row — otherwise the whole group wraps as one unit instead of each
+  // control wrapping on its own.
+  root: { display: 'contents' },
 }));
 
 export interface CostInsightsScopeFiltersProps {
