@@ -484,6 +484,12 @@ export interface CostItem {
    * resource-utilization-efficiency KPI. Absent for CPU-only items.
    */
   gpuUtilization?: number;
+  /** Notebook auto-shutdown TTL (minutes), when the item is a notebook. */
+  ttlMinutes?: number;
+  /** Cost of idle time beyond the TTL, for the waste KPI. */
+  idleCost?: number;
+  /** Cost per request for a serving version, for canary cost telemetry. */
+  costPerRequest?: number;
 }
 
 /** Current or recommended resource allocation + its cost, from the observer. */

@@ -444,6 +444,24 @@ export function computeSummary(
   const attributedCost = totalCost(
     currentItems.filter(i => i.artifact || i.team || i.businessDomain),
   );
+  // Waste & rollout signals: idle notebook cost, TTL coverage, cost per request.
+  const notebooks = currentItems.filter(
+    i => i.ttlMinutes !== undefined || i.idleCost !== undefined,
+  );
+  const idleWaste = currentItems.reduce((sum, i) => sum + (i.idleCost ?? 0), 0);
+  const ttlCoverage =
+    notebooks.length > 0
+      ? notebooks.filter(i => i.ttlMinutes !== undefined).length /
+        notebooks.length
+      : 1;
+  const perRequestItems = currentItems.filter(
+    i => i.costPerRequest !== undefined,
+  );
+  const costPerRequest =
+    perRequestItems.length > 0
+      ? perRequestItems.reduce((s, i) => s + (i.costPerRequest ?? 0), 0) /
+        perRequestItems.length
+      : undefined;
   return {
     totalCost: total,
     deltaPct: percentChange(total, prevTotal || undefined),
@@ -454,6 +472,9 @@ export function computeSummary(
     runCost: stages.run,
     attributionCoverage: total > 0 ? attributedCost / total : 1,
     gpuUtilization: weightedGpuUtilization(currentItems),
+    idleWaste,
+    ttlCoverage,
+    costPerRequest,
   };
 }
 

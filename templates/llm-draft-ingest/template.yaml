@@ -184,7 +184,7 @@ spec:
       input:
         goldenPath: llm-draft-ingest
         stage: build
-        artifact: ${{ parameters.artifactKind === 'rag-index' and parameters.collectionName or parameters.promptName }}
+        artifact: ${{ parameters.artifactKind === 'rag-index' and parameters.collectionName or (parameters.artifactKind === 'eval-set' and parameters.evalSetName or parameters.promptName) }}
         params:
           artifactKind: ${{ parameters.artifactKind }}
 
@@ -196,7 +196,7 @@ spec:
       input:
         goldenPath: llm-draft-ingest
         stage: build
-        artifact: ${{ parameters.artifactKind === 'rag-index' and parameters.collectionName or parameters.promptName }}
+        artifact: ${{ parameters.artifactKind === 'rag-index' and parameters.collectionName or (parameters.artifactKind === 'eval-set' and parameters.evalSetName or parameters.promptName) }}
         params:
           artifactKind: ${{ parameters.artifactKind }}
 

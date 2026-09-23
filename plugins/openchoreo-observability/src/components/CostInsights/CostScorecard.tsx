@@ -118,6 +118,14 @@ export function buildScorecardChecks(summary: CostSummary): Check[] {
         : { label: 'Review spend', href: '#cost-optimize' },
   });
 
+  const ttlCoverage = summary.ttlCoverage ?? 1;
+  checks.push({
+    id: 'ttl',
+    label: 'Notebook TTL',
+    status: ttlCoverage >= 1 ? 'pass' : ttlCoverage >= 0.5 ? 'warn' : 'fail',
+    detail: `${Math.round(ttlCoverage * 100)}% of notebooks auto-shutdown`,
+  });
+
   return checks;
 }
 

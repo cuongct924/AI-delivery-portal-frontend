@@ -39,6 +39,7 @@ import { CostBudgetDialog } from './CostBudgetDialog';
 import { CostRateOptimization } from './CostRateOptimization';
 import { CostSavingCard } from './CostSavingCard';
 import { CostScorecard } from './CostScorecard';
+import { CostTrainingEfficiency } from './CostTrainingEfficiency';
 import { useCostBudget } from './useCostBudget';
 import { CostVarianceCard } from './CostVarianceCard';
 import { CostZone } from './CostZone';
@@ -355,6 +356,13 @@ const CostInsightsInsightsTab: FC<InsightsTabProps> = ({
             </Box>
             <Box className={classes.section}>
               <CostLifecycleWaterfall summary={data.summary} />
+            </Box>
+            <Box className={classes.section}>
+              <CostTrainingEfficiency
+                timeRange={timeRange}
+                customStartTime={customStartTime}
+                customEndTime={customEndTime}
+              />
             </Box>
             {/* Forecast covers the whole month, so it sits above the time range. */}
             <Box className={classes.section}>

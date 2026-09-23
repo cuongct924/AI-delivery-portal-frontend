@@ -182,6 +182,12 @@ export interface CostSummary {
   attributionCoverage?: number;
   /** Cost-weighted average GPU utilization (0..1), when GPU items are present. */
   gpuUtilization?: number;
+  /** Total idle cost from notebooks running past their TTL. */
+  idleWaste?: number;
+  /** Share of notebook items that have a TTL set (0..1). */
+  ttlCoverage?: number;
+  /** Cost-weighted average cost per request, when serving items report it. */
+  costPerRequest?: number;
 }
 
 /** One stacked-bar time bucket: `{ timestamp, [dimensionValue]: cost }`. */

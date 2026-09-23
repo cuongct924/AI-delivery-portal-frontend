@@ -58,6 +58,9 @@ jest.mock('./useCostVariance', () => ({
 jest.mock('./useRateOptimization', () => ({
   useRateOptimization: () => ({ suggestions: [], loading: false }),
 }));
+jest.mock('./useTrainingEfficiency', () => ({
+  useTrainingEfficiency: () => ({ rows: [], loading: false }),
+}));
 
 const data = {
   level: 'namespace' as const,

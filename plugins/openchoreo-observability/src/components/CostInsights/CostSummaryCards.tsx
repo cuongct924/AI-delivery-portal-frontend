@@ -201,6 +201,27 @@ export const CostSummaryCards: FC<{ summary: CostSummary }> = ({ summary }) => {
             }
           />
         </Box>
+        <Box className={classes.cardWrap}>
+          <KpiCard
+            label="Idle waste"
+            value={formatUsd(summary.idleWaste ?? 0)}
+            hint="Notebooks past TTL"
+            valueClassName={
+              (summary.idleWaste ?? 0) > 0 ? classes.over : undefined
+            }
+          />
+        </Box>
+        <Box className={classes.cardWrap}>
+          <KpiCard
+            label="Cost / request"
+            value={
+              summary.costPerRequest !== undefined
+                ? formatUnitCost(summary.costPerRequest)
+                : '—'
+            }
+            hint="Canary telemetry"
+          />
+        </Box>
       </Group>
     </Box>
   );
