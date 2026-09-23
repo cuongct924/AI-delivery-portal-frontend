@@ -23,6 +23,8 @@ const useStyles = makeStyles(theme => ({
 }));
 
 export interface CostZoneProps {
+  /** Anchor id, so a CTA elsewhere can scroll to this zone. */
+  id?: string;
   /** The FinOps phase this zone maps to: Inform, Optimize or Operate. */
   step: string;
   title: string;
@@ -36,6 +38,7 @@ export interface CostZoneProps {
  * of widgets.
  */
 export const CostZone: FC<CostZoneProps> = ({
+  id,
   step,
   title,
   subtitle,
@@ -43,7 +46,7 @@ export const CostZone: FC<CostZoneProps> = ({
 }) => {
   const classes = useStyles();
   return (
-    <Box className={classes.root}>
+    <Box className={classes.root} id={id}>
       <Box className={classes.header}>
         <Typography className={classes.step}>{step}</Typography>
         <Typography className={classes.title}>{title}</Typography>

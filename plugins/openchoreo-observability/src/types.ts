@@ -494,6 +494,9 @@ export interface CostResourceProfile {
   memoryLimit?: string;
   cpuCost: number;
   memoryCost: number;
+  /** GPU request/cost, present on GPU-backed components only. */
+  gpuRequest?: string;
+  gpuCost?: number;
 }
 
 /** A right-sizing recommendation for a component in a given environment. */

@@ -245,6 +245,14 @@ function recommendedChanges(
       to: rec.memoryRequest,
     });
   }
+  // GPU is the biggest AI cost line, so surface its right-size too.
+  if (rec.gpuRequest && current.gpuRequest && rec.gpuRequest !== current.gpuRequest) {
+    changes.push({
+      label: 'gpu',
+      from: current.gpuRequest,
+      to: rec.gpuRequest,
+    });
+  }
   return changes;
 }
 

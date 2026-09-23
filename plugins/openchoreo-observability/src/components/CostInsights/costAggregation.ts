@@ -373,6 +373,8 @@ export function aggregateRows(
           cpuLimit: first.cpuLimit,
           memoryRequest: first.memoryRequest,
           memoryLimit: first.memoryLimit,
+          gpuRequest: first.gpuRequest,
+          gpuCost: first.gpuCost,
           cpuCost: recCpu,
           memoryCost: recMem,
           total: recCpu + recMem,
@@ -381,6 +383,7 @@ export function aggregateRows(
             cpuLimit: firstCurrent.cpuLimit,
             memoryRequest: firstCurrent.memoryRequest,
             memoryLimit: firstCurrent.memoryLimit,
+            gpuRequest: firstCurrent.gpuRequest,
           },
         };
       }

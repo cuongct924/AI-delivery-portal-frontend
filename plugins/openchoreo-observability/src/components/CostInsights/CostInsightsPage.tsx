@@ -35,6 +35,7 @@ import { CostInsightsGraphs } from './CostInsightsGraphs';
 import { CostSummaryCards } from './CostSummaryCards';
 import { CostActionPanel } from './CostActionPanel';
 import { CostLifecycleWaterfall } from './CostLifecycleWaterfall';
+import { CostSavingCard } from './CostSavingCard';
 import { CostScorecard } from './CostScorecard';
 import { CostVarianceCard } from './CostVarianceCard';
 import { CostZone } from './CostZone';
@@ -339,6 +340,7 @@ const CostInsightsInsightsTab: FC<InsightsTabProps> = ({
           <RefreshOverlay active={isRefetching} label="Refreshing cost data" />
 
           <CostZone
+            id="cost-inform"
             step="Inform"
             title="Visibility"
             subtitle="What are we spending, and on what?"
@@ -354,6 +356,15 @@ const CostInsightsInsightsTab: FC<InsightsTabProps> = ({
               <ForecastDivergenceChart
                 forecast={data.forecast}
                 budget={data.budget?.amount ?? null}
+              />
+            </Box>
+            {/* Planning & estimating is an Inform capability, so the estimate
+                vs actual sits with the forecast, not down in Operate. */}
+            <Box className={classes.section}>
+              <CostVarianceCard
+                timeRange={timeRange}
+                customStartTime={customStartTime}
+                customEndTime={customEndTime}
               />
             </Box>
             <Box className={`${classes.section} ${classes.timeRangeRow}`}>
@@ -377,10 +388,14 @@ const CostInsightsInsightsTab: FC<InsightsTabProps> = ({
           </CostZone>
 
           <CostZone
+            id="cost-optimize"
             step="Optimize"
             title="Right-sizing"
             subtitle="What can we improve?"
           >
+            <Box className={classes.section}>
+              <CostSavingCard totalSaving={data.summary.totalSaving} />
+            </Box>
             <Box className={classes.section}>
               <CostInsightsTable
                 level={data.level}
@@ -398,19 +413,13 @@ const CostInsightsInsightsTab: FC<InsightsTabProps> = ({
           </CostZone>
 
           <CostZone
+            id="cost-operate"
             step="Operate"
             title="Action needed"
             subtitle="What needs a decision now?"
           >
             <Box className={classes.section}>
               <CostScorecard summary={data.summary} />
-            </Box>
-            <Box className={classes.section}>
-              <CostVarianceCard
-                timeRange={timeRange}
-                customStartTime={customStartTime}
-                customEndTime={customEndTime}
-              />
             </Box>
             <Box className={classes.section}>
               <CostActionPanel

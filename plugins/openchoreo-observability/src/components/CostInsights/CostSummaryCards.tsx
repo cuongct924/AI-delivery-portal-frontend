@@ -1,4 +1,4 @@
-import { FC } from 'react';
+import { FC, ReactNode } from 'react';
 import { Box, Paper, Typography, makeStyles } from '@material-ui/core';
 import ArrowUpwardIcon from '@material-ui/icons/ArrowUpward';
 import ArrowDownwardIcon from '@material-ui/icons/ArrowDownward';
@@ -49,6 +49,15 @@ const useStyles = makeStyles(theme => ({
     gap: theme.spacing(2),
   },
   cardWrap: { flex: '1 1 150px', minWidth: 0 },
+  groups: { display: 'flex', flexDirection: 'column', gap: theme.spacing(2.5) },
+  groupTitle: {
+    fontWeight: 600,
+    fontSize: '0.75rem',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    color: theme.palette.text.secondary,
+    marginBottom: theme.spacing(1),
+  },
 }));
 
 interface KpiCardProps {
@@ -71,10 +80,25 @@ const KpiCard: FC<KpiCardProps> = ({ label, value, hint, valueClassName }) => {
   );
 };
 
+const Group: FC<{ title: string; children: ReactNode }> = ({
+  title,
+  children,
+}) => {
+  const classes = useStyles();
+  return (
+    <Box>
+      <Typography className={classes.groupTitle}>{title}</Typography>
+      <Box className={classes.grid}>{children}</Box>
+    </Box>
+  );
+};
+
 /**
- * The KPI row: total spend plus the Build/Run split, forecast-vs-budget burn,
- * reclaimable saving and anomaly count. Every card is derived from the same
- * summary, so a stage filter narrows all of them together.
+ * The Inform KPI area, split into two groups: the financials (what we spend)
+ * and the AI unit economics / health (what value it buys). "Potential saving"
+ * lives in the Optimize zone instead, since quantifying it is an Optimize
+ * activity. Every card is derived from the same summary, so a stage filter
+ * narrows all of them together.
  */
 export const CostSummaryCards: FC<{ summary: CostSummary }> = ({ summary }) => {
   const classes = useStyles();
@@ -97,90 +121,87 @@ export const CostSummaryCards: FC<{ summary: CostSummary }> = ({ summary }) => {
   };
 
   return (
-    <Box className={classes.grid}>
-      <Box className={classes.cardWrap}>
-        <KpiCard label="Total cost" value={formatUsd(summary.totalCost)} />
-      </Box>
-      <Box className={classes.cardWrap}>
-        <KpiCard
-          label="Build"
-          value={formatUsd(summary.buildCost ?? 0)}
-          hint="One-time, per version"
-        />
-      </Box>
-      <Box className={classes.cardWrap}>
-        <KpiCard
-          label="Gate"
-          value={formatUsd(summary.gateCost ?? 0)}
-          hint="Evaluate Gate runs"
-        />
-      </Box>
-      <Box className={classes.cardWrap}>
-        <KpiCard
-          label="Run"
-          value={formatUsd(summary.runCost ?? 0)}
-          hint="Recurring, per period"
-        />
-      </Box>
-      <Box className={classes.cardWrap}>
-        <KpiCard
-          label="Forecast vs budget"
-          value={forecastValue()}
-          hint={forecastHint()}
-          valueClassName={overBudget ? classes.over : undefined}
-        />
-      </Box>
-      <Box className={classes.cardWrap}>
-        <KpiCard
-          label="Potential saving"
-          value={formatUsd(summary.totalSaving)}
-          hint="Reclaimable via right-sizing"
-          valueClassName={summary.totalSaving > 0 ? classes.under : undefined}
-        />
-      </Box>
-      <Box className={classes.cardWrap}>
-        <KpiCard
-          label="Anomalies"
-          value={String(summary.anomalyCount ?? 0)}
-          hint="Spend spikes in window"
-          valueClassName={
-            (summary.anomalyCount ?? 0) > 0 ? classes.over : undefined
-          }
-        />
-      </Box>
-      <Box className={classes.cardWrap}>
-        <KpiCard
-          label="Cost / 1k inferences"
-          value={
-            summary.costPer1kInference !== undefined
-              ? formatUnitCost(summary.costPer1kInference)
-              : '—'
-          }
-          hint="Unit economics"
-        />
-      </Box>
-      <Box className={classes.cardWrap}>
-        <KpiCard
-          label="Cost / 1k tokens"
-          value={
-            summary.costPer1kToken !== undefined
-              ? formatUnitCost(summary.costPer1kToken)
-              : '—'
-          }
-          hint="Unit economics"
-        />
-      </Box>
-      <Box className={classes.cardWrap}>
-        <KpiCard
-          label="GPU utilization"
-          value={
-            summary.gpuUtilization !== undefined
-              ? `${Math.round(summary.gpuUtilization * 100)}%`
-              : '—'
-          }
-          hint="Resource efficiency"
-        />
-      </Box>
+    <Box className={classes.groups}>
+      <Group title="Financials">
+        <Box className={classes.cardWrap}>
+          <KpiCard label="Total cost" value={formatUsd(summary.totalCost)} />
+        </Box>
+        <Box className={classes.cardWrap}>
+          <KpiCard
+            label="Build"
+            value={formatUsd(summary.buildCost ?? 0)}
+            hint="One-time, per version"
+          />
+        </Box>
+        <Box className={classes.cardWrap}>
+          <KpiCard
+            label="Gate"
+            value={formatUsd(summary.gateCost ?? 0)}
+            hint="Evaluate Gate runs"
+          />
+        </Box>
+        <Box className={classes.cardWrap}>
+          <KpiCard
+            label="Run"
+            value={formatUsd(summary.runCost ?? 0)}
+            hint="Recurring, per period"
+          />
+        </Box>
+        <Box className={classes.cardWrap}>
+          <KpiCard
+            label="Forecast vs budget"
+            value={forecastValue()}
+            hint={forecastHint()}
+            valueClassName={overBudget ? classes.over : undefined}
+          />
+        </Box>
+      </Group>
+
+      <Group title="AI unit economics & health">
+        <Box className={classes.cardWrap}>
+          <KpiCard
+            label="Cost / 1k inferences"
+            value={
+              summary.costPer1kInference !== undefined
+                ? formatUnitCost(summary.costPer1kInference)
+                : '—'
+            }
+            hint="Unit economics"
+          />
+        </Box>
+        <Box className={classes.cardWrap}>
+          <KpiCard
+            label="Cost / 1k tokens"
+            value={
+              summary.costPer1kToken !== undefined
+                ? formatUnitCost(summary.costPer1kToken)
+                : '—'
+            }
+            hint="Unit economics"
+          />
+        </Box>
+        <Box className={classes.cardWrap}>
+          <KpiCard
+            label="GPU utilization"
+            value={
+              summary.gpuUtilization !== undefined
+                ? `${Math.round(summary.gpuUtilization * 100)}%`
+                : '—'
+            }
+            hint="Resource efficiency"
+          />
+        </Box>
+        <Box className={classes.cardWrap}>
+          <KpiCard
+            label="Anomalies"
+            value={String(summary.anomalyCount ?? 0)}
+            hint="Spend spikes in window"
+            valueClassName={
+              (summary.anomalyCount ?? 0) > 0 ? classes.over : undefined
+            }
+          />
+        </Box>
+      </Group>
     </Box>
   );
 };

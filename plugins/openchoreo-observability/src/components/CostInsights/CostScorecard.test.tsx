@@ -37,6 +37,20 @@ describe('buildScorecardChecks', () => {
     const checks = buildScorecardChecks(summary({ attributionCoverage: 0.2 }));
     expect(checks.find(c => c.id === 'attribution')?.status).toBe('fail');
   });
+
+  it('offers a CTA when action is needed', () => {
+    const checks = buildScorecardChecks(summary({ totalSaving: 40 }));
+    expect(checks.find(c => c.id === 'saving')?.cta?.label).toBe(
+      'Apply recommendations',
+    );
+  });
+
+  it('omits the CTA when a check passes', () => {
+    const checks = buildScorecardChecks(
+      summary({ totalSaving: 0, anomalyCount: 0, attributionCoverage: 1 }),
+    );
+    expect(checks.find(c => c.id === 'saving')?.cta).toBeUndefined();
+  });
 });
 
 describe('CostScorecard', () => {

@@ -112,7 +112,7 @@ export interface CostScopeSelection {
 /** The four resource quantity strings (K8s notation) for a workload. */
 export type CostResourceQuantities = Pick<
   CostResourceProfile,
-  'cpuRequest' | 'cpuLimit' | 'memoryRequest' | 'memoryLimit'
+  'cpuRequest' | 'cpuLimit' | 'memoryRequest' | 'memoryLimit' | 'gpuRequest'
 >;
 
 /** Recommendation ("Cost After Optimizing") shown only at the component level. */

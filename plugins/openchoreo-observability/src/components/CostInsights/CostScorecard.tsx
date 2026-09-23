@@ -1,5 +1,5 @@
 import { FC } from 'react';
-import { Box, Paper, Typography, makeStyles } from '@material-ui/core';
+import { Box, Button, Paper, Typography, makeStyles } from '@material-ui/core';
 import CheckCircleIcon from '@material-ui/icons/CheckCircle';
 import WarningIcon from '@material-ui/icons/Warning';
 import ErrorIcon from '@material-ui/icons/Error';
@@ -14,6 +14,8 @@ interface Check {
   label: string;
   status: Status;
   detail: string;
+  /** Optional call-to-action, so the scorecard is actionable, not just a report. */
+  cta?: { label: string; href: string };
 }
 
 const useStyles = makeStyles(theme => ({
@@ -39,6 +41,7 @@ const useStyles = makeStyles(theme => ({
   body: { flex: 1, minWidth: 0 },
   label: { fontWeight: 600, fontSize: '0.85rem' },
   detail: { fontSize: '0.75rem', color: theme.palette.text.secondary },
+  cta: { flexShrink: 0, textTransform: 'none' },
 }));
 
 const ICONS: Record<Status, typeof CheckCircleIcon> = {
@@ -60,6 +63,7 @@ export function buildScorecardChecks(summary: CostSummary): Check[] {
       label: 'Budget adherence',
       status: 'info',
       detail: 'No budget set for this scope',
+      cta: { label: 'Review forecast', href: '#cost-inform' },
     });
   } else if (forecast <= budget) {
     checks.push({
@@ -74,6 +78,7 @@ export function buildScorecardChecks(summary: CostSummary): Check[] {
       label: 'Budget adherence',
       status: 'fail',
       detail: `Forecast ${formatUsd(forecast)} over ${formatUsd(budget)}`,
+      cta: { label: 'Review forecast', href: '#cost-inform' },
     });
   }
 
@@ -83,6 +88,10 @@ export function buildScorecardChecks(summary: CostSummary): Check[] {
     label: 'Spend anomalies',
     status: anomalies === 0 ? 'pass' : 'warn',
     detail: anomalies === 0 ? 'None in window' : `${anomalies} spike(s) flagged`,
+    cta:
+      anomalies === 0
+        ? undefined
+        : { label: 'Investigate', href: '#cost-operate' },
   });
 
   const saving = summary.totalSaving;
@@ -91,6 +100,10 @@ export function buildScorecardChecks(summary: CostSummary): Check[] {
     label: 'Right-sizing',
     status: saving > 0 ? 'warn' : 'pass',
     detail: saving > 0 ? `${formatUsd(saving)} reclaimable` : 'Fully right-sized',
+    cta:
+      saving > 0
+        ? { label: 'Apply recommendations', href: '#cost-optimize' }
+        : undefined,
   });
 
   const coverage = summary.attributionCoverage ?? 1;
@@ -99,6 +112,10 @@ export function buildScorecardChecks(summary: CostSummary): Check[] {
     label: 'Cost attribution',
     status: coverage >= 0.9 ? 'pass' : coverage >= 0.5 ? 'warn' : 'fail',
     detail: `${Math.round(coverage * 100)}% of spend attributed`,
+    cta:
+      coverage >= 0.9
+        ? undefined
+        : { label: 'Review spend', href: '#cost-optimize' },
   });
 
   return checks;
@@ -128,6 +145,17 @@ export const CostScorecard: FC<{ summary: CostSummary }> = ({ summary }) => {
               <Typography className={classes.label}>{check.label}</Typography>
               <Typography className={classes.detail}>{check.detail}</Typography>
             </Box>
+            {check.cta && (
+              <Button
+                size="small"
+                variant="outlined"
+                color="primary"
+                className={classes.cta}
+                href={check.cta.href}
+              >
+                {check.cta.label}
+              </Button>
+            )}
           </Box>
         );
       })}
