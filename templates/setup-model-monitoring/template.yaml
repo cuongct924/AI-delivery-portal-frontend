@@ -27,13 +27,16 @@ spec:
         modelName:
           title: Model name
           type: string
+          default: fraud-detection
           description: Must already be registered (any Golden Path).
         modelVersion:
           title: Model version
           type: string
+          default: '1'
         referenceDataUri:
           title: Reference (training) data URI
           type: string
+          default: file:///mnt/data/classification-telco-fraud-detection/telco-fraud-detection-sample.csv
           description: >
             Select the training dataset used by this model. The platform uses
             it as the stable baseline for comparison.
@@ -134,6 +137,7 @@ spec:
               productionDataUri:
                 title: Custom production data URI
                 type: string
+                default: s3://prediction-logs/fraud-detection/production.csv
                 description: >
                   URI containing recent production inputs or predictions,
                   for example s3://bucket/path or file:///data/production.csv.
@@ -203,6 +207,7 @@ spec:
                     groundTruthDataUri:
                       title: Custom ground-truth data URI
                       type: string
+                      default: s3://label-logs/fraud-detection/labels.csv
                       description: >
                         URI containing delayed labels aligned with the
                         production predictions.

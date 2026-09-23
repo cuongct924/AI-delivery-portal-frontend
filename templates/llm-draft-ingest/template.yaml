@@ -28,6 +28,7 @@ spec:
               title: 'RAG Index - ingest documents into a Qdrant collection'
             - const: eval-set
               title: 'Eval Set - reusable set of eval questions for the Evaluate Gate'
+          default: prompt
           description: >
             Choose the artifact type to create.
       # promptName/personaTitle/promptContent and collectionName/sourcePaths/
@@ -55,12 +56,14 @@ spec:
               promptName:
                 title: Persona key
                 type: string
+                default: mlops
                 description: >
                   Persona key reused by Golden Path #2 (Evaluate & Activate)
                   and routers/chat.py. Example: "mlops".
               personaTitle:
                 title: Persona display name
                 type: string
+                default: MLOps Assistant
                 description: 'Name shown in the Prompt Registry UI. Example: "MLOps Assistant".'
               promptContent:
                 title: System prompt content
@@ -68,6 +71,11 @@ spec:
                 ui:widget: textarea
                 ui:options:
                   rows: 14
+                default: >
+                  You are the MLOps Assistant for the AI Delivery Portal.
+                  Answer questions about model training, tracking, registration,
+                  deployment and monitoring using the platform's own Golden
+                  Paths. Be concise and concrete.
                 description: >
                   Full system prompt content. Supports multiline text.
         - if:
@@ -146,6 +154,7 @@ spec:
               collectionName:
                 title: Qdrant collection
                 type: string
+                default: idp-docs
                 description: 'Existing collection to ingest into.'
         # New collection: typed, with a naming pattern so it can't drift from
         # the convention (lowercase, no spaces).
@@ -164,6 +173,7 @@ spec:
                 title: New collection name
                 type: string
                 pattern: '^[a-z0-9][a-z0-9_-]*$'
+                default: idp-docs
                 description: >
                   Lowercase letters, digits, hyphens and underscores only.
                   Example: "idp-docs".
@@ -180,6 +190,7 @@ spec:
               evalSetName:
                 title: Eval-set name
                 type: string
+                default: idp-qna-eval
                 description: >
                   Reused by "Evaluate & Activate Prompt / RAG Version" —
                   pick this same name there instead of retyping questions
@@ -230,7 +241,13 @@ spec:
               - sourcePaths
           - title: 'Eval Set (when Artifact kind = Eval Set)'
             fields:
-              - evalSetName
+              - name: evalSetName
+                # Free-solo combobox of existing eval-set names (GET
+                # /eval-sets): pick one to add a version to, or type a new
+                # name to create a set — avoids the typo class
+                # (idp-qna_eval vs idp-qna-eval) that a plain free-text field
+                # allowed, while still supporting new sets.
+                evalSetNameCombo: true
               - evalSetQuestions
 
   steps:

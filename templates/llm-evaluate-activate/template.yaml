@@ -61,6 +61,7 @@ spec:
               title: "Prompt - a persona's drafted system prompt version"
             - const: rag-index
               title: "RAG Index - a Qdrant collection's drafted index version"
+          default: prompt
           description: >
             Choose which drafted artifact to evaluate and, if it passes,
             activate — or to roll back.
@@ -92,6 +93,7 @@ spec:
               evalSetName:
                 title: Eval set name (optional)
                 type: string
+                default: idp-qna-eval
                 description: >
                   Reuses a named eval-set's latest version instead of the
                   questions typed below — drafted via "Draft Prompt / Ingest
@@ -131,10 +133,12 @@ spec:
               promptName:
                 title: Persona key
                 type: string
+                default: mlops
                 description: The persona drafted in Golden Path #1 (Draft Prompt).
               promptVersion:
                 title: Prompt version
                 type: string
+                default: '1'
                 description: The version number Golden Path #1's output reported.
         - if:
             required: [action, artifactKind]
@@ -151,10 +155,12 @@ spec:
               collectionName:
                 title: Qdrant collection
                 type: string
+                default: idp-docs
                 description: The collection ingested in Golden Path #1 (Ingest RAG Index).
               indexVersion:
                 title: RAG index version
                 type: string
+                default: '1'
                 description: The version number Golden Path #1's output reported.
         # --- rollback: same two fields, no Evaluate Gate involved — the
         # version picked here is reactivated directly.
@@ -173,10 +179,12 @@ spec:
               promptName:
                 title: Persona key
                 type: string
+                default: mlops
                 description: The persona to roll back.
               promptVersion:
                 title: Version to roll back to
                 type: string
+                default: '1'
                 description: >
                   A previously-registered version for this persona —
                   reactivated immediately, no Evaluate Gate re-run.
@@ -195,10 +203,12 @@ spec:
               collectionName:
                 title: Qdrant collection
                 type: string
+                default: idp-docs
                 description: The collection to roll back.
               indexVersion:
                 title: Version to roll back to
                 type: string
+                default: '1'
                 description: >
                   A previously-registered version for this collection —
                   reactivated immediately, no Evaluate Gate re-run.

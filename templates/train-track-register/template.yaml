@@ -76,6 +76,7 @@ spec:
         useCase:
           title: Use case
           type: string
+          default: telco-fraud-detection
           description: Specific problem this model solves — Catalog metadata only.
         repoUrl:
           title: Repository
@@ -415,6 +416,7 @@ spec:
               baseModelUri:
                 title: Base model
                 type: string
+                default: models:/fraud-detection/1
                 description: >
                   Reuses that model's own algorithm — your Algorithm
                   choice above (if any) is ignored while this is on.
@@ -571,6 +573,7 @@ spec:
                     title: 'Transformer fine-tune (NLP — text classification)'
                   - const: cv
                     title: 'CNN fine-tune (ResNet18 — images)'
+                default: mlp
 
         # --- traditional-ml: pick an algorithm within the chosen library ---
         - if:
@@ -654,6 +657,7 @@ spec:
                     GradientBoostingRegressor,
                     SVR,
                   ]
+                default: LinearRegression
         - if:
             required:
               - algorithmFamily
@@ -670,6 +674,7 @@ spec:
             properties:
               algorithm:
                 enum: [KMeans, DBSCAN, AgglomerativeClustering, GaussianMixture]
+                default: KMeans
         - if:
             required:
               - algorithmFamily
@@ -686,6 +691,7 @@ spec:
             properties:
               algorithm:
                 enum: [IsolationForest, LocalOutlierFactor]
+                default: IsolationForest
         - if:
             required:
               - algorithmFamily
@@ -702,6 +708,7 @@ spec:
             properties:
               algorithm:
                 enum: [XGBClassifier]
+                default: XGBClassifier
         - if:
             required:
               - algorithmFamily
@@ -718,6 +725,7 @@ spec:
             properties:
               algorithm:
                 enum: [XGBRegressor]
+                default: XGBRegressor
         - if:
             required:
               - algorithmFamily
@@ -734,6 +742,7 @@ spec:
             properties:
               algorithm:
                 enum: [LGBMClassifier]
+                default: LGBMClassifier
         - if:
             required:
               - algorithmFamily
@@ -750,6 +759,7 @@ spec:
             properties:
               algorithm:
                 enum: [LGBMRegressor]
+                default: LGBMRegressor
         - if:
             required:
               - algorithmFamily
@@ -766,6 +776,7 @@ spec:
             properties:
               algorithm:
                 enum: [CatBoostClassifier]
+                default: CatBoostClassifier
         - if:
             required:
               - algorithmFamily
@@ -782,6 +793,7 @@ spec:
             properties:
               algorithm:
                 enum: [CatBoostRegressor]
+                default: CatBoostRegressor
         # BYOC ("algorithm: custom" + codeRepoUrl/entrypointPath/customConfig)
         # was removed — custom training code now goes through the AI Notebook
         # mode (trainingMode=notebook: provision JupyterHub, write code there,
@@ -825,19 +837,24 @@ spec:
                   # what each entry means, so suppress the redundant label.
                   ui:options:
                     label: false
+                default: [64, 32]
                 description: E.g. [64, 32] — one Linear+ReLU+Dropout block per entry.
               dropout:
                 title: Dropout
                 type: number
+                default: 0.2
               learningRate:
                 title: Learning rate
                 type: number
+                default: 0.001
               epochs:
                 title: Epochs
                 type: integer
+                default: 10
               batchSize:
                 title: Batch size
                 type: integer
+                default: 32
               optimizer:
                 title: Optimizer
                 type: string
@@ -871,22 +888,28 @@ spec:
               sequenceLength:
                 title: Sequence length
                 type: integer
+                default: 10
                 description: Number of past rows in each sliding-window input.
               numLayers:
                 title: LSTM layers
                 type: integer
+                default: 2
               hiddenSize:
                 title: Hidden size
                 type: integer
+                default: 64
               learningRate:
                 title: Learning rate
                 type: number
+                default: 0.001
               epochs:
                 title: Epochs
                 type: integer
+                default: 10
               batchSize:
                 title: Batch size
                 type: integer
+                default: 32
               optimizer:
                 title: Optimizer
                 type: string
@@ -918,12 +941,15 @@ spec:
               learningRate:
                 title: Learning rate
                 type: number
+                default: 0.00002
               epochs:
                 title: Epochs
                 type: integer
+                default: 3
               batchSize:
                 title: Batch size
                 type: integer
+                default: 16
               optimizer:
                 title: Optimizer
                 type: string
@@ -948,12 +974,15 @@ spec:
               learningRate:
                 title: Learning rate
                 type: number
+                default: 0.001
               epochs:
                 title: Epochs
                 type: integer
+                default: 5
               batchSize:
                 title: Batch size
                 type: integer
+                default: 32
               optimizer:
                 title: Optimizer
                 type: string
@@ -1015,6 +1044,7 @@ spec:
               dataSource:
                 title: Data source
                 type: string
+                default: s3
                 description: Where the dataset is stored — pick this before browsing the list below.
               # dataSourcePicker/datasetPicker (ui:options below) populate
               # both from GET /datasets, which merges every
@@ -1025,6 +1055,7 @@ spec:
               datasetUri:
                 title: Dataset name
                 type: string
+                default: file:///mnt/data/classification-telco-fraud-detection/telco-fraud-detection-sample.csv
                 description: >
                   Dataset used for training — a .zip of images for Computer
                   Vision, CSV for everything else.
@@ -1056,6 +1087,7 @@ spec:
               timeColumn:
                 title: Time column
                 type: string
+                default: date
                 description: >
                   Required for lstm — training always uses a chronological
                   split (TimeSeriesSplit) instead of a random one, to avoid
@@ -1085,6 +1117,7 @@ spec:
               timeColumn:
                 title: Time column (optional)
                 type: string
+                default: date
                 description: >
                   Set this for time-ordered data to use a chronological
                   train/test split instead of a random one.
@@ -1105,6 +1138,7 @@ spec:
               textColumn:
                 title: Text column
                 type: string
+                default: text
                 description: Column containing the text to classify.
 
         # --- target column: any architecture except cv, task != clustering/
@@ -1188,6 +1222,7 @@ spec:
               - name: entityIdColumn
                 width: 6
                 columnPicker: single
+                feastEntityMatch: true
               - name: featureNames
                 width: 6
                 featureNamesPicker: true
@@ -1230,6 +1265,7 @@ spec:
               objectiveMetric:
                 title: Objective metric
                 type: string
+                default: accuracy
                 description: Metric to optimize across trials.
               objectiveDirection:
                 title: Objective direction
@@ -1257,6 +1293,7 @@ spec:
             properties:
               objectiveMetric:
                 enum: [accuracy, precision, recall, f1]
+                default: accuracy
         - if:
             properties:
               trainingMode:
@@ -1269,6 +1306,7 @@ spec:
             properties:
               objectiveMetric:
                 enum: [r2, mean_absolute_percentage_error]
+                default: r2
         - if:
             properties:
               trainingMode:
@@ -1281,6 +1319,7 @@ spec:
             properties:
               objectiveMetric:
                 enum: [silhouette_score]
+                default: silhouette_score
         # anomaly_rate is the only metric TASK_TYPE_THRESHOLDS gates on for
         # this taskType (evaluations/gate.py) — precision/recall/f1 also
         # get logged when targetColumn was set, but aren't gated on since
@@ -1303,6 +1342,7 @@ spec:
             properties:
               objectiveMetric:
                 enum: [anomaly_rate]
+                default: anomaly_rate
         # --- objectiveDirection follows the chosen metric automatically
         # (every metric above is "higher is better" except MAPE) — forced
         # via `const`, same mechanism as architecture: {const: sklearn}
@@ -1345,6 +1385,7 @@ spec:
               numTrials:
                 title: Number of trials
                 type: integer
+                default: 10
                 description: Ignored by "grid" — trial count there is the full grid size.
         - if:
             properties:
@@ -1360,12 +1401,14 @@ spec:
               entityIdColumn:
                 title: Entity id column
                 type: string
+                default: transaction_id
                 description: Row identifier for the Feast lookup — pick the dataset column it's stored in.
               featureNames:
                 title: Feature names
                 type: array
                 items:
                   type: string
+                default: []
                 description: Pick from the features this Feast store actually has.
 
   steps:

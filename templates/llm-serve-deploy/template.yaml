@@ -32,14 +32,17 @@ spec:
         modelName:
           title: Model name
           type: string
+          default: llama-3-8b-instruct
           description: E.g. "llama-3-8b-instruct"
         huggingFaceModelId:
           title: HuggingFace Hub model id
           type: string
+          default: meta-llama/Llama-3.1-8B-Instruct
           description: E.g. "meta-llama/Llama-3.1-8B-Instruct"
         hfTokenSecretRef:
           title: HF token Secret name
           type: string
+          default: hf-token
           description: >
             K8s Secret NAME holding the HuggingFace token — never the token
             itself. Required server-side when the model above is gated
@@ -115,6 +118,7 @@ spec:
         draftModelId:
           title: Draft model ID (for speculative decoding)
           type: string
+          default: meta-llama/Llama-3.2-1B-Instruct
           description: >
             HuggingFace model ID of the draft model when speculativeDecoding=draft-model.
             Roadmap — not supported in MVP.
@@ -161,8 +165,16 @@ spec:
               - name: huggingFaceModelId
                 width: 6
                 huggingFaceModelValidator: true
+                # Autocomplete of real HF ids (free-solo), so a typo'd id is
+                # rare; picking one auto-fills modelName (org stripped,
+                # lowercased), which the Dev can still edit.
+                huggingFaceModelPicker: true
+                autoFillModelName: true
               - name: hfTokenSecretRef
                 width: 6
+                # Dropdown of real K8s Secret names (GET /secrets) — a typo'd
+                # name leaves the pod stuck pulling a gated model.
+                secretPicker: true
               - name: runtime
                 width: 6
           - title: Compute
@@ -186,12 +198,18 @@ spec:
                 width: 6
               - name: enablePrefixCaching
                 width: 6
+              # Roadmap — not wired server-side yet, so these are shown
+              # disabled rather than letting a Dev pick a value that fails at
+              # prepare time.
               - name: speculativeDecoding
                 width: 6
+                disabled: true
               - name: draftModelId
                 width: 6
+                disabled: true
               - name: pipelineParallelSize
                 width: 6
+                disabled: true
 
     - title: Strategy & Release
       properties:
@@ -210,6 +228,7 @@ spec:
         trafficPercent:
           title: Traffic percent
           type: integer
+          default: 10
           description: Required unless deployStrategy is Direct.
         environment:
           title: Environment
@@ -278,6 +297,7 @@ spec:
         repoUrl:
           title: Repository
           type: string
+          default: github.com?owner=cuongct924&repo=backstage-plugins
           description: >
             Target GitOps repo for the deploy manifest PR — required when
             releaseStrategy is pr-gated, in the format

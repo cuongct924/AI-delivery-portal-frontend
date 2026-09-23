@@ -21,24 +21,16 @@ spec:
         action:
           title: Action
           type: string
-          enum:
-            [
-              deploy,
-              rollback,
-              promote,
-              promote-confirm,
-              promote-rollback,
-              promote-rollback-confirm,
-            ]
+          enum: [deploy, rollback, promote, promote-confirm]
           default: deploy
           # Rendered as a row of cards (StepLayoutField's actionPicker),
           # each with its own one-line caption — this text is a fallback
           # for anything reading the raw schema, not what a Dev sees.
-          # promote/promote-rollback only ever render a ProjectReleaseBinding
-          # manifest and open a PR — they write nothing to the cluster.
-          # promote-confirm/promote-rollback-confirm are a *second*,
-          # separate run of this same template (after that PR is reviewed
-          # and merged) that actually applies it — see adapters/delivery/
+          # promote only ever renders a ProjectReleaseBinding manifest and
+          # opens a PR — it writes nothing to the cluster.
+          # promote-confirm is a *second*, separate run of this same
+          # template (after that PR is reviewed and merged) that actually
+          # applies it — see adapters/delivery/
           # openchoreo_promotion_adapter.py's module docstring in the
           # backend repo for why staging/prod promotion is PR-gated this
           # way.
@@ -46,6 +38,7 @@ spec:
         modelName:
           title: Model name
           type: string
+          default: fraud-detection
           description: Pick a model registered via Train → Track → Register.
         # deploySummary is declared here (not just inside the Summary
         # group's ui:options entry) because renderField/isRenderable both
@@ -81,6 +74,7 @@ spec:
               modelVersion:
                 title: Version
                 type: string
+                default: '1'
                 description: >
                   Registered versions for this model. For rollback, the
                   version to roll back *to*.
@@ -108,6 +102,7 @@ spec:
                 title: Promote to
                 type: string
                 enum: [staging, production]
+                default: staging
                 description: >
                   staging ← development, production ← staging. Fails
                   clearly if the source has nothing bound yet. Renders the
@@ -118,27 +113,7 @@ spec:
             required: [action]
             properties:
               action:
-                const: promote-rollback
-          then:
-            required:
-              - rollbackEnvironment
-              - repoUrl
-            properties:
-              rollbackEnvironment:
-                title: Roll back which environment
-                type: string
-                enum: [staging, production]
-                description: >
-                  Moves this environment back to its release before the
-                  last promote. Fails clearly if there's nothing to undo.
-                  Renders the manifest and opens a PR — run this template
-                  again with **promote-rollback-confirm** after merging it
-                  to actually apply it.
-        - if:
-            required: [action]
-            properties:
-              action:
-                enum: [promote-confirm, promote-rollback-confirm]
+                const: promote-confirm
           then:
             required:
               - confirmEnvironment
@@ -148,15 +123,17 @@ spec:
                 title: Environment to apply
                 type: string
                 enum: [staging, production]
+                default: staging
                 description: >
                   The environment named in the PR you just merged.
               confirmProjectRelease:
                 title: Project release
                 type: string
+                default: fraud-detection-development
                 description: >
-                  The `projectRelease` value shown when you ran
-                  promote/promote-rollback (also visible in the merged
-                  PR's projectreleasebinding-<environment>.yaml file).
+                  The `projectRelease` value shown when you ran promote
+                  (also visible in the merged PR's
+                  projectreleasebinding-<environment>.yaml file).
         - if:
             required: [action]
             properties:
@@ -199,6 +176,7 @@ spec:
                       title: Traffic percent
                       type: integer
                       enum: [0, 100]
+                      default: 100
                       description: 0 = staged dark, 100 = cutover now.
               - if:
                   required: [deployStrategy]
@@ -229,6 +207,7 @@ spec:
                     repoUrl:
                       title: Repository
                       type: string
+                      default: github.com?owner=cuongct924&repo=backstage-plugins
                       description: 'PR target repo: github.com?owner=<org>&repo=<repo>.'
       ui:field: StepLayout
       ui:options:
@@ -264,8 +243,6 @@ spec:
             fields:
               - name: targetEnvironment
                 promotionPreview: true
-              - name: rollbackEnvironment
-                rollbackPreview: true
               - confirmEnvironment
               - confirmProjectRelease
           - title: Monitoring
@@ -407,39 +384,13 @@ spec:
         sourcePath: infra
         targetPath: infra
 
-    - id: promote-rollback
-      name: 'Render the rollback manifest'
-      action: orchestration:rollback-promotion
-      if: ${{ parameters.action === 'promote-rollback' }}
-      input:
-        modelName: ${{ parameters.modelName }}
-        environment: ${{ parameters.rollbackEnvironment }}
-
-    - id: publish-promote-rollback-pr
-      name: 'Open the rollback PR'
-      action: publish:github:pull-request
-      if: ${{ parameters.action === 'promote-rollback' }}
-      input:
-        repoUrl: ${{ parameters.repoUrl }}
-        branchName: promote-rollback-${{ parameters.modelName }}-${{ parameters.rollbackEnvironment }}
-        title: "Roll back ${{ parameters.modelName }}'s promotion in ${{ parameters.rollbackEnvironment }}"
-        description: >
-          Rolls back **${{ parameters.modelName }}**'s promotion in
-          **${{ parameters.rollbackEnvironment }}**
-          (projectRelease=${{ steps['promote-rollback'].output.projectRelease }}).
-          Review and merge this before running
-          **promote-rollback-confirm** — that separate, later run is what
-          actually applies it.
-        sourcePath: infra
-        targetPath: infra
-
     - id: confirm-promote
       name: 'Apply the merged promotion'
       action: orchestration:confirm-promotion
       # The only real path that reaches
       # OpenChoreoPromotionAdapter.confirm_promotion() — running this
       # template yourself, as a separate step after reviewing/merging the
-      # PR promote/promote-rollback opened, *is* the manual-approval gate.
+      # PR promote opened, *is* the manual-approval gate.
       # See that adapter's module docstring.
       if: ${{ parameters.action === 'promote-confirm' }}
       input:
@@ -447,16 +398,6 @@ spec:
         environment: ${{ parameters.confirmEnvironment }}
         projectRelease: ${{ parameters.confirmProjectRelease }}
         eventType: deploy
-
-    - id: confirm-promote-rollback
-      name: 'Apply the merged rollback'
-      action: orchestration:confirm-promotion
-      if: ${{ parameters.action === 'promote-rollback-confirm' }}
-      input:
-        modelName: ${{ parameters.modelName }}
-        environment: ${{ parameters.confirmEnvironment }}
-        projectRelease: ${{ parameters.confirmProjectRelease }}
-        eventType: rollback
 
   output:
     text:
@@ -488,21 +429,6 @@ spec:
           with **promote** and **production** selected when you're ready
           to promote it the rest of the way.
           {% endif %}
-          {% elif parameters.action === 'promote-rollback' %}
-          Rollback PR opened: ${{ steps['publish-promote-rollback-pr'].output.remoteUrl }}
-
-          **Nothing has been applied to the cluster yet.** Review and
-          merge that PR, then run this template again with
-          **promote-rollback-confirm**, environment=**${{ parameters.rollbackEnvironment }}**,
-          and projectRelease=**${{ steps['promote-rollback'].output.projectRelease }}**
-          to actually roll it back.
-          {% elif parameters.action === 'promote-rollback-confirm' %}
-          Applied — **${{ parameters.modelName }}**'s promotion in
-          **${{ parameters.confirmEnvironment }}** is now rolled back to
-          **${{ parameters.confirmProjectRelease }}**.
-
-          Release bound per environment:
-          `${{ steps['confirm-promote-rollback'].output.environments }}`
           {% else %}
           Evaluate Gate passed for **${{ parameters.modelName }}** version
           **${{ parameters.modelVersion }}**

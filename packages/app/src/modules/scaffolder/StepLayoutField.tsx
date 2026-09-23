@@ -28,7 +28,6 @@ import FlashOnIcon from '@material-ui/icons/FlashOn';
 import ShowChartIcon from '@material-ui/icons/ShowChart';
 import TrendingUpIcon from '@material-ui/icons/TrendingUp';
 import UndoIcon from '@material-ui/icons/Undo';
-import RestoreIcon from '@material-ui/icons/Restore';
 import CheckCircleIcon from '@material-ui/icons/CheckCircle';
 import CancelIcon from '@material-ui/icons/Cancel';
 import {
@@ -46,6 +45,31 @@ import { NEUTRAL, STATUS } from '../theme/colors';
 interface GroupField {
   name: string;
   width?: GridSize;
+  /**
+   * Render the field disabled (greyed, not editable) — for roadmap fields
+   * that exist in the schema but aren't wired server-side yet, so a Dev
+   * can't pick a value that will fail at prepare time.
+   */
+  disabled?: boolean;
+  /**
+   * When this field changes, derive `modelName` from it (strip the org,
+   * lowercase) so a Dev picking a HuggingFace model id doesn't retype the
+   * name. The Dev can still edit modelName afterwards.
+   */
+  autoFillModelName?: boolean;
+  /**
+   * Autocomplete of real HuggingFace model ids (GET /llm-deploy/search-models)
+   * instead of a free-text field — a Dev picks a real id instead of typing a
+   * typo-prone one. Free-solo, so an id the search doesn't surface can still
+   * be typed. Falls back to the plain field while loading/empty.
+   */
+  huggingFaceModelPicker?: boolean;
+  /**
+   * Dropdown of K8s Secret names in the namespace (GET /secrets) instead of a
+   * free-text field — a typo'd Secret name leaves the pod stuck pulling a
+   * gated model. Falls back to the plain field while loading/empty.
+   */
+  secretPicker?: boolean;
   /**
    * Picker of the chosen dataset's own CSV header (GET /datasets/columns)
    * instead of a free-text/array input — 'single' for one column (e.g.
@@ -96,6 +120,13 @@ interface GroupField {
   lockedDisplay?: boolean;
   /** Multi-select of real `<feature_view>:<feature>` references (GET /features) instead of a free-text array — reuses ColumnPickerField's 'multi' mode against whatever the Feast repo actually has. Falls back to the plain field while loading/empty (e.g. Feast repo not `feast apply`-ed yet), same convention as datasetPicker/baseModelPicker. */
   featureNamesPicker?: boolean;
+  /**
+   * Live POST /datasets/feast-entity-match panel below this field — warns
+   * when the chosen entity column shares no values with the Feast store, so
+   * the enrichment would "succeed" with every feature silently NaN. Meant
+   * for the Feature Enrichment panel's `entityIdColumn` field.
+   */
+  feastEntityMatch?: boolean;
   /** Per-hyperparameter Range/Choices table (SearchSpaceBuilderField) instead of a hand-typed JSON string — reads `architecture` from formData to know which DL hyperparameters apply (mlp vs lstm). */
   searchSpaceBuilder?: boolean;
   /**
@@ -169,14 +200,6 @@ interface GroupField {
    */
   promotionPreview?: boolean;
   /**
-   * Same live GET /models/{name}/promotion-status table as
-   * `promotionPreview`, without the "will move X into Y" sentence — meant
-   * for the action=promote-rollback branch's `rollbackEnvironment` field.
-   * See PromotionPreviewPanel's `mode` prop doc comment for why that
-   * sentence doesn't apply to a rollback.
-   */
-  rollbackPreview?: boolean;
-  /**
    * Replaces this field's own (never-edited) value with a computed,
    * one-sentence plain-language recap of the step's other fields (see
    * DeploySummaryPanel) — meant for a dedicated read-only property placed
@@ -242,6 +265,17 @@ interface GroupField {
    * empty, or when nothing has been drafted yet.
    */
   evalSetNamePicker?: boolean;
+  /**
+   * Free-solo combobox of registered eval-set names (GET /eval-sets) — Draft
+   * Eval Set's `evalSetName`, where the Dev either picks an existing set to
+   * add a version to or types a brand-new name to create one. Unlike
+   * evalSetNamePicker (a strict select, right for Evaluate & Activate where
+   * the set must already exist), this still allows a value that isn't in the
+   * list yet — so a typo like `idp-qna_eval` can't silently spawn a junk set
+   * instead of versioning `idp-qna-eval`. Renders even while the list is
+   * empty/loading, since typing a new name is always valid.
+   */
+  evalSetNameCombo?: boolean;
   /**
    * Live GET /llm-deploy/validate-model lookup below this field — the
    * frontend half of llm-serve-deploy's gated-model guardrail: surfaces whether
@@ -328,6 +362,12 @@ function isSubpanel(entry: GroupEntry): entry is { subpanel: SubPanel } {
 
 function normalizeField(field: string | GroupField): GroupField {
   return typeof field === 'string' ? { name: field } : field;
+}
+
+/** "meta-llama/Llama-3.1-8B-Instruct" -> "llama-3.1-8b-instruct". */
+function deriveModelName(hfModelId: string): string {
+  const last = hfModelId.split('/').pop() ?? hfModelId;
+  return last.toLowerCase();
 }
 
 /** Mirrors renderField's own skip rules (missing / const-only) so a group's visibility check never disagrees with what it actually renders. */
@@ -592,20 +632,30 @@ interface RegisteredModel {
   version: string;
 }
 
+interface ModelsState {
+  models: RegisteredModel[];
+  loading: boolean;
+}
+
 /**
  * Fetches registered models (GET /models — name + latest version) once on
- * mount, for the "Continue training from an existing model" picker.
- * Returns `[]` (never throws) while loading or on failure, same fail-open
+ * mount, for the "Continue training from an existing model" picker and the
+ * modelNamePicker dropdown. Returns `{models: [], loading: false}` (never
+ * throws) on failure, `loading: true` while in flight, same fail-open
  * contract as useDatasets above.
  */
-function useModels(): RegisteredModel[] {
+function useModels(): ModelsState {
   const discoveryApi = useApi(discoveryApiRef);
   const { fetch } = useApi(fetchApiRef);
   const getAuthHeaders = useOpenChoreoAuthHeaders();
-  const [models, setModels] = useState<RegisteredModel[]>([]);
+  const [state, setState] = useState<ModelsState>({
+    models: [],
+    loading: true,
+  });
 
   useEffect(() => {
     let cancelled = false;
+    setState({ models: [], loading: true });
     Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
       .then(([proxyUrl, headers]) =>
         fetch(`${proxyUrl}/orchestration-api/models`, { headers }),
@@ -622,18 +672,21 @@ function useModels(): RegisteredModel[] {
             Array.isArray(body) || !body || typeof body !== 'object'
               ? body
               : (body as { models?: unknown }).models;
-          setModels(Array.isArray(list) ? (list as RegisteredModel[]) : []);
+          setState({
+            models: Array.isArray(list) ? (list as RegisteredModel[]) : [],
+            loading: false,
+          });
         }
       })
       .catch(() => {
-        if (!cancelled) setModels([]);
+        if (!cancelled) setState({ models: [], loading: false });
       });
     return () => {
       cancelled = true;
     };
   }, [discoveryApi, fetch, getAuthHeaders]);
 
-  return models;
+  return state;
 }
 
 /**
@@ -673,26 +726,36 @@ function useAvailableFeatures(): string[] {
   return features;
 }
 
+interface ModelVersionsState {
+  versions: string[];
+  loading: boolean;
+}
+
 /**
  * Fetches every ACTUALLY REGISTERED version of `modelName` (GET
  * /models/{name}/versions), newest first — for the Evaluate & Deploy Model
  * template's `modelVersionPicker` field, so the version dropdown can never
  * offer a version that doesn't exist. Re-fetches whenever `modelName`
- * changes; returns `[]` (never throws) while `modelName` is empty,
- * mid-fetch, or on failure, same fail-open contract as useModels above.
+ * changes; returns `{versions: [], loading: false}` (never throws) while
+ * `modelName` is empty or on failure, `loading: true` mid-fetch, same
+ * fail-open contract as useModels above.
  */
-function useModelVersions(modelName: unknown): string[] {
+function useModelVersions(modelName: unknown): ModelVersionsState {
   const discoveryApi = useApi(discoveryApiRef);
   const { fetch } = useApi(fetchApiRef);
   const getAuthHeaders = useOpenChoreoAuthHeaders();
-  const [versions, setVersions] = useState<string[]>([]);
+  const [state, setState] = useState<ModelVersionsState>({
+    versions: [],
+    loading: false,
+  });
 
   useEffect(() => {
     if (typeof modelName !== 'string' || !modelName) {
-      setVersions([]);
+      setState({ versions: [], loading: false });
       return undefined;
     }
     let cancelled = false;
+    setState({ versions: [], loading: true });
     Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
       .then(([proxyUrl, headers]) =>
         fetch(
@@ -709,17 +772,19 @@ function useModelVersions(modelName: unknown): string[] {
         return res.json();
       })
       .then((body: unknown) => {
-        if (!cancelled) setVersions(toStringList(body));
+        if (!cancelled) {
+          setState({ versions: toStringList(body), loading: false });
+        }
       })
       .catch(() => {
-        if (!cancelled) setVersions([]);
+        if (!cancelled) setState({ versions: [], loading: false });
       });
     return () => {
       cancelled = true;
     };
   }, [discoveryApi, fetch, modelName, getAuthHeaders]);
 
-  return versions;
+  return state;
 }
 
 /**
@@ -779,6 +844,11 @@ function useLlmModels(): string[] {
 /** Registered eval-set names (GET /eval-sets) — see the evalSetNamePicker GroupField flag's own doc comment. */
 function useEvalSets(): string[] {
   return useNameList('/eval-sets');
+}
+
+/** K8s Secret names in the namespace (GET /secrets) — see the secretPicker GroupField flag's own doc comment. */
+function useSecretNames(): string[] {
+  return useNameList('/secrets');
 }
 
 interface HuggingFaceModelInfo {
@@ -896,6 +966,40 @@ function useHuggingFaceModelInfo(modelId: unknown): HuggingFaceModelInfoState {
   }, [discoveryApi, fetch, modelId, getAuthHeaders]);
 
   return state;
+}
+
+/** Debounced GET /llm-deploy/search-models for the HF model id autocomplete. */
+function useHuggingFaceSearch(query: string): string[] {
+  const discoveryApi = useApi(discoveryApiRef);
+  const { fetch } = useApi(fetchApiRef);
+  const getAuthHeaders = useOpenChoreoAuthHeaders();
+  const [ids, setIds] = useState<string[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
+        .then(([proxyUrl, headers]) =>
+          fetch(
+            `${proxyUrl}/orchestration-api/llm-deploy/search-models?q=${encodeURIComponent(
+              query,
+            )}`,
+            { headers },
+          ),
+        )
+        .then(res => (res.ok ? res.json() : { model_ids: [] }))
+        .then((body: { model_ids?: string[] }) => {
+          if (!cancelled) setIds(body.model_ids ?? []);
+        })
+        .catch(() => {
+          if (!cancelled) setIds([]);
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [discoveryApi, fetch, getAuthHeaders, query]);
+  return ids;
 }
 
 interface GpuRecommendation {
@@ -1550,6 +1654,138 @@ function DatasetValidationPanel({
   );
 }
 
+interface FeastEntityMatch {
+  matched: number;
+  total: number;
+  sample_unmatched: string[];
+}
+
+/**
+ * Live POST /datasets/feast-entity-match — how many of the chosen entity
+ * column's values the Feast store actually knows. Debounced 500ms like
+ * useDatasetValidation. Returns null while inputs are incomplete, in flight,
+ * or on failure (fail-open, same as every other live panel here).
+ */
+function useFeastEntityMatch(
+  datasetUri: unknown,
+  entityIdColumn: unknown,
+  source?: unknown,
+): FeastEntityMatch | null {
+  const discoveryApi = useApi(discoveryApiRef);
+  const { fetch } = useApi(fetchApiRef);
+  const getAuthHeaders = useOpenChoreoAuthHeaders();
+  const [match, setMatch] = useState<FeastEntityMatch | null>(null);
+
+  useEffect(() => {
+    if (
+      typeof datasetUri !== 'string' ||
+      !datasetUri ||
+      typeof entityIdColumn !== 'string' ||
+      !entityIdColumn
+    ) {
+      setMatch(null);
+      return undefined;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
+        .then(([proxyUrl, headers]) =>
+          fetch(`${proxyUrl}/orchestration-api/datasets/feast-entity-match`, {
+            method: 'POST',
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              dataset_uri: datasetUri,
+              entity_id_column: entityIdColumn,
+              source: typeof source === 'string' && source ? source : undefined,
+            }),
+          }),
+        )
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json();
+        })
+        .then((body: unknown) => {
+          if (!cancelled) {
+            const obj = (body ?? {}) as Partial<FeastEntityMatch>;
+            setMatch({
+              matched: typeof obj.matched === 'number' ? obj.matched : 0,
+              total: typeof obj.total === 'number' ? obj.total : 0,
+              sample_unmatched: Array.isArray(obj.sample_unmatched)
+                ? obj.sample_unmatched.map(String)
+                : [],
+            });
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setMatch(null);
+        });
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [discoveryApi, fetch, datasetUri, entityIdColumn, source, getAuthHeaders]);
+
+  return match;
+}
+
+/**
+ * Warns when the chosen entity column shares no values with the Feast store —
+ * the enrichment would still "succeed" but every feature would be NaN, which
+ * is easy to miss. Renders nothing when everything matches.
+ */
+function FeastEntityMatchPanel({
+  datasetUri,
+  entityIdColumn,
+  source,
+}: {
+  datasetUri: unknown;
+  entityIdColumn: unknown;
+  source?: unknown;
+}): JSX.Element | null {
+  const match = useFeastEntityMatch(datasetUri, entityIdColumn, source);
+  if (!match || match.total === 0) return null;
+  if (match.matched === match.total) {
+    return (
+      <Box display="flex" alignItems="center" style={{ gap: 6 }}>
+        <CheckCircleIcon style={{ fontSize: 16, color: STATUS.success }} />
+        <Typography variant="caption" style={{ color: NEUTRAL.textSecondary }}>
+          All {match.total} entity ids match the Feature Store.
+        </Typography>
+      </Box>
+    );
+  }
+  const allUnmatched = match.matched === 0;
+  const color = allUnmatched ? STATUS.error : STATUS.warning;
+  return (
+    <Box
+      style={{
+        border: `1px solid ${color}`,
+        borderRadius: 4,
+        padding: 8,
+      }}
+    >
+      <Box display="flex" alignItems="center" style={{ gap: 6 }}>
+        <CancelIcon style={{ fontSize: 16, color }} />
+        <Typography variant="body2" style={{ fontWeight: 600 }}>
+          {allUnmatched
+            ? 'No entity ids match the Feature Store'
+            : `${match.total - match.matched} of ${
+                match.total
+              } entity ids don't match the Feature Store`}
+        </Typography>
+      </Box>
+      <Typography variant="caption" style={{ color: NEUTRAL.textSecondary }}>
+        {allUnmatched
+          ? 'Every feature will come back empty — pick a dataset/column whose values the Feature Store knows, or the enrichment is a no-op.'
+          : `Unmatched rows get empty features, e.g. ${match.sample_unmatched.join(
+              ', ',
+            )}.`}
+      </Typography>
+    </Box>
+  );
+}
+
 interface DatasetPickerFieldProps {
   name: string;
   title: string;
@@ -1717,7 +1953,7 @@ interface ActionOption {
   Icon: typeof FlashOnIcon;
 }
 
-/** Evaluate & Deploy Model's own 6 `action` values — see the GroupField.actionPicker doc comment for why these are hardcoded here rather than read from the field's schema. */
+/** Evaluate & Deploy Model's own 4 `action` values — see the GroupField.actionPicker doc comment for why these are hardcoded here rather than read from the field's schema. */
 const ACTION_OPTIONS: ActionOption[] = [
   {
     value: 'deploy',
@@ -1741,18 +1977,6 @@ const ACTION_OPTIONS: ActionOption[] = [
     value: 'promote-confirm',
     label: 'Promote — confirm',
     caption: 'Apply a promotion PR once it is merged',
-    Icon: CheckCircleIcon,
-  },
-  {
-    value: 'promote-rollback',
-    label: 'Promote rollback',
-    caption: 'Open a PR to undo the last promotion (staging/prod)',
-    Icon: RestoreIcon,
-  },
-  {
-    value: 'promote-rollback-confirm',
-    label: 'Promote rollback — confirm',
-    caption: 'Apply a rollback PR once it is merged',
     Icon: CheckCircleIcon,
   },
 ];
@@ -1835,6 +2059,8 @@ interface ModelNamePickerFieldProps {
   description?: string;
   required: boolean;
   modelNames: string[];
+  /** True while GET /models is in flight — shows a spinner + "Loading models…" instead of an empty dropdown. */
+  loading?: boolean;
   value: unknown;
   onChange: (value: unknown) => void;
 }
@@ -1846,10 +2072,33 @@ function ModelNamePickerField({
   description,
   required,
   modelNames,
+  loading,
   value,
   onChange,
 }: ModelNamePickerFieldProps): JSX.Element {
   const selected = typeof value === 'string' ? value : '';
+  if (loading) {
+    return (
+      <TextField
+        select
+        fullWidth
+        variant="outlined"
+        label={`${title}${required ? '*' : ''}`}
+        helperText={description}
+        value=""
+        disabled
+        name={name}
+        SelectProps={{ displayEmpty: true }}
+        InputProps={{
+          startAdornment: (
+            <CircularProgress size={16} style={{ marginRight: 8 }} />
+          ),
+        }}
+      >
+        <MenuItem value="">Loading models…</MenuItem>
+      </TextField>
+    );
+  }
   return (
     <TextField
       select
@@ -1876,6 +2125,8 @@ interface ModelVersionPickerFieldProps {
   description?: string;
   required: boolean;
   versions: string[];
+  /** True while GET /models/{name}/versions is in flight — shows a spinner + "Loading versions…" instead of an empty dropdown. */
+  loading?: boolean;
   value: unknown;
   onChange: (value: unknown) => void;
 }
@@ -1887,10 +2138,33 @@ function ModelVersionPickerField({
   description,
   required,
   versions,
+  loading,
   value,
   onChange,
 }: ModelVersionPickerFieldProps): JSX.Element {
   const selected = typeof value === 'string' ? value : '';
+  if (loading) {
+    return (
+      <TextField
+        select
+        fullWidth
+        variant="outlined"
+        label={`${title}${required ? '*' : ''}`}
+        helperText={description}
+        value=""
+        disabled
+        name={name}
+        SelectProps={{ displayEmpty: true }}
+        InputProps={{
+          startAdornment: (
+            <CircularProgress size={16} style={{ marginRight: 8 }} />
+          ),
+        }}
+      >
+        <MenuItem value="">Loading versions…</MenuItem>
+      </TextField>
+    );
+  }
   return (
     <TextField
       select
@@ -1985,9 +2259,10 @@ interface ComboPickerFieldProps {
  * Free-solo combobox of a fetched string list — like OptionPickerField, but
  * the Dev can also type a value that isn't in the list yet. Used where the
  * field both reuses an existing name and can introduce a new one (Draft
- * Prompt's `promptName`: pick an existing persona to add a version to, or
- * type a new persona key to create one). OptionPickerField stays a strict
- * select for fields whose value must already exist.
+ * Prompt's `promptName`, Draft Eval Set's `evalSetName`: pick an existing
+ * one to add a version to, or type a new name to create one).
+ * OptionPickerField stays a strict select for fields whose value must already
+ * exist.
  */
 function ComboPickerField({
   name,
@@ -1999,6 +2274,44 @@ function ComboPickerField({
   onChange,
 }: ComboPickerFieldProps): JSX.Element {
   const selected = typeof value === 'string' ? value : '';
+  return (
+    <Autocomplete
+      freeSolo
+      fullWidth
+      options={options}
+      inputValue={selected}
+      onInputChange={(_event, next) => onChange(next)}
+      renderInput={params => (
+        <TextField
+          {...params}
+          variant="outlined"
+          label={`${title}${required ? '*' : ''}`}
+          helperText={description}
+          name={name}
+        />
+      )}
+    />
+  );
+}
+
+/** Free-solo autocomplete of real HF model ids — see huggingFaceModelPicker. */
+function HuggingFaceModelPickerField({
+  name,
+  title,
+  description,
+  required,
+  value,
+  onChange,
+}: {
+  name: string;
+  title: string;
+  description?: string;
+  required: boolean;
+  value: unknown;
+  onChange: (value: string) => void;
+}): JSX.Element {
+  const selected = typeof value === 'string' ? value : '';
+  const options = useHuggingFaceSearch(selected);
   return (
     <Autocomplete
       freeSolo
@@ -2799,29 +3112,15 @@ function usePromotionStatus(modelName: unknown): PromotionStatusState {
 function PromotionPreviewPanel({
   modelName,
   targetEnvironment,
-  mode = 'promote',
 }: {
   modelName: unknown;
   targetEnvironment: unknown;
-  /** 'rollback' skips the "will move X into Y" sentence below the table —
-   * that framing (source environment -> target) only describes what
-   * promote does. A rollback swaps `targetEnvironment` back to whatever
-   * was there before, which this table's per-environment values don't
-   * predict (the "previous" pointer isn't exposed by GET
-   * /models/{name}/promotion-status — see
-   * adapters/openchoreo_promotion_adapter.py's annotation-based undo).
-   * The table itself (what's bound right now) is still useful context
-   * for deciding which environment to roll back. */
-  mode?: 'promote' | 'rollback';
 }): JSX.Element | null {
   const state = usePromotionStatus(modelName);
   if (state.status !== 'found') return null;
   if (typeof targetEnvironment !== 'string' || !targetEnvironment) return null;
 
-  const sourceEnvironment =
-    mode === 'promote'
-      ? PROMOTION_SOURCE_ENVIRONMENT[targetEnvironment]
-      : undefined;
+  const sourceEnvironment = PROMOTION_SOURCE_ENVIRONMENT[targetEnvironment];
   const sourceRelease = sourceEnvironment
     ? state.data.environments[sourceEnvironment]
     : undefined;
@@ -2896,10 +3195,10 @@ const DEPLOY_STRATEGY_LABELS: Record<string, string> = {
  * template-string DSL — same "specific beats a speculative abstraction"
  * call as ModelVersionCheckPanel's own hardcoded `data.modelName`
  * reference above; nothing else in this template needs a computed
- * summary yet. `action` picks which of the 3 sentence shapes to render —
- * rollback and promote don't touch deployStrategy/releaseStrategy at all,
- * so reusing the deploy sentence for them would be actively wrong, not
- * just imprecise.
+ * summary yet. `action` picks which sentence shape to render — rollback
+ * and promote don't touch deployStrategy/releaseStrategy at all, so reusing
+ * the deploy sentence for them would be actively wrong, not just
+ * imprecise.
  */
 function DeploySummaryPanel({
   data,
@@ -2935,21 +3234,7 @@ function DeploySummaryPanel({
         to <strong>{targetEnvironment}</strong>.
       </>
     );
-  } else if (action === 'promote-rollback') {
-    const rollbackEnvironment =
-      typeof data.rollbackEnvironment === 'string' && data.rollbackEnvironment
-        ? data.rollbackEnvironment
-        : '(environment not chosen yet)';
-    sentence = (
-      <>
-        Will undo the last promotion to <strong>{rollbackEnvironment}</strong>{' '}
-        for <strong>{modelName}</strong>, one step back.
-      </>
-    );
-  } else if (
-    action === 'promote-confirm' ||
-    action === 'promote-rollback-confirm'
-  ) {
+  } else if (action === 'promote-confirm') {
     const confirmEnvironment =
       typeof data.confirmEnvironment === 'string' && data.confirmEnvironment
         ? data.confirmEnvironment
@@ -2964,7 +3249,7 @@ function DeploySummaryPanel({
         Will bind <strong>{modelName}</strong> to{' '}
         <strong>{confirmProjectRelease}</strong> in{' '}
         <strong>{confirmEnvironment}</strong> — only run this after merging the
-        PR a prior promote/promote-rollback run opened.
+        PR a prior promote run opened.
       </>
     );
   } else {
@@ -3462,9 +3747,10 @@ function StepLayout(
     selectedDatasetSource,
   );
   const dataSources = groupDatasetsBySource(datasets).map(([source]) => source);
-  const models = useModels();
+  const { models, loading: modelsLoading } = useModels();
   const availableFeatures = useAvailableFeatures();
-  const modelVersions = useModelVersions(data.modelName);
+  const { versions: modelVersions, loading: modelVersionsLoading } =
+    useModelVersions(data.modelName);
   const modelSummary = useModelVersionCheck(data.modelName, data.modelVersion);
   const promptNames = usePrompts();
   const promptVersions = usePromptVersions(data.promptName);
@@ -3472,6 +3758,7 @@ function StepLayout(
   const ragIndexVersions = useRagIndexVersions(data.collectionName);
   const llmModels = useLlmModels();
   const evalSets = useEvalSets();
+  const secretNames = useSecretNames();
 
   // Three kinds of stale formData this step's own branching
   // (modelCategory/algorithmFamily/architecture) can produce, none of
@@ -3649,6 +3936,7 @@ function StepLayout(
     baseModelPicker?: boolean,
     lockedDisplay?: boolean,
     featureNamesPicker?: boolean,
+    feastEntityMatch?: boolean,
     searchSpaceBuilder?: boolean,
     modelNamePicker?: boolean,
     modelVersionPicker?: boolean,
@@ -3656,7 +3944,6 @@ function StepLayout(
     summaryField?: boolean,
     versionComparison?: boolean,
     promotionPreview?: boolean,
-    rollbackPreview?: boolean,
     actionPicker?: boolean,
     promptNamePicker?: boolean,
     promptNameCombo?: boolean,
@@ -3665,9 +3952,14 @@ function StepLayout(
     ragIndexVersionPicker?: boolean,
     llmModelPicker?: boolean,
     evalSetNamePicker?: boolean,
+    evalSetNameCombo?: boolean,
+    secretPicker?: boolean,
     huggingFaceModelValidator?: boolean,
+    huggingFaceModelPicker?: boolean,
     gpuRecommendationPanel?: boolean,
     rolloutEligibilityGate?: boolean,
+    disabled?: boolean,
+    autoFillModelName?: boolean,
   ) => {
     const fieldSchema = properties[name];
     if (!fieldSchema) return null;
@@ -3754,7 +4046,7 @@ function StepLayout(
         </Grid>
       );
     }
-    if (modelNamePicker && models.length > 0) {
+    if (modelNamePicker && (modelsLoading || models.length > 0)) {
       const modelNames = Array.from(new Set(models.map(m => m.name)));
       return (
         <Grid item xs={12} md={width} key={name}>
@@ -3770,6 +4062,7 @@ function StepLayout(
             }
             required={requiredFields.has(name)}
             modelNames={modelNames}
+            loading={modelsLoading}
             value={data[name]}
             onChange={value => onChange({ ...data, [name]: value })}
           />
@@ -3778,7 +4071,8 @@ function StepLayout(
     }
     if (modelVersionPicker || modelVersionCheck) {
       const widget =
-        modelVersionPicker && modelVersions.length > 0 ? (
+        modelVersionPicker &&
+        (modelVersionsLoading || modelVersions.length > 0) ? (
           <ModelVersionPickerField
             name={name}
             title={
@@ -3791,6 +4085,7 @@ function StepLayout(
             }
             required={requiredFields.has(name)}
             versions={modelVersions}
+            loading={modelVersionsLoading}
             value={data[name]}
             onChange={value => onChange({ ...data, [name]: value })}
           />
@@ -3883,37 +4178,6 @@ function StepLayout(
             <PromotionPreviewPanel
               modelName={data.modelName}
               targetEnvironment={data[name]}
-            />
-          </Grid>
-        </Fragment>
-      );
-    }
-    if (rollbackPreview) {
-      const field = (
-        <Grid item xs={12} md={width} key={`${name}-input`}>
-          <SchemaField
-            schema={fieldSchema}
-            uiSchema={(uiSchema as Record<string, unknown>)[name] ?? {}}
-            formData={data[name] as any}
-            onChange={(value: unknown) => onChange({ ...data, [name]: value })}
-            idSchema={(idSchema as Record<string, unknown>)[name] as any}
-            name={name}
-            required={requiredFields.has(name)}
-            registry={registry}
-            errorSchema={errorSchema?.[name]}
-            onBlur={() => {}}
-            onFocus={() => {}}
-          />
-        </Grid>
-      );
-      return (
-        <Fragment key={name}>
-          {field}
-          <Grid item xs={12}>
-            <PromotionPreviewPanel
-              modelName={data.modelName}
-              targetEnvironment={data[name]}
-              mode="rollback"
             />
           </Grid>
         </Fragment>
@@ -4047,6 +4311,27 @@ function StepLayout(
         </Grid>
       );
     }
+    if (evalSetNameCombo) {
+      return (
+        <Grid item xs={12} md={width} key={name}>
+          <ComboPickerField
+            name={name}
+            title={
+              typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+            }
+            description={
+              typeof fieldSchema.description === 'string'
+                ? fieldSchema.description
+                : undefined
+            }
+            required={requiredFields.has(name)}
+            options={evalSets}
+            value={data[name]}
+            onChange={value => onChange({ ...data, [name]: value })}
+          />
+        </Grid>
+      );
+    }
     if (evalSetNamePicker && evalSets.length > 0) {
       return (
         <Grid item xs={12} md={width} key={name}>
@@ -4068,26 +4353,74 @@ function StepLayout(
         </Grid>
       );
     }
+    if (secretPicker && secretNames.length > 0) {
+      return (
+        <Grid item xs={12} md={width} key={name}>
+          <OptionPickerField
+            name={name}
+            title={
+              typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+            }
+            description={
+              typeof fieldSchema.description === 'string'
+                ? fieldSchema.description
+                : undefined
+            }
+            required={requiredFields.has(name)}
+            options={secretNames}
+            value={data[name]}
+            onChange={value => onChange({ ...data, [name]: value })}
+          />
+        </Grid>
+      );
+    }
     if (
       huggingFaceModelValidator ||
+      huggingFaceModelPicker ||
+      autoFillModelName ||
       gpuRecommendationPanel ||
       rolloutEligibilityGate
     ) {
+      const handleChange = (value: unknown) => {
+        const next = { ...data, [name]: value };
+        // Derive modelName from the HF id so the Dev doesn't retype it.
+        if (autoFillModelName && typeof value === 'string') {
+          next.modelName = deriveModelName(value);
+        }
+        onChange(next);
+      };
       const field = (
         <Grid item xs={12} md={width} key={`${name}-input`}>
-          <SchemaField
-            schema={fieldSchema}
-            uiSchema={(uiSchema as Record<string, unknown>)[name] ?? {}}
-            formData={data[name] as any}
-            onChange={(value: unknown) => onChange({ ...data, [name]: value })}
-            idSchema={(idSchema as Record<string, unknown>)[name] as any}
-            name={name}
-            required={requiredFields.has(name)}
-            registry={registry}
-            errorSchema={errorSchema?.[name]}
-            onBlur={() => {}}
-            onFocus={() => {}}
-          />
+          {huggingFaceModelPicker ? (
+            <HuggingFaceModelPickerField
+              name={name}
+              title={
+                typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+              }
+              description={
+                typeof fieldSchema.description === 'string'
+                  ? fieldSchema.description
+                  : undefined
+              }
+              required={requiredFields.has(name)}
+              value={data[name]}
+              onChange={handleChange}
+            />
+          ) : (
+            <SchemaField
+              schema={fieldSchema}
+              uiSchema={(uiSchema as Record<string, unknown>)[name] ?? {}}
+              formData={data[name] as any}
+              onChange={handleChange}
+              idSchema={(idSchema as Record<string, unknown>)[name] as any}
+              name={name}
+              required={requiredFields.has(name)}
+              registry={registry}
+              errorSchema={errorSchema?.[name]}
+              onBlur={() => {}}
+              onFocus={() => {}}
+            />
+          )}
         </Grid>
       );
       return (
@@ -4266,8 +4599,8 @@ function StepLayout(
       );
     }
     if (columnPicker && datasetColumns.length > 0) {
-      return (
-        <Grid item xs={12} md={width} key={name}>
+      const picker = (
+        <Grid item xs={12} md={width} key={`${name}-picker`}>
           <ColumnPickerField
             name={name}
             title={
@@ -4286,6 +4619,19 @@ function StepLayout(
           />
         </Grid>
       );
+      if (!feastEntityMatch) return picker;
+      return (
+        <Fragment key={name}>
+          {picker}
+          <Grid item xs={12}>
+            <FeastEntityMatchPanel
+              datasetUri={data.datasetUri}
+              entityIdColumn={data[name]}
+              source={selectedDatasetSource}
+            />
+          </Grid>
+        </Fragment>
+      );
     }
     return (
       <Grid item xs={12} md={width} key={name}>
@@ -4295,7 +4641,10 @@ function StepLayout(
             here rather than fighting RJSF's generics for each property. */}
         <SchemaField
           schema={fieldSchema}
-          uiSchema={(uiSchema as Record<string, unknown>)[name] ?? {}}
+          uiSchema={{
+            ...((uiSchema as Record<string, unknown>)[name] ?? {}),
+            ...(disabled ? { 'ui:disabled': true } : {}),
+          }}
           formData={data[name] as any}
           onChange={(value: unknown) => onChange({ ...data, [name]: value })}
           idSchema={(idSchema as Record<string, unknown>)[name] as any}
@@ -4349,6 +4698,8 @@ function StepLayout(
         const {
           name,
           width,
+          disabled,
+          autoFillModelName,
           columnPicker,
           datasetPicker,
           datasetPreview,
@@ -4357,6 +4708,7 @@ function StepLayout(
           baseModelPicker,
           lockedDisplay,
           featureNamesPicker,
+          feastEntityMatch,
           searchSpaceBuilder,
           modelNamePicker,
           modelVersionPicker,
@@ -4364,7 +4716,6 @@ function StepLayout(
           summaryField,
           versionComparison,
           promotionPreview,
-          rollbackPreview,
           actionPicker,
           promptNamePicker,
           promptNameCombo,
@@ -4373,7 +4724,10 @@ function StepLayout(
           ragIndexVersionPicker,
           llmModelPicker,
           evalSetNamePicker,
+          evalSetNameCombo,
+          secretPicker,
           huggingFaceModelValidator,
+          huggingFaceModelPicker,
           gpuRecommendationPanel,
           rolloutEligibilityGate,
         } = normalizeField(entry);
@@ -4388,6 +4742,7 @@ function StepLayout(
           baseModelPicker,
           lockedDisplay,
           featureNamesPicker,
+          feastEntityMatch,
           searchSpaceBuilder,
           modelNamePicker,
           modelVersionPicker,
@@ -4395,7 +4750,6 @@ function StepLayout(
           summaryField,
           versionComparison,
           promotionPreview,
-          rollbackPreview,
           actionPicker,
           promptNamePicker,
           promptNameCombo,
@@ -4404,9 +4758,14 @@ function StepLayout(
           ragIndexVersionPicker,
           llmModelPicker,
           evalSetNamePicker,
+          evalSetNameCombo,
+          secretPicker,
           huggingFaceModelValidator,
+          huggingFaceModelPicker,
           gpuRecommendationPanel,
           rolloutEligibilityGate,
+          disabled,
+          autoFillModelName,
         );
       })}
     </Grid>
