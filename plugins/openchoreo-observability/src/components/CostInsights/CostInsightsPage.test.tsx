@@ -50,6 +50,11 @@ jest.mock('./useDimensionTitles', () => ({
 jest.mock('./useCostInsights', () => ({
   useCostInsights: (...args: any[]) => mockUseCostInsights(...args),
 }));
+// The variance card fetches through the proxy; stub the hook so the page test
+// doesn't need a discovery/config API.
+jest.mock('./useCostVariance', () => ({
+  useCostVariance: () => ({ rows: [], loading: false }),
+}));
 
 const data = {
   level: 'namespace' as const,

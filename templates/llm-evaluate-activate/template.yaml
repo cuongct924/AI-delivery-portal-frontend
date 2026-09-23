@@ -266,7 +266,6 @@ spec:
         artifact: ${{ parameters.artifactKind === 'rag-index' and parameters.collectionName or parameters.promptName }}
         params:
           artifactKind: ${{ parameters.artifactKind }}
-        mode: warn
 
     - id: fetch-eval-set
       name: "Fetch the named eval set"

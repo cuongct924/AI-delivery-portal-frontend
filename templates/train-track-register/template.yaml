@@ -1435,7 +1435,6 @@ spec:
         params:
           epochs: ${{ parameters.epochs }}
           numTrials: ${{ parameters.numTrials }}
-        mode: warn
 
     - id: trigger-training
       name: 'Train and register the model'

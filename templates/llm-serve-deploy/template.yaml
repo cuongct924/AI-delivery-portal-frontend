@@ -318,7 +318,6 @@ spec:
         params:
           gpuType: ${{ parameters.gpuType }}
           gpuCount: ${{ parameters.gpuCount }}
-        mode: warn
 
     - id: prepare-manifest
       name: "Render the InferenceService manifest / deploy"

@@ -323,7 +323,6 @@ spec:
         params:
           deployStrategy: ${{ parameters.deployStrategy }}
           trafficPercent: ${{ parameters.trafficPercent }}
-        mode: warn
 
     - id: prepare-manifest
       name: "Render the InferenceService manifest / deploy"

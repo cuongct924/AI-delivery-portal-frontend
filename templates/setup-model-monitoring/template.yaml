@@ -311,7 +311,6 @@ spec:
         artifact: ${{ parameters.modelName }}
         params:
           schedule: ${{ parameters.schedule }}
-        mode: warn
 
     - id: setup-monitoring
       name: 'Register the monitoring schedule'

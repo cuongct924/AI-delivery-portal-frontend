@@ -36,6 +36,7 @@ import { CostSummaryCards } from './CostSummaryCards';
 import { CostActionPanel } from './CostActionPanel';
 import { CostLifecycleWaterfall } from './CostLifecycleWaterfall';
 import { CostScorecard } from './CostScorecard';
+import { CostVarianceCard } from './CostVarianceCard';
 import { CostZone } from './CostZone';
 import { ForecastDivergenceChart } from './ForecastDivergenceChart';
 import { useNamespaceEnvironments } from './useNamespaceEnvironments';
@@ -403,6 +404,13 @@ const CostInsightsInsightsTab: FC<InsightsTabProps> = ({
           >
             <Box className={classes.section}>
               <CostScorecard summary={data.summary} />
+            </Box>
+            <Box className={classes.section}>
+              <CostVarianceCard
+                timeRange={timeRange}
+                customStartTime={customStartTime}
+                customEndTime={customEndTime}
+              />
             </Box>
             <Box className={classes.section}>
               <CostActionPanel

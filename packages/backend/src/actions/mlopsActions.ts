@@ -876,7 +876,8 @@ export function createCostGateAction({ config, tokenService }: ActionDeps) {
           stage: ctx.input.stage,
           artifact: ctx.input.artifact,
           params: ctx.input.params ?? {},
-          mode: ctx.input.mode ?? 'warn',
+          // Omitted when unset, so the backend's COST_GATE_MODE env decides.
+          mode: ctx.input.mode,
         },
         tokenService,
       );
