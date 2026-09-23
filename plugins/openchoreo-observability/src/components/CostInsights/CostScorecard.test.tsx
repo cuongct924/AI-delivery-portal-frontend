@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { CostScorecard, buildScorecardChecks } from './CostScorecard';
 import type { CostSummary } from './types';
 
@@ -60,5 +60,12 @@ describe('CostScorecard', () => {
     expect(screen.getByText('Spend anomalies')).toBeInTheDocument();
     expect(screen.getByText('Right-sizing')).toBeInTheDocument();
     expect(screen.getByText('Cost attribution')).toBeInTheDocument();
+  });
+
+  it('calls onSetBudget from the budget CTA', () => {
+    const onSetBudget = jest.fn();
+    render(<CostScorecard summary={summary()} onSetBudget={onSetBudget} />);
+    fireEvent.click(screen.getByText('Set budget'));
+    expect(onSetBudget).toHaveBeenCalled();
   });
 });

@@ -185,6 +185,12 @@ export interface CostInsightsTableProps {
    * columns for a Build/Gate/Run split, so the lifecycle cost is visible.
    */
   stage?: CostStageFilter;
+  /**
+   * Force a table variant. `auto` (default) picks by level: the right-sizing
+   * table at component level, the allocation table otherwise. The Optimize zone
+   * forces `recommendation` so it never shows an allocation table.
+   */
+  mode?: 'auto' | 'allocation' | 'recommendation';
 }
 
 const EmptyState: FC = () => {
@@ -348,11 +354,10 @@ const RecommendationCostTable: FC<CostInsightsTableProps> = ({
             const saving = savingOf(row);
             const savingPct = savingPctOf(row);
             let recommendationCells;
-            if (!singleComponent) {
+            if (!row.recommendation && !row.recommendationStale) {
               recommendationCells = (
                 <TableCell colSpan={3} className={classes.staleNotice}>
-                  Select a single component to see recommended changes, savings
-                  and to apply those recommendations.
+                  No right-sizing recommendation for this row.
                 </TableCell>
               );
             } else if (row.recommendationStale) {
@@ -402,7 +407,8 @@ const RecommendationCostTable: FC<CostInsightsTableProps> = ({
                     )}
                   </TableCell>
                   <TableCell className={classes.actionCell}>
-                    {scope &&
+                    {singleComponent &&
+                      scope &&
                       onOptimized &&
                       hasApplyableRecommendation(row.recommendation) && (
                         <CostOptimizeButton
@@ -629,7 +635,12 @@ export const CostInsightsTable: FC<CostInsightsTableProps> = props => {
   if (props.rows.length === 0) return <EmptyState />;
   // The component level shows environments with right-sizing recommendations in
   // a dedicated layout; other levels use the standard drillable cost breakdown.
-  return props.level === 'component' ? (
+  // `mode` overrides that so the Optimize zone always shows right-sizing.
+  const mode = props.mode ?? 'auto';
+  const showRecommendation =
+    mode === 'recommendation' ||
+    (mode === 'auto' && props.level === 'component');
+  return showRecommendation ? (
     <RecommendationCostTable {...props} />
   ) : (
     <StandardCostTable {...props} />

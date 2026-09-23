@@ -284,7 +284,9 @@ function recDimensionOf(
 }
 
 const recTotal = (rec: CostRecommendationItem): number =>
-  (rec.recommendation.cpuCost ?? 0) + (rec.recommendation.memoryCost ?? 0);
+  (rec.recommendation.cpuCost ?? 0) +
+  (rec.recommendation.memoryCost ?? 0) +
+  (rec.recommendation.gpuCost ?? 0);
 
 /**
  * Recommended (post-optimization) totals keyed by dimension value. At the
@@ -328,15 +330,14 @@ export function aggregateRows(
     dimensionOf(item, level, dimension),
   );
 
-  // Recommendations are only meaningful at the component level, where rows are
-  // environments. Sum the recommended cost per environment.
-  const recByEnv = new Map<string, CostRecommendationItem[]>();
-  if (level === 'component') {
-    for (const rec of recommendations) {
-      const bucket = recByEnv.get(rec.environment);
-      if (bucket) bucket.push(rec);
-      else recByEnv.set(rec.environment, [rec]);
-    }
+  // Group recommendations by the row key they belong to (infra-keyed), so a
+  // right-sizing table can be built at any level, not just component.
+  const recByKey = new Map<string, CostRecommendationItem[]>();
+  for (const rec of recommendations) {
+    const key = recDimensionOf(rec, level);
+    const bucket = recByKey.get(key);
+    if (bucket) bucket.push(rec);
+    else recByKey.set(key, [rec]);
   }
 
   const rows: CostRow[] = [];
@@ -352,8 +353,8 @@ export function aggregateRows(
       : undefined;
 
     let recommendation: CostRow['recommendation'];
-    if (level === 'component' && !recommendationStale) {
-      const recs = recByEnv.get(key);
+    if (!recommendationStale) {
+      const recs = recByKey.get(key);
       if (recs && recs.length > 0) {
         const recCpu = recs.reduce(
           (s, r) => s + (r.recommendation.cpuCost ?? 0),
@@ -419,13 +420,15 @@ export function computeSummary(
   recommendations: CostRecommendationItem[],
   level: CostScopeLevel,
   staleRecommendationEnvs: Map<string, string>,
-  dimension: CostDimension = 'infra',
 ): CostSummary {
   const total = totalCost(currentItems);
   const prevTotal = totalCost(previousItems);
   // Only dimensions with a (non-stale) recommendation contribute saving, each
   // clamped at its own cost so unrelated spend isn't counted as reclaimable.
-  const currentTotals = totalsByDimension(currentItems, level, dimension);
+  // Keyed by the infra dimension on BOTH sides: recommendations carry no
+  // artifact/team/domain, so keying the current totals by the active dimension
+  // would mismatch and zero the saving whenever dimension != infra.
+  const currentTotals = totalsByDimension(currentItems, level, 'infra');
   const recTotals = recommendedTotalsByDimension(
     recommendations,
     level,
@@ -660,7 +663,6 @@ export function buildCostInsightsData(params: {
     recommendations,
     level,
     staleRecommendationEnvs,
-    dimension,
   );
   // Anomalies are detected client-side from the same series the graph shows,
   // unless the caller supplied its own (e.g. from a future observer API).
@@ -678,7 +680,6 @@ export function buildCostInsightsData(params: {
     monthToDateRecommendations,
     level,
     staleRecommendationEnvs,
-    dimension,
   );
   const savingFraction =
     mtdSummary.totalCost > 0
@@ -708,6 +709,14 @@ export function buildCostInsightsData(params: {
       recommendations,
       staleRecommendationEnvs,
       dimension,
+    ),
+    recommendationRows: aggregateRows(
+      current,
+      previous,
+      level,
+      recommendations,
+      staleRecommendationEnvs,
+      'infra',
     ),
     series,
     seriesKeys,

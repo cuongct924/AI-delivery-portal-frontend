@@ -120,7 +120,7 @@ describe('CostInsightsTable', () => {
     ).toBeInTheDocument();
   });
 
-  it('replaces the recommendation cells with a note when several components are in scope', () => {
+  it('shows the recommendation but withholds Apply when several components are in scope', () => {
     const componentRows: CostRow[] = [
       {
         key: 'dev',
@@ -148,11 +148,8 @@ describe('CostInsightsTable', () => {
         singleComponent={false}
       />,
     );
-    expect(
-      screen.getByText(/Select a single component to see recommended changes/i),
-    ).toBeInTheDocument();
-    // The recommended change, saving and Apply button are withheld.
-    expect(screen.queryByText('→ 50m')).not.toBeInTheDocument();
+    // The recommended change is shown; only Apply needs a single component.
+    expect(screen.getByText('→ 50m')).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: /Apply/ }),
     ).not.toBeInTheDocument();

@@ -76,6 +76,7 @@ const data = {
       deltaPct: 10,
     },
   ],
+  recommendationRows: [],
   series: [{ timestamp: '2026-07-01T00:00:00.000Z', gcp: 22 }],
   seriesKeys: ['gcp'],
 };
@@ -126,7 +127,8 @@ describe('CostInsightsPage', () => {
     expect(screen.getByTestId('forecast')).toBeInTheDocument();
     expect(screen.getByTestId('time-range')).toBeInTheDocument();
     expect(screen.getByTestId('cost-graph')).toBeInTheDocument();
-    expect(screen.getByTestId('cost-table')).toBeInTheDocument();
+    // One allocation table (Inform) and one right-sizing table (Optimize).
+    expect(screen.getAllByTestId('cost-table')).toHaveLength(2);
   });
 
   it('shows a loader while cost data loads', async () => {

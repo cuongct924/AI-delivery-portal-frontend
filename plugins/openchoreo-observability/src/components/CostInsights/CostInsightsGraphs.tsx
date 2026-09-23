@@ -90,7 +90,7 @@ export const CostInsightsGraphs: FC<CostInsightsGraphsProps> = ({
               <CostInsightsGraph
                 series={data.series}
                 seriesKeys={data.seriesKeys}
-                title="Cost over time"
+                title="Cost by dimension"
                 recommendationOverlay={overlay}
               />
             </Grid>

@@ -15,7 +15,7 @@ interface Check {
   status: Status;
   detail: string;
   /** Optional call-to-action, so the scorecard is actionable, not just a report. */
-  cta?: { label: string; href: string };
+  cta?: { label: string; href?: string };
 }
 
 const useStyles = makeStyles(theme => ({
@@ -63,7 +63,7 @@ export function buildScorecardChecks(summary: CostSummary): Check[] {
       label: 'Budget adherence',
       status: 'info',
       detail: 'No budget set for this scope',
-      cta: { label: 'Review forecast', href: '#cost-inform' },
+      cta: { label: 'Set budget' },
     });
   } else if (forecast <= budget) {
     checks.push({
@@ -78,7 +78,7 @@ export function buildScorecardChecks(summary: CostSummary): Check[] {
       label: 'Budget adherence',
       status: 'fail',
       detail: `Forecast ${formatUsd(forecast)} over ${formatUsd(budget)}`,
-      cta: { label: 'Review forecast', href: '#cost-inform' },
+      cta: { label: 'Set budget' },
     });
   }
 
@@ -126,7 +126,11 @@ export function buildScorecardChecks(summary: CostSummary): Check[] {
  * (budget, anomalies, right-sizing, attribution), so compliance is visible
  * without reading the table.
  */
-export const CostScorecard: FC<{ summary: CostSummary }> = ({ summary }) => {
+export const CostScorecard: FC<{
+  summary: CostSummary;
+  /** Opens the budget dialog; the budget check's CTA calls it. */
+  onSetBudget?: () => void;
+}> = ({ summary, onSetBudget }) => {
   const classes = useStyles();
   const checks = buildScorecardChecks(summary);
 
@@ -152,6 +156,9 @@ export const CostScorecard: FC<{ summary: CostSummary }> = ({ summary }) => {
                 color="primary"
                 className={classes.cta}
                 href={check.cta.href}
+                onClick={
+                  check.id === 'budget' && onSetBudget ? onSetBudget : undefined
+                }
               >
                 {check.cta.label}
               </Button>

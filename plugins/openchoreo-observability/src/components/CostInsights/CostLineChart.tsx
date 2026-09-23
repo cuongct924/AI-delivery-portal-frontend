@@ -139,7 +139,7 @@ export interface CostLineChartProps {
 export const CostLineChart: FC<CostLineChartProps> = ({
   series,
   seriesKeys,
-  title = 'Cost over time',
+  title = 'Cost trend',
 }) => {
   const classes = useStyles();
   const theme = useTheme();
@@ -178,7 +178,7 @@ export const CostLineChart: FC<CostLineChartProps> = ({
     <Paper variant="outlined" className={classes.container}>
       <ChartTitle
         title={title}
-        info="Cost over time for each dimension, one line per dimension."
+        info="Cost trend for each dimension, one line per dimension."
       />
       <div className={classes.chart}>
         <ResponsiveContainer width="100%" height="100%">

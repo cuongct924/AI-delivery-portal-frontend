@@ -1,4 +1,4 @@
-import { FC, lazy, Suspense, useCallback, useMemo } from 'react';
+import { FC, lazy, Suspense, useCallback, useMemo, useState } from 'react';
 import {
   Link as RouterLink,
   Route,
@@ -6,7 +6,7 @@ import {
   useLocation,
   useSearchParams,
 } from 'react-router-dom';
-import { useApp, configApiRef, useApi } from '@backstage/core-plugin-api';
+import { useApp } from '@backstage/core-plugin-api';
 import { Page, Content, Header } from '@backstage/core-components';
 import { EntityProvider } from '@backstage/plugin-catalog-react';
 import type { Entity } from '@backstage/catalog-model';
@@ -35,8 +35,10 @@ import { CostInsightsGraphs } from './CostInsightsGraphs';
 import { CostSummaryCards } from './CostSummaryCards';
 import { CostActionPanel } from './CostActionPanel';
 import { CostLifecycleWaterfall } from './CostLifecycleWaterfall';
+import { CostBudgetDialog } from './CostBudgetDialog';
 import { CostSavingCard } from './CostSavingCard';
 import { CostScorecard } from './CostScorecard';
+import { useCostBudget } from './useCostBudget';
 import { CostVarianceCard } from './CostVarianceCard';
 import { CostZone } from './CostZone';
 import { ForecastDivergenceChart } from './ForecastDivergenceChart';
@@ -261,6 +263,7 @@ interface InsightsTabProps {
   optimizeScope?: CostScope;
   scopes: CostScope[];
   stage: CostStageFilter;
+  onSetBudget: () => void;
   refresh: () => void;
 }
 
@@ -287,6 +290,7 @@ const CostInsightsInsightsTab: FC<InsightsTabProps> = ({
   optimizeScope,
   scopes,
   stage,
+  onSetBudget,
   refresh,
 }) => {
   const classes = useStyles();
@@ -385,6 +389,22 @@ const CostInsightsInsightsTab: FC<InsightsTabProps> = ({
                 onGranularityChange={onGranularityChange}
               />
             </Box>
+            {/* Cost allocation is Reporting & Analytics — an Inform capability. */}
+            <Box className={classes.section}>
+              <CostInsightsTable
+                level={data.level}
+                rows={data.rows}
+                icon={app.getSystemIcon(`kind:${LEVEL_KIND[data.level]}`)}
+                titles={titles}
+                scope={optimizeScope}
+                onOptimized={refresh}
+                singleComponent={
+                  data.level === 'component' && scopes.length === 1
+                }
+                stage={stage}
+                mode="allocation"
+              />
+            </Box>
           </CostZone>
 
           <CostZone
@@ -399,7 +419,7 @@ const CostInsightsInsightsTab: FC<InsightsTabProps> = ({
             <Box className={classes.section}>
               <CostInsightsTable
                 level={data.level}
-                rows={data.rows}
+                rows={data.recommendationRows}
                 icon={app.getSystemIcon(`kind:${LEVEL_KIND[data.level]}`)}
                 titles={titles}
                 scope={optimizeScope}
@@ -408,6 +428,7 @@ const CostInsightsInsightsTab: FC<InsightsTabProps> = ({
                   data.level === 'component' && scopes.length === 1
                 }
                 stage={stage}
+                mode="recommendation"
               />
             </Box>
           </CostZone>
@@ -419,7 +440,7 @@ const CostInsightsInsightsTab: FC<InsightsTabProps> = ({
             subtitle="What needs a decision now?"
           >
             <Box className={classes.section}>
-              <CostScorecard summary={data.summary} />
+              <CostScorecard summary={data.summary} onSetBudget={onSetBudget} />
             </Box>
             <Box className={classes.section}>
               <CostActionPanel
@@ -533,10 +554,10 @@ const CostInsightsTabBar = () => {
 
 export const CostInsightsPage = () => {
   const classes = useStyles();
-  const config = useApi(configApiRef);
   // Optional monthly budget for the scope, so the forecast can show burn
   // against it. Absent means the budget cards stay hidden.
-  const budget = config.getOptionalNumber('openchoreo.observability.costBudget');
+  const { budget, setBudget } = useCostBudget();
+  const [budgetDialogOpen, setBudgetDialogOpen] = useState(false);
   const location = useLocation();
   const { selection, setSelection, update, searchParams } = useCostSelection();
   const onInsightsTab = !location.pathname.startsWith(
@@ -721,12 +742,19 @@ export const CostInsightsPage = () => {
                 optimizeScope={optimizeScope}
                 scopes={scopes}
                 stage={stage}
+                onSetBudget={() => setBudgetDialogOpen(true)}
                 refresh={refresh}
               />
             }
           />
           <Route path="cost-analysis/*" element={<CostAnalysisTab />} />
         </Routes>
+        <CostBudgetDialog
+          open={budgetDialogOpen}
+          initial={budget}
+          onClose={() => setBudgetDialogOpen(false)}
+          onSave={setBudget}
+        />
       </Content>
     </Page>
   );

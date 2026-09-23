@@ -220,6 +220,12 @@ export interface CostInsightsData {
   dimension?: CostDimension;
   summary: CostSummary;
   rows: CostRow[];
+  /**
+   * Infra-keyed rows carrying right-sizing recommendations, for the Optimize
+   * table. Separate from `rows` (which follows the active dimension) because
+   * recommendations are per component/environment.
+   */
+  recommendationRows: CostRow[];
   series: CostSeriesPoint[];
   /** Distinct dimension values used as stack keys in the graph. */
   seriesKeys: string[];
