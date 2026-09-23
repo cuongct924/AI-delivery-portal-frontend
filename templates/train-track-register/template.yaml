@@ -1408,6 +1408,20 @@ spec:
         targetColumn: ${{ parameters.targetColumn }}
         timeColumn: ${{ parameters.timeColumn }}
 
+    # Pre-flight FinOps: estimate the build cost before training starts,
+    # attributed to the model and tagged with the `build` stage.
+    - id: estimate-cost
+      name: 'Estimate the build cost'
+      action: orchestration:estimate-cost
+      if: ${{ parameters.trainingMode === 'platform' }}
+      input:
+        goldenPath: train-track-register
+        stage: build
+        artifact: ${{ parameters.modelName }}
+        params:
+          epochs: ${{ parameters.epochs }}
+          numTrials: ${{ parameters.numTrials }}
+
     - id: trigger-training
       name: 'Train and register the model'
       action: orchestration:trigger-training

@@ -241,6 +241,19 @@ spec:
                 llmModelPicker: true
 
   steps:
+    # Pre-flight FinOps: estimate the judge (gate) spend before evaluating.
+    # Rollback re-uses an already-gated version, so it has no gate cost.
+    - id: estimate-cost
+      name: "Estimate the gate cost"
+      action: orchestration:estimate-cost
+      if: ${{ parameters.action === 'evaluate-activate' }}
+      input:
+        goldenPath: llm-evaluate-activate
+        stage: gate
+        artifact: ${{ parameters.artifactKind === 'rag-index' and parameters.collectionName or parameters.promptName }}
+        params:
+          artifactKind: ${{ parameters.artifactKind }}
+
     - id: fetch-eval-set
       name: "Fetch the named eval set"
       action: orchestration:fetch-eval-set

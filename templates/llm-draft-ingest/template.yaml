@@ -176,6 +176,18 @@ spec:
               - evalSetQuestions
 
   steps:
+    # Pre-flight FinOps: estimate the build cost of the draft/ingest, tagged
+    # with the `build` stage and attributed to the artifact being produced.
+    - id: estimate-cost
+      name: 'Estimate the build cost'
+      action: orchestration:estimate-cost
+      input:
+        goldenPath: llm-draft-ingest
+        stage: build
+        artifact: ${{ parameters.artifactKind === 'rag-index' and parameters.collectionName or parameters.promptName }}
+        params:
+          artifactKind: ${{ parameters.artifactKind }}
+
     - id: draft-prompt
       name: 'Draft the prompt'
       action: orchestration:draft-prompt

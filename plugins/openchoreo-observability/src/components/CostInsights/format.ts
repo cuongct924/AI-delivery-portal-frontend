@@ -19,6 +19,17 @@ export function formatUsd(value: number): string {
   return isNegligibleCost(value) ? '<USD 0.01' : `USD ${value.toFixed(2)}`;
 }
 
+/**
+ * Format a small unit cost (e.g. per 1k inferences/tokens) with more precision
+ * than the headline formatter, e.g. `$0.0025`.
+ */
+export function formatUnitCost(value: number): string {
+  if (!Number.isFinite(value)) return '—';
+  if (value === 0) return '$0.00';
+  if (value < 0.0001) return '<$0.0001';
+  return `$${value.toFixed(4)}`;
+}
+
 /** Format an efficiency ratio (0..1) as a percentage, e.g. `45%`. */
 export function formatEfficiency(ratio: number): string {
   return `${Math.round(ratio * 100)}%`;

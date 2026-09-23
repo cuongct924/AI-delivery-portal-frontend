@@ -4,6 +4,7 @@ import path from 'node:path';
 import { ConfigReader } from '@backstage/config';
 import {
   createConfirmPromotionAction,
+  createEstimateCostAction,
   createModelSummaryAction,
   createPolicyCheckAction,
   createPrepareDeployManifestAction,
@@ -490,6 +491,44 @@ describe('orchestration:policy-check', () => {
     );
 
     await expect(action.handler(ctx)).rejects.toThrow('accuracy=0.4');
+  });
+});
+
+describe('orchestration:estimate-cost', () => {
+  it('posts the golden path/stage/artifact and outputs the estimate', async () => {
+    const fetchMock = mockFetchResponses([
+      {
+        ok: true,
+        body: {
+          estimated_cost: 12.5,
+          currency: 'USD',
+          stage: 'run',
+          breakdown: { gpu: 12.5 },
+        },
+      },
+    ]);
+    const action = createEstimateCostAction({ config });
+    const { ctx, outputs } = createMockContext<typeof action>(
+      {
+        goldenPath: 'llm-serve-deploy',
+        stage: 'run',
+        artifact: 'qwen',
+        params: { gpuType: 'H100', gpuCount: 2 },
+      },
+      '/tmp/workspace',
+    );
+
+    await action.handler(ctx);
+
+    expect(outputs.estimatedCost).toBe(12.5);
+    expect(outputs.breakdown).toEqual({ gpu: 12.5 });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe(`${BASE_URL}/costs/estimate`);
+    expect(JSON.parse(init.body)).toMatchObject({
+      golden_path: 'llm-serve-deploy',
+      stage: 'run',
+      artifact: 'qwen',
+    });
   });
 });
 

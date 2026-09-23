@@ -293,6 +293,19 @@ spec:
               - repoUrl
 
   steps:
+    # Pre-flight FinOps: estimate the recurring GPU serving cost before the
+    # manifest is rendered, tagged with the `run` stage.
+    - id: estimate-cost
+      name: "Estimate the serving cost"
+      action: orchestration:estimate-cost
+      input:
+        goldenPath: llm-serve-deploy
+        stage: run
+        artifact: ${{ parameters.modelName }}
+        params:
+          gpuType: ${{ parameters.gpuType }}
+          gpuCount: ${{ parameters.gpuCount }}
+
     - id: prepare-manifest
       name: "Render the InferenceService manifest / deploy"
       action: orchestration:prepare-llm-deploy-manifest

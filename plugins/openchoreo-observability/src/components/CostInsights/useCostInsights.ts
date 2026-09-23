@@ -40,6 +40,8 @@ export interface UseCostInsightsParams {
   stage?: CostStageFilter;
   /** Row dimension; `infra` keeps the level-based grouping. */
   dimension?: CostDimension;
+  /** Monthly budget for the scope, when one is set. */
+  budget?: number;
 }
 
 /** Stable key for a scope, so the query cache and fan-out stay deterministic. */
@@ -308,6 +310,10 @@ export function useCostInsights(
           now,
           stage,
           dimension,
+          budget:
+            params.budget !== undefined
+              ? { amount: params.budget, period: 'month', scope: 'scope' }
+              : null,
         });
       },
       // No keepPreviousData: a window/view/scope change shows the centered loader

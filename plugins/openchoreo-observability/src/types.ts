@@ -451,6 +451,16 @@ export interface CostItem {
   namespace: string;
   cpuCost: number;
   memoryCost: number;
+  /**
+   * GPU cost, for AI build/run stages (training, serving). Optional so the
+   * observer's existing CPU/memory-only payload keeps working — absent means 0.
+   */
+  gpuCost?: number;
+  /**
+   * Token cost (LLM inference / LLM-as-judge), for gate/run stages. Optional —
+   * absent means 0. Sourced from the LLM gateway, not the K8s cost API.
+   */
+  tokenCost?: number;
   /** Resource efficiency ratio in the range 0..1. */
   efficiency: number;
   /**
@@ -464,6 +474,11 @@ export interface CostItem {
   businessDomain?: string;
   /** AI artifact name, for the `artifact` dimension. Falls back to the component. */
   artifact?: string;
+  /**
+   * Usage counters driving unit economics (cost per 1k inferences / tokens).
+   * Optional — absent means the unit metric can't be computed for this item.
+   */
+  usage?: { inferences?: number; tokens?: number };
 }
 
 /** Current or recommended resource allocation + its cost, from the observer. */

@@ -89,6 +89,14 @@ interface PolicyCheckResponse {
   readonly thresholds: Record<string, number>;
 }
 
+/** Response body of `POST {baseUrl}/cost/estimate`. */
+interface EstimateCostResponse {
+  readonly estimated_cost: number;
+  readonly currency: string;
+  readonly stage: string;
+  readonly breakdown: Record<string, number>;
+}
+
 /** Response body of `POST {baseUrl}/deploy-model/prepare`. */
 interface PrepareDeployResponse {
   readonly file_name: string;
@@ -748,6 +756,62 @@ export function createPolicyCheckAction({ config, tokenService }: ActionDeps) {
       }
       ctx.output('passed', result.passed);
       ctx.output('metrics', result.metrics);
+    },
+  });
+}
+
+/**
+ * `orchestration:estimate-cost` — asks orchestration-api for a pre-flight cost
+ * estimate of a golden-path run, so the cost is visible in the form/output
+ * before anything is provisioned (shift-left FinOps). The estimate is
+ * attributed to the artifact and tagged with its lifecycle stage.
+ */
+export function createEstimateCostAction({ config, tokenService }: ActionDeps) {
+  return createTemplateAction({
+    id: 'orchestration:estimate-cost',
+    description:
+      'Estimates the cost of a golden-path run (build/gate/run) before it executes.',
+    schema: {
+      input: {
+        goldenPath: z =>
+          z.string({ description: 'Golden path name, e.g. train-track-register' }),
+        stage: z =>
+          z.enum(['build', 'gate', 'run'], {
+            description: 'Lifecycle stage the cost belongs to',
+          }),
+        artifact: z =>
+          z.string({ description: 'Artifact the cost is attributed to' }),
+        params: z =>
+          z
+            .record(z.string(), z.any(), {
+              description:
+                'Path-specific inputs (gpuType, epochs, trafficPercent, ...)',
+            })
+            .optional(),
+      },
+      output: {
+        estimatedCost: z =>
+          z.number({ description: 'Estimated cost in USD' }),
+        breakdown: z =>
+          z.record(z.number(), {
+            description: 'Per-component estimate (cpu/gpu/token/...)',
+          }),
+      },
+    },
+    async handler(ctx) {
+      const baseUrl = getBaseUrl(config);
+      const result = await postJson<EstimateCostResponse>(
+        `${baseUrl}/costs/estimate`,
+        {
+          golden_path: ctx.input.goldenPath,
+          stage: ctx.input.stage,
+          artifact: ctx.input.artifact,
+          params: ctx.input.params ?? {},
+        },
+        tokenService,
+      );
+      ctx.output('estimatedCost', result.estimated_cost);
+      ctx.output('breakdown', result.breakdown ?? {});
     },
   });
 }

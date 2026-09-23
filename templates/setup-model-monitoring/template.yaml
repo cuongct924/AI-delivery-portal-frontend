@@ -288,6 +288,18 @@ spec:
               - retrainAlgorithm
 
   steps:
+    # Pre-flight FinOps: estimate the recurring monitoring compute before the
+    # schedule is registered, tagged with the `run` stage.
+    - id: estimate-cost
+      name: 'Estimate the monitoring cost'
+      action: orchestration:estimate-cost
+      input:
+        goldenPath: setup-model-monitoring
+        stage: run
+        artifact: ${{ parameters.modelName }}
+        params:
+          schedule: ${{ parameters.schedule }}
+
     - id: setup-monitoring
       name: 'Register the monitoring schedule'
       action: orchestration:setup-monitoring

@@ -18,6 +18,7 @@ import { openChoreoTokenServiceRef } from '@openchoreo/openchoreo-auth';
 import {
   createConfirmPromotionAction,
   createEnrichDatasetFeaturesAction,
+  createEstimateCostAction,
   createModelSummaryAction,
   createPolicyCheckAction,
   createPrepareDeployManifestAction,
@@ -60,6 +61,7 @@ export default createBackendModule({
           createRegisterModelAction({ config, tokenService }),
           createModelSummaryAction({ config, tokenService }),
           createPolicyCheckAction({ config, tokenService }),
+          createEstimateCostAction({ config, tokenService }),
           createPrepareDeployManifestAction({ config, tokenService }),
           createPrepareLlmDeployManifestAction({ config, tokenService }),
           createRecordDeployAction({ config, tokenService }),

@@ -109,7 +109,10 @@ export function filterByStage(
 }
 
 const itemTotal = (item: CostItem): number =>
-  (item.cpuCost ?? 0) + (item.memoryCost ?? 0);
+  (item.cpuCost ?? 0) +
+  (item.memoryCost ?? 0) +
+  (item.gpuCost ?? 0) +
+  (item.tokenCost ?? 0);
 
 /** Per-stage cost totals, for the summary's Build/Gate/Run breakdown. */
 export function stageTotals(items: CostItem[]): Record<CostStage, number> {
@@ -133,9 +136,81 @@ function weightedEfficiency(items: CostItem[]): number {
   return weightSum > 0 ? effSum / weightSum : 0;
 }
 
-/** Sum of cpu + memory cost across every item. */
+/** Sum of every cost component (cpu + memory + gpu + token) across items. */
 export function totalCost(items: CostItem[]): number {
   return items.reduce((sum, item) => sum + itemTotal(item), 0);
+}
+
+/**
+ * Flag spend spikes against each dimension's own recent baseline. A bucket is
+ * anomalous when its total exceeds `threshold`× the median bucket for that
+ * dimension. Client-side and dependency-free, so the dashboard surfaces
+ * anomalies even before the observer ships a dedicated anomaly API.
+ */
+export function detectAnomalies(
+  items: CostItem[],
+  level: CostScopeLevel,
+  dimension: CostDimension = 'infra',
+  threshold = 2,
+): CostAnomaly[] {
+  const byDim = groupBy(items, item => dimensionOf(item, level, dimension));
+  const anomalies: CostAnomaly[] = [];
+  for (const [dim, dimItems] of byDim) {
+    const byBucket = groupBy(dimItems, item => item.startTime);
+    const buckets = [...byBucket.entries()].map(([ts, bucketItems]) => ({
+      ts,
+      total: totalCost(bucketItems),
+      stage: stageOf(bucketItems[0]),
+    }));
+    // A baseline needs a few buckets to be meaningful.
+    if (buckets.length < 3) continue;
+    const sorted = buckets.map(b => b.total).sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    if (median <= 0) continue;
+    for (const b of buckets) {
+      if (b.total > median * threshold) {
+        anomalies.push({
+          id: `${dim}:${b.ts}`,
+          dimension: dim,
+          stage: b.stage,
+          observed: b.total,
+          expected: median,
+          deltaPct: ((b.total - median) / median) * 100,
+          detectedAt: b.ts,
+        });
+      }
+    }
+  }
+  return anomalies.sort((a, b) => b.deltaPct - a.deltaPct);
+}
+
+/**
+ * Cost per 1,000 inferences / tokens, computed only from the items that carry
+ * the matching usage counter. A scope with no usage simply omits the metric.
+ */
+export function computeUnitEconomics(items: CostItem[]): {
+  costPer1kInference?: number;
+  costPer1kToken?: number;
+} {
+  let inferenceCost = 0;
+  let inferences = 0;
+  let tokenCost = 0;
+  let tokens = 0;
+  for (const item of items) {
+    const total = itemTotal(item);
+    if (item.usage?.inferences) {
+      inferenceCost += total;
+      inferences += item.usage.inferences;
+    }
+    if (item.usage?.tokens) {
+      tokenCost += total;
+      tokens += item.usage.tokens;
+    }
+  }
+  const out: { costPer1kInference?: number; costPer1kToken?: number } = {};
+  if (inferences > 0) out.costPer1kInference = (inferenceCost / inferences) * 1000;
+  if (tokens > 0) out.costPer1kToken = (tokenCost / tokens) * 1000;
+  return out;
 }
 
 /** Percent change from `previous` to `current`; null when previous is 0/unknown. */
@@ -557,6 +632,13 @@ export function buildCostInsightsData(params: {
     staleRecommendationEnvs,
     dimension,
   );
+  // Anomalies are detected client-side from the same series the graph shows,
+  // unless the caller supplied its own (e.g. from a future observer API).
+  const detectedAnomalies =
+    anomalies.length > 0
+      ? anomalies
+      : detectAnomalies(seriesSource, level, dimension);
+  const unitEconomics = computeUnitEconomics(current);
   // The "if applied" forecast uses a month-to-date saving fraction: recommendations
   // measured over month start to now vs the month-to-date cost, so the curve is
   // independent of the selected time range (which only drives the breakdown below).
@@ -584,9 +666,10 @@ export function buildCostInsightsData(params: {
     dimension,
     summary: {
       ...summary,
+      ...unitEconomics,
       forecastTotal: forecast?.atCurrentTotal,
       budget: budget?.amount ?? null,
-      anomalyCount: anomalies.length,
+      anomalyCount: detectedAnomalies.length,
     },
     rows: aggregateRows(
       current,
@@ -599,7 +682,7 @@ export function buildCostInsightsData(params: {
     series,
     seriesKeys,
     forecast,
-    anomalies,
+    anomalies: detectedAnomalies,
     budget,
   };
 }

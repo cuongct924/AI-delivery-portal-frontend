@@ -3,7 +3,7 @@ import { Box, Paper, Typography, makeStyles } from '@material-ui/core';
 import ArrowUpwardIcon from '@material-ui/icons/ArrowUpward';
 import ArrowDownwardIcon from '@material-ui/icons/ArrowDownward';
 import type { CostSummary } from './types';
-import { formatUsd } from './format';
+import { formatUsd, formatUnitCost } from './format';
 
 const useStyles = makeStyles(theme => ({
   label: {
@@ -148,6 +148,24 @@ export const CostSummaryCards: FC<{ summary: CostSummary }> = ({ summary }) => {
           }
         />
       </Box>
+      {summary.costPer1kInference !== undefined && (
+        <Box className={classes.cardWrap}>
+          <KpiCard
+            label="Cost / 1k inferences"
+            value={formatUnitCost(summary.costPer1kInference)}
+            hint="Unit economics"
+          />
+        </Box>
+      )}
+      {summary.costPer1kToken !== undefined && (
+        <Box className={classes.cardWrap}>
+          <KpiCard
+            label="Cost / 1k tokens"
+            value={formatUnitCost(summary.costPer1kToken)}
+            hint="Unit economics"
+          />
+        </Box>
+      )}
     </Box>
   );
 };

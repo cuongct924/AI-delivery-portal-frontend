@@ -10,6 +10,8 @@ import {
   buildSeries,
   buildForecast,
   buildCostInsightsData,
+  detectAnomalies,
+  computeUnitEconomics,
 } from './costAggregation';
 
 const costItem = (over: Partial<CostItem>): CostItem => ({
@@ -461,5 +463,92 @@ describe('buildCostInsightsData', () => {
     expect(data.rows.map(r => r.key)).toEqual(['gcp', 'shop']);
     expect(data.seriesKeys).toEqual(['gcp', 'shop']);
     expect(data.series).toHaveLength(1);
+  });
+
+  it('includes gpu and token cost in the total', () => {
+    const data = buildCostInsightsData({
+      level: 'namespace',
+      currentItems: [
+        costItem({ project: 'gcp', cpuCost: 1, gpuCost: 10, tokenCost: 2 }),
+      ],
+      previousItems: [],
+      monthStart: new Date(2026, 6, 1),
+      now: new Date(2026, 6, 15),
+    });
+    expect(data.summary.totalCost).toBe(13);
+  });
+
+  it('detects anomalies client-side and surfaces them on the payload', () => {
+    const items = [
+      costItem({ startTime: '2026-07-01T00:00:00.000Z', cpuCost: 1 }),
+      costItem({ startTime: '2026-07-02T00:00:00.000Z', cpuCost: 1 }),
+      costItem({ startTime: '2026-07-03T00:00:00.000Z', cpuCost: 1 }),
+      costItem({ startTime: '2026-07-04T00:00:00.000Z', cpuCost: 10 }),
+    ];
+    const data = buildCostInsightsData({
+      level: 'namespace',
+      currentItems: items,
+      previousItems: [],
+      monthStart: new Date(2026, 6, 1),
+      now: new Date(2026, 6, 15),
+    });
+    expect(data.anomalies).toHaveLength(1);
+    expect(data.anomalies?.[0].observed).toBe(10);
+    expect(data.summary.anomalyCount).toBe(1);
+  });
+
+  it('computes unit economics from usage counters', () => {
+    const data = buildCostInsightsData({
+      level: 'namespace',
+      currentItems: [
+        costItem({
+          project: 'gcp',
+          cpuCost: 5,
+          usage: { inferences: 1000, tokens: 10000 },
+        }),
+      ],
+      previousItems: [],
+      monthStart: new Date(2026, 6, 1),
+      now: new Date(2026, 6, 15),
+    });
+    expect(data.summary.costPer1kInference).toBe(5);
+    expect(data.summary.costPer1kToken).toBe(0.5);
+  });
+});
+
+describe('detectAnomalies', () => {
+  it('flags a bucket above the median baseline', () => {
+    const items = [
+      costItem({ startTime: '2026-07-01T00:00:00.000Z', cpuCost: 1 }),
+      costItem({ startTime: '2026-07-02T00:00:00.000Z', cpuCost: 1 }),
+      costItem({ startTime: '2026-07-03T00:00:00.000Z', cpuCost: 1 }),
+      costItem({ startTime: '2026-07-04T00:00:00.000Z', cpuCost: 8 }),
+    ];
+    const anomalies = detectAnomalies(items, 'namespace');
+    expect(anomalies).toHaveLength(1);
+    expect(anomalies[0].dimension).toBe('proj');
+    expect(anomalies[0].deltaPct).toBeCloseTo(700);
+  });
+
+  it('needs at least three buckets to establish a baseline', () => {
+    const items = [
+      costItem({ startTime: '2026-07-01T00:00:00.000Z', cpuCost: 1 }),
+      costItem({ startTime: '2026-07-02T00:00:00.000Z', cpuCost: 9 }),
+    ];
+    expect(detectAnomalies(items, 'namespace')).toHaveLength(0);
+  });
+});
+
+describe('computeUnitEconomics', () => {
+  it('omits a metric whose denominator is absent', () => {
+    const econ = computeUnitEconomics([
+      costItem({ cpuCost: 4, usage: { inferences: 2000 } }),
+    ]);
+    expect(econ.costPer1kInference).toBe(2);
+    expect(econ.costPer1kToken).toBeUndefined();
+  });
+
+  it('returns nothing when no item carries usage', () => {
+    expect(computeUnitEconomics([costItem({ cpuCost: 4 })])).toEqual({});
   });
 });

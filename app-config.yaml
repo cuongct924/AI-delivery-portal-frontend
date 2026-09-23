@@ -298,6 +298,11 @@ openchoreo:
   observability:
     wirelogs:
       streamTimeoutSeconds: ${OPENCHOREO_OBSERVABILITY_WIRELOGS_STREAM_TIMEOUT_SECONDS}
+    # Optional monthly cost budget (USD) for the Cost Insights page. When set,
+    # the forecast shows burn against it and the budget cards render; unset
+    # hides them. Read by CostInsightsPage via
+    # `openchoreo.observability.costBudget`.
+    costBudget: 500
 
   # Feature flags for enabling/disabling OpenChoreo functionality
   # These can be controlled via Helm values: backstage.features.*

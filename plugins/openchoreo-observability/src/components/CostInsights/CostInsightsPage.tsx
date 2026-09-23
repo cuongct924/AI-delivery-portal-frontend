@@ -6,7 +6,7 @@ import {
   useLocation,
   useSearchParams,
 } from 'react-router-dom';
-import { useApp } from '@backstage/core-plugin-api';
+import { useApp, configApiRef, useApi } from '@backstage/core-plugin-api';
 import { Page, Content, Header } from '@backstage/core-components';
 import { EntityProvider } from '@backstage/plugin-catalog-react';
 import type { Entity } from '@backstage/catalog-model';
@@ -486,6 +486,10 @@ const CostInsightsTabBar = () => {
 
 export const CostInsightsPage = () => {
   const classes = useStyles();
+  const config = useApi(configApiRef);
+  // Optional monthly budget for the scope, so the forecast can show burn
+  // against it. Absent means the budget cards stay hidden.
+  const budget = config.getOptionalNumber('openchoreo.observability.costBudget');
   const location = useLocation();
   const { selection, setSelection, update, searchParams } = useCostSelection();
   const onInsightsTab = !location.pathname.startsWith(
@@ -607,6 +611,7 @@ export const CostInsightsPage = () => {
     granularity,
     stage,
     dimension,
+    budget,
   });
 
   // Optimize/Apply acts on a single ReleaseBinding, so it's only offered when

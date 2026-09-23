@@ -167,6 +167,10 @@ export interface CostSummary {
   budget?: number | null;
   /** Number of spend anomalies flagged in the window. */
   anomalyCount?: number;
+  /** Cost per 1,000 inferences, when usage is known. */
+  costPer1kInference?: number;
+  /** Cost per 1,000 tokens, when usage is known. */
+  costPer1kToken?: number;
 }
 
 /** One stacked-bar time bucket: `{ timestamp, [dimensionValue]: cost }`. */

@@ -294,6 +294,22 @@ spec:
         modelName: ${{ parameters.modelName }}
         modelVersion: ${{ parameters.modelVersion }}
 
+    # Pre-flight FinOps: estimate the recurring run cost before anything is
+    # provisioned, attributed to the model and tagged with the `run` stage.
+    # Surfaced in the output below; a later Cost Insights view reads the same
+    # attribution. Only a plain deploy has a run cost to estimate.
+    - id: estimate-cost
+      name: "Estimate the run cost"
+      action: orchestration:estimate-cost
+      if: ${{ parameters.action === 'deploy' }}
+      input:
+        goldenPath: evaluate-deploy-model
+        stage: run
+        artifact: ${{ parameters.modelName }}
+        params:
+          deployStrategy: ${{ parameters.deployStrategy }}
+          trafficPercent: ${{ parameters.trafficPercent }}
+
     - id: prepare-manifest
       name: "Render the InferenceService manifest / deploy"
       action: orchestration:prepare-deploy-manifest
@@ -477,6 +493,8 @@ spec:
           Evaluate Gate passed for **${{ parameters.modelName }}** version
           **${{ parameters.modelVersion }}**
           (deployStrategy=${{ parameters.deployStrategy }}, releaseStrategy=${{ parameters.releaseStrategy }}).
+
+          Estimated run cost: **${{ steps['estimate-cost'].output.estimatedCost }} USD**.
 
           {% if parameters.releaseStrategy === 'pr-gated' %}
           Deploy PR opened: ${{ steps['publish-pr'].output.remoteUrl }}
