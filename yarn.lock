@@ -16689,6 +16689,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/nunjucks@npm:^3":
+  version: 3.2.6
+  resolution: "@types/nunjucks@npm:3.2.6"
+  checksum: 10c0/bc62c5c9305c0c63a49a55c3553393fdc84d123b4831668212380077ee6646c3ba52bc49e3c651257addf3a47d775707dcefeaf5e1b76cf7f680096939894142
+  languageName: node
+  linkType: hard
+
 "@types/oauth@npm:*":
   version: 0.9.6
   resolution: "@types/oauth@npm:0.9.6"
@@ -18052,23 +18059,37 @@ __metadata:
   resolution: "app@workspace:packages/app"
   dependencies:
     "@axe-core/playwright": "npm:^4.11.3"
+    "@backstage/catalog-model": "npm:^1.9.0"
     "@backstage/cli": "npm:^0.36.2"
+    "@backstage/core-app-api": "npm:^1.20.1"
     "@backstage/core-components": "npm:^0.18.10"
     "@backstage/core-plugin-api": "npm:^1.12.6"
     "@backstage/frontend-plugin-api": "npm:^0.17.0"
+    "@backstage/plugin-app-react": "npm:^0.2.3"
     "@backstage/plugin-catalog-react": "npm:^3.0.0"
     "@backstage/plugin-home-react": "npm:^0.1.38"
     "@backstage/plugin-notifications": "npm:^0.5.20"
+    "@backstage/plugin-permission-react": "npm:^0.5.1"
+    "@backstage/plugin-scaffolder-common": "npm:^2.2.0"
+    "@backstage/plugin-scaffolder-react": "npm:^2.0.0"
+    "@backstage/plugin-search": "npm:^1.7.4"
     "@backstage/plugin-techdocs": "npm:^1.17.6"
+    "@backstage/plugin-user-settings": "npm:^0.9.3"
+    "@backstage/test-utils": "npm:^1.7.18"
+    "@backstage/theme": "npm:^0.7.3"
     "@backstage/ui": "npm:^0.15.0"
     "@material-ui/core": "npm:4.12.4"
     "@material-ui/icons": "npm:4.11.3"
+    "@material-ui/lab": "npm:^4.0.0-alpha.61"
+    "@openchoreo/backstage-design-system": "workspace:^"
+    "@openchoreo/backstage-plugin": "workspace:^"
     "@openchoreo/backstage-plugin-platform-engineer-core": "workspace:^"
     "@openchoreo/backstage-portal-app": "workspace:^"
     "@playwright/test": "npm:1.56.0"
     "@testing-library/dom": "npm:9.3.4"
     "@testing-library/jest-dom": "npm:6.9.1"
     "@testing-library/react": "npm:14.3.1"
+    "@testing-library/user-event": "npm:14.6.1"
     "@types/react-dom": "npm:*"
     cross-env: "npm:7.0.3"
     react: "npm:18.3.1"
@@ -18711,14 +18732,18 @@ __metadata:
     "@types/cookie-parser": "npm:1.4.8"
     "@types/express": "npm:4.17.21"
     "@types/express-session": "npm:1.18.2"
+    "@types/nunjucks": "npm:^3"
     app: "workspace:^"
     better-sqlite3: "npm:9.6.0"
     cookie-parser: "npm:1.4.7"
     express: "npm:4.21.2"
     express-promise-router: "npm:4.1.1"
     express-session: "npm:1.18.2"
+    jsonschema: "npm:1.5.0"
     node-gyp: "npm:10.3.1"
+    nunjucks: "npm:3.2.4"
     pg: "npm:8.16.3"
+    yaml: "npm:2.8.2"
   languageName: unknown
   linkType: soft
 
@@ -27941,7 +27966,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"jsonschema@npm:^1.5.0":
+"jsonschema@npm:1.5.0, jsonschema@npm:^1.5.0":
   version: 1.5.0
   resolution: "jsonschema@npm:1.5.0"
   checksum: 10c0/c24ddb8d741f02efc0da3ad9b597a275f6b595062903d3edbfaa535c3f9c4c98613df68da5cb6635ed9aeab30d658986fea61d7662fc5b2b92840d5a1e21235e
@@ -31373,7 +31398,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"nunjucks@npm:^3.2.3":
+"nunjucks@npm:3.2.4, nunjucks@npm:^3.2.3":
   version: 3.2.4
   resolution: "nunjucks@npm:3.2.4"
   dependencies:
@@ -40127,19 +40152,19 @@ __metadata:
   languageName: node
   linkType: hard
 
-"yaml@npm:^1.10.0, yaml@npm:^1.10.2, yaml@npm:^1.7.2":
-  version: 1.10.2
-  resolution: "yaml@npm:1.10.2"
-  checksum: 10c0/5c28b9eb7adc46544f28d9a8d20c5b3cb1215a886609a2fd41f51628d8aaa5878ccd628b755dbcd29f6bb4921bd04ffbc6dcc370689bb96e594e2f9813d2605f
-  languageName: node
-  linkType: hard
-
-"yaml@npm:^2.0.0, yaml@npm:^2.2.1, yaml@npm:^2.2.2, yaml@npm:^2.8.1, yaml@npm:^2.8.2":
+"yaml@npm:2.8.2, yaml@npm:^2.0.0, yaml@npm:^2.2.1, yaml@npm:^2.2.2, yaml@npm:^2.8.1, yaml@npm:^2.8.2":
   version: 2.8.2
   resolution: "yaml@npm:2.8.2"
   bin:
     yaml: bin.mjs
   checksum: 10c0/703e4dc1e34b324aa66876d63618dcacb9ed49f7e7fe9b70f1e703645be8d640f68ab84f12b86df8ac960bac37acf5513e115de7c970940617ce0343c8c9cd96
+  languageName: node
+  linkType: hard
+
+"yaml@npm:^1.10.0, yaml@npm:^1.10.2, yaml@npm:^1.7.2":
+  version: 1.10.2
+  resolution: "yaml@npm:1.10.2"
+  checksum: 10c0/5c28b9eb7adc46544f28d9a8d20c5b3cb1215a886609a2fd41f51628d8aaa5878ccd628b755dbcd29f6bb4921bd04ffbc6dcc370689bb96e594e2f9813d2605f
   languageName: node
   linkType: hard
 

@@ -58,32 +58,38 @@ export const CostRateOptimization: FC<CostRateOptimizationProps> = ({
   );
   const { suggestions, loading } = useRateOptimization(startTime, endTime);
 
+  const renderBody = () => {
+    if (loading) {
+      return <Typography className={classes.empty}>Loading…</Typography>;
+    }
+    if (suggestions.length === 0) {
+      return (
+        <Typography className={classes.empty}>
+          No rate-optimization opportunities in the window.
+        </Typography>
+      );
+    }
+    return suggestions.map(s => (
+      <Box key={s.id} className={classes.row}>
+        <AttachMoneyIcon className={classes.icon} />
+        <Box className={classes.body}>
+          <Typography className={classes.label}>{s.title}</Typography>
+          <Typography className={classes.detail}>{s.detail}</Typography>
+        </Box>
+        <Typography className={classes.saving}>
+          ~{Math.round(s.saving_pct)}%
+        </Typography>
+      </Box>
+    ));
+  };
+
   return (
     <Paper variant="outlined" className={classes.root}>
       <Typography className={classes.title}>Rate optimization</Typography>
       <Typography className={classes.subtitle}>
         Pay less for the resources you must use.
       </Typography>
-      {loading ? (
-        <Typography className={classes.empty}>Loading…</Typography>
-      ) : suggestions.length === 0 ? (
-        <Typography className={classes.empty}>
-          No rate-optimization opportunities in the window.
-        </Typography>
-      ) : (
-        suggestions.map(s => (
-          <Box key={s.id} className={classes.row}>
-            <AttachMoneyIcon className={classes.icon} />
-            <Box className={classes.body}>
-              <Typography className={classes.label}>{s.title}</Typography>
-              <Typography className={classes.detail}>{s.detail}</Typography>
-            </Box>
-            <Typography className={classes.saving}>
-              ~{Math.round(s.saving_pct)}%
-            </Typography>
-          </Box>
-        ))
-      )}
+      {renderBody()}
     </Paper>
   );
 };

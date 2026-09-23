@@ -46,6 +46,7 @@ export const CostBudgetDialog: FC<CostBudgetDialogProps> = ({
       <DialogTitle>Set monthly budget</DialogTitle>
       <DialogContent>
         <TextField
+          // eslint-disable-next-line jsx-a11y/no-autofocus -- single-field dialog; focusing it is the intent
           autoFocus
           margin="dense"
           label="Budget (USD / month)"

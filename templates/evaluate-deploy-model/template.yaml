@@ -2,7 +2,7 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: evaluate-deploy-model
-  title: "Evaluate & Deploy Model"
+  title: 'Evaluate & Deploy Model'
   description: >
     Deploy, roll back, or promote a model version — pick `action` below.
   tags:
@@ -229,7 +229,7 @@ spec:
                     repoUrl:
                       title: Repository
                       type: string
-                      description: "PR target repo: github.com?owner=<org>&repo=<repo>."
+                      description: 'PR target repo: github.com?owner=<org>&repo=<repo>.'
       ui:field: StepLayout
       ui:options:
         groups:
@@ -280,7 +280,7 @@ spec:
 
   steps:
     - id: policy-check
-      name: "Run the Evaluate Gate"
+      name: 'Run the Evaluate Gate'
       action: orchestration:policy-check
       # Only a plain deploy re-runs the gate. Rollback is a production
       # emergency rolling back to a version that already passed it once —
@@ -299,7 +299,7 @@ spec:
     # Surfaced in the output below; a later Cost Insights view reads the same
     # attribution. Only a plain deploy has a run cost to estimate.
     - id: estimate-cost
-      name: "Estimate the run cost"
+      name: 'Estimate the run cost'
       action: orchestration:estimate-cost
       if: ${{ parameters.action === 'deploy' }}
       input:
@@ -313,7 +313,7 @@ spec:
     # Pre-flight cost guardrail: warn (never block) when the estimate is over
     # budget. Flip mode to `enforce` to block a fail-level overrun.
     - id: cost-gate
-      name: "Check the cost budget"
+      name: 'Check the cost budget'
       action: orchestration:cost-gate
       if: ${{ parameters.action === 'deploy' }}
       input:
@@ -325,7 +325,7 @@ spec:
           trafficPercent: ${{ parameters.trafficPercent }}
 
     - id: prepare-manifest
-      name: "Render the InferenceService manifest / deploy"
+      name: 'Render the InferenceService manifest / deploy'
       action: orchestration:prepare-deploy-manifest
       if: ${{ parameters.action === 'deploy' or parameters.action === 'rollback' }}
       input:
@@ -344,7 +344,7 @@ spec:
         enablePredictionLogging: ${{ parameters.enablePredictionLogging }}
 
     - id: publish-pr
-      name: "Open the deploy PR"
+      name: 'Open the deploy PR'
       action: publish:github:pull-request
       # Only a plain deploy can open a PR — rollback is always instant,
       # promote never renders a manifest at all.
@@ -352,7 +352,7 @@ spec:
       input:
         repoUrl: ${{ parameters.repoUrl }}
         branchName: deploy-${{ parameters.modelName }}-${{ parameters.modelVersion }}
-        title: "Deploy ${{ parameters.modelName }}:${{ parameters.modelVersion }}"
+        title: 'Deploy ${{ parameters.modelName }}:${{ parameters.modelVersion }}'
         description: >
           Deploy manifest for **${{ parameters.modelName }}** version
           **${{ parameters.modelVersion }}** (Evaluate Gate passed,
@@ -372,7 +372,7 @@ spec:
         targetPath: infra
 
     - id: record-deploy
-      name: "Record the deploy"
+      name: 'Record the deploy'
       action: orchestration:record-deploy
       if: ${{ parameters.action === 'deploy' or parameters.action === 'rollback' }}
       input:
@@ -381,7 +381,7 @@ spec:
         prUrl: ${{ parameters.action === 'deploy' and parameters.releaseStrategy === 'pr-gated' and steps['publish-pr'].output.remoteUrl or '' }}
 
     - id: promote
-      name: "Render the promotion manifest"
+      name: 'Render the promotion manifest'
       action: orchestration:promote-model
       # Renders the ProjectReleaseBinding manifest only — writes nothing.
       if: ${{ parameters.action === 'promote' }}
@@ -390,13 +390,13 @@ spec:
         targetEnvironment: ${{ parameters.targetEnvironment }}
 
     - id: publish-promote-pr
-      name: "Open the promotion PR"
+      name: 'Open the promotion PR'
       action: publish:github:pull-request
       if: ${{ parameters.action === 'promote' }}
       input:
         repoUrl: ${{ parameters.repoUrl }}
         branchName: promote-${{ parameters.modelName }}-${{ parameters.targetEnvironment }}
-        title: "Promote ${{ parameters.modelName }} to ${{ parameters.targetEnvironment }}"
+        title: 'Promote ${{ parameters.modelName }} to ${{ parameters.targetEnvironment }}'
         description: >
           Promotes **${{ parameters.modelName }}** to
           **${{ parameters.targetEnvironment }}**
@@ -408,7 +408,7 @@ spec:
         targetPath: infra
 
     - id: promote-rollback
-      name: "Render the rollback manifest"
+      name: 'Render the rollback manifest'
       action: orchestration:rollback-promotion
       if: ${{ parameters.action === 'promote-rollback' }}
       input:
@@ -416,7 +416,7 @@ spec:
         environment: ${{ parameters.rollbackEnvironment }}
 
     - id: publish-promote-rollback-pr
-      name: "Open the rollback PR"
+      name: 'Open the rollback PR'
       action: publish:github:pull-request
       if: ${{ parameters.action === 'promote-rollback' }}
       input:
@@ -434,7 +434,7 @@ spec:
         targetPath: infra
 
     - id: confirm-promote
-      name: "Apply the merged promotion"
+      name: 'Apply the merged promotion'
       action: orchestration:confirm-promotion
       # The only real path that reaches
       # OpenChoreoPromotionAdapter.confirm_promotion() — running this
@@ -449,7 +449,7 @@ spec:
         eventType: deploy
 
     - id: confirm-promote-rollback
-      name: "Apply the merged rollback"
+      name: 'Apply the merged rollback'
       action: orchestration:confirm-promotion
       if: ${{ parameters.action === 'promote-rollback-confirm' }}
       input:

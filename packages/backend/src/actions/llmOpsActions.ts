@@ -124,8 +124,9 @@ export function createPrepareLlmDeployManifestAction({
           }),
         gpuCount: z =>
           z
-            .enum(['1', '2', '4', '8'], {
-              description: 'GPU count — also used as tensor-parallel-size',
+            .union([z.enum(['1', '2', '4', '8']), z.number()], {
+              description:
+                'GPU count — also used as tensor-parallel-size. The form sends a number; a string is accepted too.',
             })
             .optional(),
         quantization: z =>
@@ -171,6 +172,36 @@ export function createPrepareLlmDeployManifestAction({
                 'K8s Secret name holding the HF token, never the token itself — required when the model is gated',
             })
             .optional(),
+        batchingStrategy: z =>
+          z
+            .enum(['static', 'dynamic', 'continuous'], {
+              description:
+                'vLLM batching strategy — only a subset is supported per runtime, validated server-side',
+            })
+            .optional(),
+        enablePagedAttention: z =>
+          z
+            .boolean({ description: 'vLLM PagedAttention (KV cache paging)' })
+            .optional(),
+        enablePrefixCaching: z =>
+          z
+            .boolean({ description: 'vLLM automatic prefix caching' })
+            .optional(),
+        speculativeDecoding: z =>
+          z
+            .enum(['none', 'ngram', 'draft-model'], {
+              description: 'Speculative decoding mode',
+            })
+            .optional(),
+        draftModelId: z =>
+          z
+            .string({
+              description:
+                'HuggingFace model id of the draft model — required when speculativeDecoding=draft-model',
+            })
+            .optional(),
+        pipelineParallelSize: z =>
+          z.number({ description: 'Pipeline parallel size' }).optional(),
       },
       output: {
         filePath: z =>
@@ -207,6 +238,14 @@ export function createPrepareLlmDeployManifestAction({
           release_strategy: ctx.input.releaseStrategy,
           environment: ctx.input.environment,
           hf_token_secret_ref: ctx.input.hfTokenSecretRef,
+          // The backend's PrepareLlmDeployRequest names these six in camelCase
+          // (unlike the snake_case fields above) — see routers/llm_serving.py.
+          batchingStrategy: ctx.input.batchingStrategy,
+          enablePagedAttention: ctx.input.enablePagedAttention,
+          enablePrefixCaching: ctx.input.enablePrefixCaching,
+          speculativeDecoding: ctx.input.speculativeDecoding,
+          draftModelId: ctx.input.draftModelId,
+          pipelineParallelSize: ctx.input.pipelineParallelSize,
         },
         tokenService,
       );
@@ -582,7 +621,9 @@ export function createDraftEvalSetAction({ config, tokenService }: ActionDeps) {
       input: {
         name: z => z.string({ description: 'Eval-set name' }),
         questions: z =>
-          z.array(z.string(), { description: 'Questions to run through the LLM judge' }),
+          z.array(z.string(), {
+            description: 'Questions to run through the LLM judge',
+          }),
       },
       output: {
         version: z =>
@@ -625,13 +666,17 @@ export function createFetchEvalSetAction({ config, tokenService }: ActionDeps) {
     },
     async handler(ctx) {
       const baseUrl = getBaseUrl(config);
-      const url = `${baseUrl}/eval-sets/${encodeURIComponent(ctx.input.name)}/latest`;
+      const url = `${baseUrl}/eval-sets/${encodeURIComponent(
+        ctx.input.name,
+      )}/latest`;
       const response = await fetch(url, {
         headers: await authHeaders(tokenService),
       });
       if (!response.ok) {
         throw new Error(
-          `GET eval-set failed with ${response.status}: ${await response.text()}`,
+          `GET eval-set failed with ${
+            response.status
+          }: ${await response.text()}`,
         );
       }
       const result = (await response.json()) as EvalSetVersionResponse;

@@ -77,13 +77,24 @@ spec:
                 const: rag-index
           then:
             required:
-              - collectionName
+              - collectionMode
               - sourcePaths
             properties:
-              collectionName:
-                title: Qdrant collection
+              # Ingest into an existing collection (picked from a dropdown, so
+              # a typo can't spawn a junk collection) or create a new one
+              # (typed, with a naming pattern). The two branches below add the
+              # matching field only for the chosen mode.
+              collectionMode:
+                title: Collection
                 type: string
-                description: 'Qdrant collection name. Example: "idp-docs".'
+                oneOf:
+                  - const: existing
+                    title: Ingest into an existing collection
+                  - const: new
+                    title: Create a new collection
+                default: existing
+                description: >
+                  Pick an existing Qdrant collection, or create a new one.
               sourcePaths:
                 title: Source document paths
                 type: array
@@ -120,6 +131,42 @@ spec:
                   Characters shared by adjacent chunks to preserve context
                   across boundaries. Usually set to 10-15% of chunkSize
                   (80-120 for 800).
+        # Existing collection: a strict dropdown of what Qdrant actually has.
+        - if:
+            required: [artifactKind, collectionMode]
+            properties:
+              artifactKind:
+                const: rag-index
+              collectionMode:
+                const: existing
+          then:
+            required:
+              - collectionName
+            properties:
+              collectionName:
+                title: Qdrant collection
+                type: string
+                description: 'Existing collection to ingest into.'
+        # New collection: typed, with a naming pattern so it can't drift from
+        # the convention (lowercase, no spaces).
+        - if:
+            required: [artifactKind, collectionMode]
+            properties:
+              artifactKind:
+                const: rag-index
+              collectionMode:
+                const: new
+          then:
+            required:
+              - newCollectionName
+            properties:
+              newCollectionName:
+                title: New collection name
+                type: string
+                pattern: '^[a-z0-9][a-z0-9_-]*$'
+                description: >
+                  Lowercase letters, digits, hyphens and underscores only.
+                  Example: "idp-docs".
         - if:
             required: [artifactKind]
             properties:
@@ -159,12 +206,23 @@ spec:
             fields:
               - name: promptName
                 width: 6
+                # Free-solo combobox of existing persona keys (GET /prompts):
+                # pick one to add a version to, or type a new key to create a
+                # persona — avoids the typo class (ml-ops/ml_ops) that a plain
+                # free-text field allowed, while still supporting new personas.
+                promptNameCombo: true
               - name: personaTitle
                 width: 6
               - promptContent
           - title: 'RAG Index (when Artifact kind = RAG Index)'
             fields:
-              - collectionName
+              - name: collectionMode
+                width: 12
+              # Strict dropdown of existing collections (GET /rag/collections);
+              # only rendered in the "existing" branch.
+              - name: collectionName
+                ragCollectionPicker: true
+              - name: newCollectionName
               - name: chunkSize
                 width: 3
               - name: chunkOverlap
@@ -184,7 +242,7 @@ spec:
       input:
         goldenPath: llm-draft-ingest
         stage: build
-        artifact: ${{ parameters.artifactKind === 'rag-index' and parameters.collectionName or (parameters.artifactKind === 'eval-set' and parameters.evalSetName or parameters.promptName) }}
+        artifact: ${{ parameters.artifactKind === 'rag-index' and (parameters.collectionMode === 'new' and parameters.newCollectionName or parameters.collectionName) or (parameters.artifactKind === 'eval-set' and parameters.evalSetName or parameters.promptName) }}
         params:
           artifactKind: ${{ parameters.artifactKind }}
 
@@ -196,7 +254,7 @@ spec:
       input:
         goldenPath: llm-draft-ingest
         stage: build
-        artifact: ${{ parameters.artifactKind === 'rag-index' and parameters.collectionName or (parameters.artifactKind === 'eval-set' and parameters.evalSetName or parameters.promptName) }}
+        artifact: ${{ parameters.artifactKind === 'rag-index' and (parameters.collectionMode === 'new' and parameters.newCollectionName or parameters.collectionName) or (parameters.artifactKind === 'eval-set' and parameters.evalSetName or parameters.promptName) }}
         params:
           artifactKind: ${{ parameters.artifactKind }}
 
@@ -214,7 +272,7 @@ spec:
       action: orchestration:rag-ingest
       if: ${{ parameters.artifactKind === 'rag-index' }}
       input:
-        collection: ${{ parameters.collectionName }}
+        collection: ${{ parameters.collectionMode === 'new' and parameters.newCollectionName or parameters.collectionName }}
         sourcePaths: ${{ parameters.sourcePaths }}
         chunkSize: ${{ parameters.chunkSize }}
         chunkOverlap: ${{ parameters.chunkOverlap }}
@@ -239,13 +297,13 @@ spec:
           `artifactKind=prompt`, `promptName=${{ parameters.promptName }}`,
           `promptVersion=${{ steps['draft-prompt'].output.version }}`.
           {% elif parameters.artifactKind === 'rag-index' %}
-          **${{ parameters.collectionName }}** index version
+          **${{ parameters.collectionMode === 'new' and parameters.newCollectionName or parameters.collectionName }}** index version
           **${{ steps['rag-ingest'].output.indexVersion }}**
           (${{ steps['rag-ingest'].output.chunksIngested }} chunks) ingested and is not active.
 
           Run **"Evaluate & Activate Prompt / RAG Version"** with:
           `artifactKind=rag-index`,
-          `collectionName=${{ parameters.collectionName }}`,
+          `collectionName=${{ parameters.collectionMode === 'new' and parameters.newCollectionName or parameters.collectionName }}`,
           `indexVersion=${{ steps['rag-ingest'].output.indexVersion }}`.
           {% else %}
           Eval set **${{ parameters.evalSetName }}** version

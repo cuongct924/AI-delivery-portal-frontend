@@ -51,38 +51,46 @@ export const CostTrainingEfficiency: FC<CostTrainingEfficiencyProps> = ({
   );
   const { rows, loading } = useTrainingEfficiency(startTime, endTime);
 
-  return (
-    <Paper variant="outlined" className={classes.root}>
-      <Typography className={classes.title}>Training cost efficiency</Typography>
-      <Typography className={classes.subtitle}>
-        Build cost per accuracy point — cheaper per point is better.
-      </Typography>
-      {loading ? (
-        <Typography className={classes.empty}>Loading…</Typography>
-      ) : rows.length === 0 ? (
+  const renderBody = () => {
+    if (loading) {
+      return <Typography className={classes.empty}>Loading…</Typography>;
+    }
+    if (rows.length === 0) {
+      return (
         <Typography className={classes.empty}>
           No training runs in the window.
         </Typography>
-      ) : (
-        rows.map(row => (
-          <Box key={row.artifact} className={classes.row}>
-            <Typography className={classes.artifact}>{row.artifact}</Typography>
-            <Typography className={classes.cell}>
-              {formatUsd(row.build_cost)}
-            </Typography>
-            <Typography className={classes.cell}>
-              {row.accuracy !== null
-                ? `${Math.round(row.accuracy * 100)}% acc`
-                : '—'}
-            </Typography>
-            <Typography className={`${classes.cell} ${classes.value}`}>
-              {row.cost_per_point !== null
-                ? `${formatUsd(row.cost_per_point)}/pt`
-                : '—'}
-            </Typography>
-          </Box>
-        ))
-      )}
+      );
+    }
+    return rows.map(row => (
+      <Box key={row.artifact} className={classes.row}>
+        <Typography className={classes.artifact}>{row.artifact}</Typography>
+        <Typography className={classes.cell}>
+          {formatUsd(row.build_cost)}
+        </Typography>
+        <Typography className={classes.cell}>
+          {row.accuracy !== null
+            ? `${Math.round(row.accuracy * 100)}% acc`
+            : '—'}
+        </Typography>
+        <Typography className={`${classes.cell} ${classes.value}`}>
+          {row.cost_per_point !== null
+            ? `${formatUsd(row.cost_per_point)}/pt`
+            : '—'}
+        </Typography>
+      </Box>
+    ));
+  };
+
+  return (
+    <Paper variant="outlined" className={classes.root}>
+      <Typography className={classes.title}>
+        Training cost efficiency
+      </Typography>
+      <Typography className={classes.subtitle}>
+        Build cost per accuracy point — cheaper per point is better.
+      </Typography>
+      {renderBody()}
     </Paper>
   );
 };

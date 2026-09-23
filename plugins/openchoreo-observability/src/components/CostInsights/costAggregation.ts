@@ -160,6 +160,15 @@ function weightedGpuUtilization(items: CostItem[]): number | undefined {
 }
 
 /**
+ * Severity band for a spend spike, from how far over the baseline it is.
+ */
+function anomalySeverity(deltaPct: number): CostAnomaly['severity'] {
+  if (deltaPct >= 150) return 'high';
+  if (deltaPct >= 50) return 'medium';
+  return 'low';
+}
+
+/**
  * Flag spend spikes against each dimension's own recent baseline. A bucket is
  * anomalous when its total exceeds `threshold`× the median bucket for that
  * dimension. Client-side and dependency-free, so the dashboard surfaces
@@ -195,7 +204,7 @@ export function detectAnomalies(
           observed: b.total,
           expected: median,
           deltaPct,
-          severity: deltaPct >= 150 ? 'high' : deltaPct >= 50 ? 'medium' : 'low',
+          severity: anomalySeverity(deltaPct),
           detectedAt: b.ts,
         });
       }
@@ -228,7 +237,8 @@ export function computeUnitEconomics(items: CostItem[]): {
     }
   }
   const out: { costPer1kInference?: number; costPer1kToken?: number } = {};
-  if (inferences > 0) out.costPer1kInference = (inferenceCost / inferences) * 1000;
+  if (inferences > 0)
+    out.costPer1kInference = (inferenceCost / inferences) * 1000;
   if (tokens > 0) out.costPer1kToken = (tokenCost / tokens) * 1000;
   return out;
 }

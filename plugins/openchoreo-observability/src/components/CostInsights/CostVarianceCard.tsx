@@ -53,44 +53,45 @@ export const CostVarianceCard: FC<CostVarianceCardProps> = ({
   );
   const { rows, loading } = useCostVariance(startTime, endTime);
 
+  const renderBody = () => {
+    if (loading) {
+      return <Typography className={classes.empty}>Loading…</Typography>;
+    }
+    if (rows.length === 0) {
+      return (
+        <Typography className={classes.empty}>
+          No estimate/actual pairs in the window.
+        </Typography>
+      );
+    }
+    return rows.map(row => {
+      const pct = row.variance_pct;
+      let varianceClass = '';
+      if (pct !== null) varianceClass = pct > 0 ? classes.over : classes.under;
+      return (
+        <Box key={row.artifact} className={classes.row}>
+          <Typography className={classes.artifact}>{row.artifact}</Typography>
+          <Typography className={classes.cell}>
+            est {formatUsd(row.estimated)}
+          </Typography>
+          <Typography className={classes.cell}>
+            act {formatUsd(row.actual)}
+          </Typography>
+          <Typography className={`${classes.cell} ${varianceClass}`}>
+            {pct === null ? '—' : `${pct > 0 ? '+' : ''}${Math.round(pct)}%`}
+          </Typography>
+        </Box>
+      );
+    });
+  };
+
   return (
     <Paper variant="outlined" className={classes.root}>
       <Typography className={classes.title}>Estimate vs actual</Typography>
       <Typography className={classes.subtitle}>
         How close the pre-flight estimate was to the recorded cost.
       </Typography>
-      {loading ? (
-        <Typography className={classes.empty}>Loading…</Typography>
-      ) : rows.length === 0 ? (
-        <Typography className={classes.empty}>
-          No estimate/actual pairs in the window.
-        </Typography>
-      ) : (
-        rows.map(row => {
-          const pct = row.variance_pct;
-          const over = pct !== null && pct > 0;
-          return (
-            <Box key={row.artifact} className={classes.row}>
-              <Typography className={classes.artifact}>
-                {row.artifact}
-              </Typography>
-              <Typography className={classes.cell}>
-                est {formatUsd(row.estimated)}
-              </Typography>
-              <Typography className={classes.cell}>
-                act {formatUsd(row.actual)}
-              </Typography>
-              <Typography
-                className={`${classes.cell} ${
-                  pct === null ? '' : over ? classes.over : classes.under
-                }`}
-              >
-                {pct === null ? '—' : `${pct > 0 ? '+' : ''}${Math.round(pct)}%`}
-              </Typography>
-            </Box>
-          );
-        })
-      )}
+      {renderBody()}
     </Paper>
   );
 };

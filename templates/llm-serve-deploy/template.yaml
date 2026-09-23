@@ -2,7 +2,7 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: llm-serve-deploy
-  title: "Serve LLM (Self-hosted)"
+  title: 'Serve LLM (Self-hosted)'
   description: >
     Deploys a self-hosted LLM (vLLM, from a HuggingFace Hub model id) as a
     KServe InferenceService. Requires a GPU-enabled cluster with the vLLM
@@ -296,7 +296,7 @@ spec:
     # Pre-flight FinOps: estimate the recurring GPU serving cost before the
     # manifest is rendered, tagged with the `run` stage.
     - id: estimate-cost
-      name: "Estimate the serving cost"
+      name: 'Estimate the serving cost'
       action: orchestration:estimate-cost
       input:
         goldenPath: llm-serve-deploy
@@ -309,7 +309,7 @@ spec:
     # Pre-flight cost guardrail: warn (never block) when the estimate is over
     # budget. Flip mode to `enforce` to block a fail-level overrun.
     - id: cost-gate
-      name: "Check the cost budget"
+      name: 'Check the cost budget'
       action: orchestration:cost-gate
       input:
         goldenPath: llm-serve-deploy
@@ -320,7 +320,7 @@ spec:
           gpuCount: ${{ parameters.gpuCount }}
 
     - id: prepare-manifest
-      name: "Render the InferenceService manifest / deploy"
+      name: 'Render the InferenceService manifest / deploy'
       action: orchestration:prepare-llm-deploy-manifest
       input:
         modelName: ${{ parameters.modelName }}
@@ -343,13 +343,13 @@ spec:
         pipelineParallelSize: ${{ parameters.pipelineParallelSize }}
 
     - id: publish-pr
-      name: "Open the deploy PR"
+      name: 'Open the deploy PR'
       action: publish:github:pull-request
       if: ${{ parameters.releaseStrategy === 'pr-gated' }}
       input:
         repoUrl: ${{ parameters.repoUrl }}
         branchName: llm-serve-deploy-${{ parameters.modelName }}
-        title: "Serve LLM ${{ parameters.modelName }} (${{ parameters.huggingFaceModelId }})"
+        title: 'Serve LLM ${{ parameters.modelName }} (${{ parameters.huggingFaceModelId }})'
         description: >
           Adds the KServe InferenceService manifest for
           **${{ parameters.modelName }}** (${{ parameters.huggingFaceModelId }},

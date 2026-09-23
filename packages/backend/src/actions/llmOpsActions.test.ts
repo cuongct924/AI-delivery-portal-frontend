@@ -180,6 +180,69 @@ describe('orchestration:prepare-llm-deploy-manifest', () => {
 
     await fs.rm(workspacePath, { recursive: true, force: true });
   });
+
+  it('forwards the runtime optimization flags in camelCase', async () => {
+    const workspacePath = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'llmops-actions-test-'),
+    );
+    const fileName =
+      'infra/environments/dev/inference-services/llmops-team/llama-3-8b/llm.yaml';
+    const fetchMock = mockFetchResponses([
+      {
+        ok: true,
+        body: {
+          file_name: fileName,
+          content: 'kind: InferenceService\n',
+          deployed: false,
+        },
+      },
+    ]);
+    const action = createPrepareLlmDeployManifestAction({ config });
+    const { ctx } = createMockContext<typeof action>(
+      {
+        modelName: 'llama-3-8b',
+        huggingFaceModelId: 'meta-llama/Llama-3.1-8B-Instruct',
+        gpuType: 'H100',
+        batchingStrategy: 'continuous',
+        enablePagedAttention: true,
+        enablePrefixCaching: true,
+        speculativeDecoding: 'ngram',
+        draftModelId: 'meta-llama/Llama-3.2-1B',
+        pipelineParallelSize: 2,
+      },
+      workspacePath,
+    );
+
+    await action.handler(ctx);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BASE_URL}/llm-deploy/prepare`,
+      expect.objectContaining({
+        body: JSON.stringify({
+          model_name: 'llama-3-8b',
+          huggingface_model_id: 'meta-llama/Llama-3.1-8B-Instruct',
+          runtime: undefined,
+          gpu_type: 'H100',
+          gpu_count: undefined,
+          quantization: undefined,
+          max_context_length: undefined,
+          traffic_strategy: undefined,
+          traffic_percent: undefined,
+          release_strategy: undefined,
+          environment: undefined,
+          hf_token_secret_ref: undefined,
+          batchingStrategy: 'continuous',
+          enablePagedAttention: true,
+          enablePrefixCaching: true,
+          speculativeDecoding: 'ngram',
+          draftModelId: 'meta-llama/Llama-3.2-1B',
+          pipelineParallelSize: 2,
+        }),
+      }),
+    );
+
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
 });
 
 describe('orchestration:rag-ingest', () => {
@@ -296,7 +359,11 @@ describe('orchestration:rag-activate environment', () => {
     const fetchMock = mockFetchResponses([
       {
         ok: true,
-        body: { collection: 'smoke-test', environment: 'staging', active_version: '1' },
+        body: {
+          collection: 'smoke-test',
+          environment: 'staging',
+          active_version: '1',
+        },
       },
     ]);
     const action = createRagActivateAction({ config });
@@ -473,7 +540,10 @@ describe('orchestration:activate-prompt', () => {
 
   it('forwards environment', async () => {
     const fetchMock = mockFetchResponses([
-      { ok: true, body: { name: 'mlops', environment: 'staging', active_version: '1' } },
+      {
+        ok: true,
+        body: { name: 'mlops', environment: 'staging', active_version: '1' },
+      },
     ]);
     const action = createActivatePromptAction({ config });
     const { ctx, outputs } = createMockContext<typeof action>(

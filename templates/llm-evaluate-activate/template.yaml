@@ -2,7 +2,7 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: llm-evaluate-activate
-  title: "Evaluate & Activate Prompt / RAG Version"
+  title: 'Evaluate & Activate Prompt / RAG Version'
   description: >
     Evaluates a drafted prompt or RAG index version with an LLM judge and
     activates it immediately if it passes — or rolls back to a previously
@@ -58,9 +58,9 @@ spec:
           type: string
           oneOf:
             - const: prompt
-              title: 'Prompt - a persona''s drafted system prompt version'
+              title: "Prompt - a persona's drafted system prompt version"
             - const: rag-index
-              title: 'RAG Index - a Qdrant collection''s drafted index version'
+              title: "RAG Index - a Qdrant collection's drafted index version"
           description: >
             Choose which drafted artifact to evaluate and, if it passes,
             activate — or to roll back.
@@ -234,7 +234,8 @@ spec:
           # of showing a stale/irrelevant eval form.
           - title: Evaluation
             fields:
-              - evalSetName
+              - name: evalSetName
+                evalSetNamePicker: true
               - evalCases
               - name: model
                 width: 6
@@ -244,7 +245,7 @@ spec:
     # Pre-flight FinOps: estimate the judge (gate) spend before evaluating.
     # Rollback re-uses an already-gated version, so it has no gate cost.
     - id: estimate-cost
-      name: "Estimate the gate cost"
+      name: 'Estimate the gate cost'
       action: orchestration:estimate-cost
       if: ${{ parameters.action === 'evaluate-activate' }}
       input:
@@ -257,7 +258,7 @@ spec:
     # Pre-flight cost guardrail: warn (never block) when the estimate is over
     # budget. Flip mode to `enforce` to block a fail-level overrun.
     - id: cost-gate
-      name: "Check the cost budget"
+      name: 'Check the cost budget'
       action: orchestration:cost-gate
       if: ${{ parameters.action === 'evaluate-activate' }}
       input:
@@ -268,14 +269,14 @@ spec:
           artifactKind: ${{ parameters.artifactKind }}
 
     - id: fetch-eval-set
-      name: "Fetch the named eval set"
+      name: 'Fetch the named eval set'
       action: orchestration:fetch-eval-set
       if: ${{ parameters.action === 'evaluate-activate' and parameters.evalSetName }}
       input:
         name: ${{ parameters.evalSetName }}
 
     - id: evaluate-prompt
-      name: "Evaluate the prompt"
+      name: 'Evaluate the prompt'
       action: orchestration:evaluate-prompt
       if: ${{ parameters.action === 'evaluate-activate' and parameters.artifactKind === 'prompt' }}
       input:
@@ -285,7 +286,7 @@ spec:
         model: ${{ parameters.model }}
 
     - id: evaluate-rag
-      name: "Evaluate the RAG index"
+      name: 'Evaluate the RAG index'
       action: orchestration:rag-evaluate
       if: ${{ parameters.action === 'evaluate-activate' and parameters.artifactKind === 'rag-index' }}
       input:
@@ -299,7 +300,7 @@ spec:
     # for action=rollback, so it never ran and has no output to read (same
     # short-circuit idiom train-track-register's enrich-features step uses).
     - id: activate-prompt
-      name: "Activate the prompt"
+      name: 'Activate the prompt'
       action: orchestration:activate-prompt
       if: ${{ parameters.artifactKind === 'prompt' and (parameters.action === 'rollback' or steps['evaluate-prompt'].output.passed) }}
       input:
@@ -309,7 +310,7 @@ spec:
         isRollback: ${{ parameters.action === 'rollback' }}
 
     - id: activate-rag
-      name: "Activate the RAG index"
+      name: 'Activate the RAG index'
       action: orchestration:rag-activate
       if: ${{ parameters.artifactKind === 'rag-index' and (parameters.action === 'rollback' or steps['evaluate-rag'].output.passed) }}
       input:

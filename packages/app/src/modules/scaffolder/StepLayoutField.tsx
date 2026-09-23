@@ -7,6 +7,7 @@ import AccordionDetails from '@material-ui/core/AccordionDetails';
 import Box from '@material-ui/core/Box';
 import Checkbox from '@material-ui/core/Checkbox';
 import Chip from '@material-ui/core/Chip';
+import CircularProgress from '@material-ui/core/CircularProgress';
 import FormControlLabel from '@material-ui/core/FormControlLabel';
 import Grid, { GridSize } from '@material-ui/core/Grid';
 import MenuItem from '@material-ui/core/MenuItem';
@@ -17,6 +18,7 @@ import TableHead from '@material-ui/core/TableHead';
 import TableRow from '@material-ui/core/TableRow';
 import TextField from '@material-ui/core/TextField';
 import Typography from '@material-ui/core/Typography';
+import Autocomplete from '@material-ui/lab/Autocomplete';
 import ExpandMoreIcon from '@material-ui/icons/ExpandMore';
 import AppsIcon from '@material-ui/icons/Apps';
 import TuneIcon from '@material-ui/icons/Tune';
@@ -193,6 +195,16 @@ interface GroupField {
    */
   promptNamePicker?: boolean;
   /**
+   * Free-solo combobox of drafted persona keys (GET /prompts) — Draft
+   * Prompt's `promptName`, where the Dev either picks an existing persona to
+   * add a version to or types a brand-new persona key to create one. Unlike
+   * promptNamePicker (a strict select, right for Evaluate & Activate where
+   * the persona must already exist), this still allows a value that isn't in
+   * the list yet. Renders even while the list is empty/loading, since typing
+   * a new key is always valid.
+   */
+  promptNameCombo?: boolean;
+  /**
    * Dropdown of the sibling `promptName`'s actually-drafted versions (GET
    * /prompts/{name}/versions) instead of a free-text version number — same
    * "remove the invalid-value class structurally" reasoning as
@@ -221,6 +233,15 @@ interface GroupField {
    * fallback contract as the pickers above.
    */
   llmModelPicker?: boolean;
+  /**
+   * Dropdown of registered eval-set names (GET /eval-sets) instead of a
+   * free-text field — Evaluate & Activate Prompt / RAG Version's
+   * `evalSetName`, so a Dev picks a set that actually exists instead of
+   * typing a name that 404s the whole run at the fetch-eval-set step. Same
+   * fallback contract as the pickers above: plain field while loading,
+   * empty, or when nothing has been drafted yet.
+   */
+  evalSetNamePicker?: boolean;
   /**
    * Live GET /llm-deploy/validate-model lookup below this field — the
    * frontend half of llm-serve-deploy's gated-model guardrail: surfaces whether
@@ -386,13 +407,25 @@ function toStringList(body: unknown): string[] {
 }
 
 /**
+ * `&source=<source>` for the dataset read endpoints, or '' when unknown. The
+ * backend uses it to read an s3 dataset straight from MinIO/S3 (the realistic
+ * path a dev should see the preview come from) instead of a same-named local
+ * file — see read_dataset_bytes in the orchestration-api.
+ */
+function datasetSourceQuery(source: unknown): string {
+  return typeof source === 'string' && source
+    ? `&source=${encodeURIComponent(source)}`
+    : '';
+}
+
+/**
  * Fetches the current dataset's column names via orchestration-api
  * (GET /datasets/columns) whenever `datasetUri` is a non-empty string.
  * Returns `[]` (never throws into the caller) while unset, loading, or on
  * failure — every call site treats an empty list as "show the plain field
  * instead", so this never blocks the form.
  */
-function useDatasetColumns(datasetUri: unknown): string[] {
+function useDatasetColumns(datasetUri: unknown, source?: unknown): string[] {
   const discoveryApi = useApi(discoveryApiRef);
   const { fetch } = useApi(fetchApiRef);
   const getAuthHeaders = useOpenChoreoAuthHeaders();
@@ -409,7 +442,7 @@ function useDatasetColumns(datasetUri: unknown): string[] {
         fetch(
           `${proxyUrl}/orchestration-api/datasets/columns?dataset_uri=${encodeURIComponent(
             datasetUri,
-          )}`,
+          )}${datasetSourceQuery(source)}`,
           {
             headers,
           },
@@ -428,7 +461,7 @@ function useDatasetColumns(datasetUri: unknown): string[] {
     return () => {
       cancelled = true;
     };
-  }, [discoveryApi, fetch, datasetUri, getAuthHeaders]);
+  }, [discoveryApi, fetch, datasetUri, source, getAuthHeaders]);
 
   return columns;
 }
@@ -503,14 +536,23 @@ function findDatasetForUseCase(
  * call site treats an empty list as "show the plain `file://` text field
  * instead", same fallback contract as useDatasetColumns above.
  */
-function useDatasets(): DatasetInfo[] {
+interface DatasetsState {
+  datasets: DatasetInfo[];
+  loading: boolean;
+}
+
+function useDatasets(): DatasetsState {
   const discoveryApi = useApi(discoveryApiRef);
   const { fetch } = useApi(fetchApiRef);
   const getAuthHeaders = useOpenChoreoAuthHeaders();
-  const [datasets, setDatasets] = useState<DatasetInfo[]>([]);
+  const [state, setState] = useState<DatasetsState>({
+    datasets: [],
+    loading: true,
+  });
 
   useEffect(() => {
     let cancelled = false;
+    setState({ datasets: [], loading: true });
     Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
       .then(([proxyUrl, headers]) =>
         fetch(`${proxyUrl}/orchestration-api/datasets`, { headers }),
@@ -528,18 +570,21 @@ function useDatasets(): DatasetInfo[] {
             Array.isArray(body) || !body || typeof body !== 'object'
               ? []
               : (body as { datasets?: unknown }).datasets;
-          setDatasets(Array.isArray(list) ? (list as DatasetInfo[]) : []);
+          setState({
+            datasets: Array.isArray(list) ? (list as DatasetInfo[]) : [],
+            loading: false,
+          });
         }
       })
       .catch(() => {
-        if (!cancelled) setDatasets([]);
+        if (!cancelled) setState({ datasets: [], loading: false });
       });
     return () => {
       cancelled = true;
     };
   }, [discoveryApi, fetch, getAuthHeaders]);
 
-  return datasets;
+  return state;
 }
 
 interface RegisteredModel {
@@ -729,6 +774,11 @@ function useRagCollections(): string[] {
 /** Judge/serving model_names configured in litellm-config.yaml (GET /llm-models) — see the llmModelPicker GroupField flag's own doc comment. */
 function useLlmModels(): string[] {
   return useNameList('/llm-models');
+}
+
+/** Registered eval-set names (GET /eval-sets) — see the evalSetNamePicker GroupField flag's own doc comment. */
+function useEvalSets(): string[] {
+  return useNameList('/eval-sets');
 }
 
 interface HuggingFaceModelInfo {
@@ -1105,31 +1155,45 @@ interface DatasetPreview {
 
 const DATASET_PREVIEW_ROW_LIMIT = 10;
 
+interface DatasetPreviewState {
+  preview: DatasetPreview | null;
+  loading: boolean;
+}
+
 /**
  * Fetches the chosen dataset's first rows (GET /datasets/preview) whenever
- * `datasetUri` is a non-empty string. Returns `null` (never throws) while
- * unset, loading, or on failure — same fail-open contract as
- * useDatasetColumns/useDatasets: a non-CSV dataset (architecture=cv's
- * `.zip`) legitimately fails here, and the caller just renders nothing.
+ * `datasetUri` is a non-empty string. Returns `{preview: null, loading: false}`
+ * (never throws) while unset, `loading: true` while the read is in flight (so
+ * the caller can show "loading from MinIO/S3…"), and `preview: null` on
+ * failure — same fail-open contract as useDatasetColumns/useDatasets: a
+ * non-CSV dataset (architecture=cv's `.zip`) legitimately fails here, and the
+ * caller just renders nothing.
  */
-function useDatasetPreview(datasetUri: unknown): DatasetPreview | null {
+function useDatasetPreview(
+  datasetUri: unknown,
+  source?: unknown,
+): DatasetPreviewState {
   const discoveryApi = useApi(discoveryApiRef);
   const { fetch } = useApi(fetchApiRef);
   const getAuthHeaders = useOpenChoreoAuthHeaders();
-  const [preview, setPreview] = useState<DatasetPreview | null>(null);
+  const [state, setState] = useState<DatasetPreviewState>({
+    preview: null,
+    loading: false,
+  });
 
   useEffect(() => {
     if (typeof datasetUri !== 'string' || !datasetUri) {
-      setPreview(null);
+      setState({ preview: null, loading: false });
       return undefined;
     }
     let cancelled = false;
+    setState({ preview: null, loading: true });
     Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
       .then(([proxyUrl, headers]) =>
         fetch(
           `${proxyUrl}/orchestration-api/datasets/preview?dataset_uri=${encodeURIComponent(
             datasetUri,
-          )}&limit=${DATASET_PREVIEW_ROW_LIMIT}`,
+          )}&limit=${DATASET_PREVIEW_ROW_LIMIT}${datasetSourceQuery(source)}`,
           { headers },
         ),
       )
@@ -1140,42 +1204,121 @@ function useDatasetPreview(datasetUri: unknown): DatasetPreview | null {
       .then((body: unknown) => {
         if (!cancelled) {
           const obj = (body ?? {}) as Partial<DatasetPreview>;
-          setPreview({
-            columns: Array.isArray(obj.columns) ? obj.columns.map(String) : [],
-            rows: Array.isArray(obj.rows)
-              ? (obj.rows as Record<string, unknown>[])
-              : [],
+          setState({
+            preview: {
+              columns: Array.isArray(obj.columns)
+                ? obj.columns.map(String)
+                : [],
+              rows: Array.isArray(obj.rows)
+                ? (obj.rows as Record<string, unknown>[])
+                : [],
+            },
+            loading: false,
           });
         }
       })
       .catch(() => {
-        if (!cancelled) setPreview(null);
+        if (!cancelled) setState({ preview: null, loading: false });
       });
     return () => {
       cancelled = true;
     };
-  }, [discoveryApi, fetch, datasetUri, getAuthHeaders]);
+  }, [discoveryApi, fetch, datasetUri, source, getAuthHeaders]);
 
-  return preview;
+  return state;
+}
+
+/**
+ * Human label for a dataset's source, shown while the preview loads so a dev
+ * can see the rows are being pulled from MinIO/S3 (the realistic path) rather
+ * than a local file.
+ */
+function datasetSourceLabel(source: unknown): string {
+  return source === 's3' ? 'MinIO/S3' : 'local storage';
 }
 
 /**
  * Read-only table of a dataset's first rows, inside a collapsible Accordion
  * (same collapsible visual language as StepLayoutUiOptions groups) so it
- * doesn't permanently take up space once a user has seen it. Renders
- * nothing until useDatasetPreview resolves something. Re-expands whenever
+ * doesn't permanently take up space once a user has seen it. Shows a
+ * "loading from MinIO/S3…" line plus skeleton rows while the read is in
+ * flight, a "preview unavailable" line if it resolves empty/failed, and
+ * nothing at all before a dataset is picked. Re-expands whenever
  * `datasetUri` changes — picking a different dataset should show its data,
  * not stay collapsed on whatever the previous dataset left it at.
  */
 function DatasetPreviewPanel({
   datasetUri,
+  source,
 }: {
   datasetUri: unknown;
+  source?: unknown;
 }): JSX.Element | null {
-  const preview = useDatasetPreview(datasetUri);
+  const { preview, loading } = useDatasetPreview(datasetUri, source);
   const [expanded, setExpanded] = useState(true);
   useEffect(() => setExpanded(true), [datasetUri]);
-  if (!preview || preview.rows.length === 0) return null;
+  const hasDataset = typeof datasetUri === 'string' && datasetUri.length > 0;
+  if (loading) {
+    return (
+      <Accordion expanded>
+        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+          <Box display="flex" alignItems="center" style={{ gap: 8 }}>
+            <CircularProgress size={16} />
+            <Typography
+              variant="overline"
+              style={{ color: NEUTRAL.textSecondary, fontWeight: 700 }}
+            >
+              Loading data from {datasetSourceLabel(source)}…
+            </Typography>
+          </Box>
+        </AccordionSummary>
+        {/* Skeleton rows so the panel keeps its shape (and the read is
+            visibly in flight) instead of collapsing to a bare line — a
+            local file resolves in milliseconds, so without this the
+            spinner alone is easy to miss. */}
+        <AccordionDetails>
+          <Table size="small">
+            <TableBody data-testid="preview-skeleton">
+              {[0, 1, 2].map(row => (
+                <TableRow key={row}>
+                  {[0, 1, 2, 3].map(col => (
+                    <TableCell key={col}>
+                      <Box
+                        style={{
+                          height: 12,
+                          borderRadius: 4,
+                          backgroundColor: NEUTRAL.border,
+                          width: col === 0 ? '55%' : '80%',
+                        }}
+                      />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </AccordionDetails>
+      </Accordion>
+    );
+  }
+  if (!preview || preview.rows.length === 0) {
+    // A dataset is chosen but the read failed or came back empty (e.g. a
+    // non-CSV .zip for Computer Vision) — say so instead of vanishing, so
+    // "no preview" reads as a fact about the dataset, not a broken form.
+    if (!hasDataset) return null;
+    return (
+      <Accordion expanded>
+        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+          <Typography
+            variant="overline"
+            style={{ color: NEUTRAL.textSecondary, fontWeight: 700 }}
+          >
+            Preview unavailable for this dataset
+          </Typography>
+        </AccordionSummary>
+      </Accordion>
+    );
+  }
   return (
     <Accordion
       expanded={expanded}
@@ -1187,6 +1330,12 @@ function DatasetPreviewPanel({
           style={{ color: NEUTRAL.textSecondary, fontWeight: 700 }}
         >
           Data preview (first {preview.rows.length} rows)
+        </Typography>
+        <Typography
+          variant="overline"
+          style={{ color: NEUTRAL.textSecondary, marginLeft: 8 }}
+        >
+          · from {datasetSourceLabel(source)}
         </Typography>
       </AccordionSummary>
       <AccordionDetails style={{ overflowX: 'auto' }}>
@@ -1255,6 +1404,7 @@ function useDatasetValidation(
   taskType: unknown,
   targetColumn: unknown,
   timeColumn: unknown,
+  source?: unknown,
 ): DatasetValidationResult[] | null {
   const discoveryApi = useApi(discoveryApiRef);
   const { fetch } = useApi(fetchApiRef);
@@ -1291,6 +1441,7 @@ function useDatasetValidation(
                 typeof timeColumn === 'string' && timeColumn
                   ? timeColumn
                   : undefined,
+              source: typeof source === 'string' && source ? source : undefined,
             }),
           }),
         )
@@ -1320,6 +1471,7 @@ function useDatasetValidation(
     taskType,
     targetColumn,
     timeColumn,
+    source,
     getAuthHeaders,
   ]);
 
@@ -1332,17 +1484,20 @@ function DatasetValidationPanel({
   taskType,
   targetColumn,
   timeColumn,
+  source,
 }: {
   datasetUri: unknown;
   taskType: unknown;
   targetColumn: unknown;
   timeColumn: unknown;
+  source?: unknown;
 }): JSX.Element | null {
   const results = useDatasetValidation(
     datasetUri,
     taskType,
     targetColumn,
     timeColumn,
+    source,
   );
   const [expanded, setExpanded] = useState(true);
   useEffect(() => setExpanded(true), [datasetUri, targetColumn, timeColumn]);
@@ -1401,6 +1556,8 @@ interface DatasetPickerFieldProps {
   description?: string;
   required: boolean;
   datasets: DatasetInfo[];
+  /** True while GET /datasets is in flight — shows a spinner + "Loading datasets…" instead of an empty dropdown. */
+  loading?: boolean;
   value: unknown;
   onChange: (value: unknown) => void;
 }
@@ -1421,10 +1578,33 @@ function DatasetPickerField({
   description,
   required,
   datasets,
+  loading,
   value,
   onChange,
 }: DatasetPickerFieldProps): JSX.Element {
   const selected = typeof value === 'string' ? value : '';
+  if (loading) {
+    return (
+      <TextField
+        select
+        fullWidth
+        variant="outlined"
+        label={`${title}${required ? '*' : ''}`}
+        helperText={description}
+        value=""
+        disabled
+        name={name}
+        SelectProps={{ displayEmpty: true }}
+        InputProps={{
+          startAdornment: (
+            <CircularProgress size={16} style={{ marginRight: 8 }} />
+          ),
+        }}
+      >
+        <MenuItem value="">Loading datasets…</MenuItem>
+      </TextField>
+    );
+  }
   return (
     <TextField
       select
@@ -1773,12 +1953,69 @@ function OptionPickerField({
       onChange={e => onChange(e.target.value)}
       name={name}
     >
+      {/* Optional fields (e.g. evalSetName) need a way back to "unset" —
+          without this, picking a value is one-way and the field's own
+          `if`/ternary can never fall back to its alternative. Required
+          pickers keep their current no-empty-option behavior. */}
+      {!required && (
+        <MenuItem value="">
+          <em>None</em>
+        </MenuItem>
+      )}
       {options.map(option => (
         <MenuItem key={option} value={option}>
           {formatOption ? formatOption(option) : option}
         </MenuItem>
       ))}
     </TextField>
+  );
+}
+
+interface ComboPickerFieldProps {
+  name: string;
+  title: string;
+  description?: string;
+  required: boolean;
+  options: string[];
+  value: unknown;
+  onChange: (value: unknown) => void;
+}
+
+/**
+ * Free-solo combobox of a fetched string list — like OptionPickerField, but
+ * the Dev can also type a value that isn't in the list yet. Used where the
+ * field both reuses an existing name and can introduce a new one (Draft
+ * Prompt's `promptName`: pick an existing persona to add a version to, or
+ * type a new persona key to create one). OptionPickerField stays a strict
+ * select for fields whose value must already exist.
+ */
+function ComboPickerField({
+  name,
+  title,
+  description,
+  required,
+  options,
+  value,
+  onChange,
+}: ComboPickerFieldProps): JSX.Element {
+  const selected = typeof value === 'string' ? value : '';
+  return (
+    <Autocomplete
+      freeSolo
+      fullWidth
+      options={options}
+      inputValue={selected}
+      onInputChange={(_event, next) => onChange(next)}
+      renderInput={params => (
+        <TextField
+          {...params}
+          variant="outlined"
+          label={`${title}${required ? '*' : ''}`}
+          helperText={description}
+          name={name}
+        />
+      )}
+    />
   );
 }
 
@@ -1999,6 +2236,12 @@ function useGatePreview(
 }
 
 /** One metric's pass/fail row — icon + value + the bound it's checked against. */
+function formatThresholdBound(threshold: GateThresholdCheck): string {
+  if (threshold.minimum !== null) return `≥ ${threshold.minimum}`;
+  if (threshold.maximum !== null) return `≤ ${threshold.maximum}`;
+  return '';
+}
+
 function GateThresholdRow({
   threshold,
   value,
@@ -2010,12 +2253,7 @@ function GateThresholdRow({
     value !== undefined &&
     (threshold.minimum === null || value >= threshold.minimum) &&
     (threshold.maximum === null || value <= threshold.maximum);
-  const bound =
-    threshold.minimum !== null
-      ? `≥ ${threshold.minimum}`
-      : threshold.maximum !== null
-      ? `≤ ${threshold.maximum}`
-      : '';
+  const bound = formatThresholdBound(threshold);
   return (
     <Box display="flex" alignItems="center" style={{ gap: 6 }}>
       {met ? (
@@ -3026,6 +3264,90 @@ function SearchSpaceBuilderField({
     onChange(serializeSearchSpace(next, hyperparams));
   };
 
+  const renderValueCell = (row: SearchSpaceRow, meta: HyperparamMeta) => {
+    if (!row.enabled) {
+      return (
+        <Typography variant="body2" color="textSecondary">
+          Fixed at the value from Architecture &amp; Task
+        </Typography>
+      );
+    }
+    if (meta.kind === 'categorical') {
+      return (
+        <Box display="flex" style={{ gap: 12 }}>
+          {(meta.categoricalOptions ?? []).map(option => (
+            <FormControlLabel
+              key={option}
+              control={
+                <Checkbox
+                  size="small"
+                  checked={row.categoricalChoices.includes(option)}
+                  onChange={e =>
+                    updateRow(meta.key, {
+                      categoricalChoices: e.target.checked
+                        ? [...row.categoricalChoices, option]
+                        : row.categoricalChoices.filter(o => o !== option),
+                    })
+                  }
+                />
+              }
+              label={option}
+            />
+          ))}
+        </Box>
+      );
+    }
+    return (
+      <Box display="flex" alignItems="flex-start" style={{ gap: 8 }}>
+        <TextField
+          select
+          variant="outlined"
+          size="small"
+          value={row.mode}
+          onChange={e =>
+            updateRow(meta.key, {
+              mode: e.target.value as 'range' | 'choices',
+            })
+          }
+          style={{ minWidth: 110 }}
+        >
+          <MenuItem value="range">Range</MenuItem>
+          <MenuItem value="choices">Choices</MenuItem>
+        </TextField>
+        {row.mode === 'range' ? (
+          <>
+            <TextField
+              variant="outlined"
+              size="small"
+              label="Low"
+              value={row.low}
+              onChange={e => updateRow(meta.key, { low: e.target.value })}
+              style={{ width: 100 }}
+            />
+            <TextField
+              variant="outlined"
+              size="small"
+              label="High"
+              value={row.high}
+              onChange={e => updateRow(meta.key, { high: e.target.value })}
+              style={{ width: 100 }}
+            />
+          </>
+        ) : (
+          <TextField
+            variant="outlined"
+            size="small"
+            label="Comma-separated values"
+            placeholder="e.g. 16, 32, 64"
+            value={row.choicesText}
+            onChange={e => updateRow(meta.key, { choicesText: e.target.value })}
+            fullWidth
+          />
+        )}
+      </Box>
+    );
+  };
+
   return (
     <Box>
       <Typography variant="subtitle2" style={{ marginBottom: 4 }}>
@@ -3054,95 +3376,7 @@ function SearchSpaceBuilderField({
                   />
                 </TableCell>
                 <TableCell>{meta.label}</TableCell>
-                <TableCell>
-                  {!row.enabled ? (
-                    <Typography variant="body2" color="textSecondary">
-                      Fixed at the value from Architecture &amp; Task
-                    </Typography>
-                  ) : meta.kind === 'categorical' ? (
-                    <Box display="flex" style={{ gap: 12 }}>
-                      {(meta.categoricalOptions ?? []).map(option => (
-                        <FormControlLabel
-                          key={option}
-                          control={
-                            <Checkbox
-                              size="small"
-                              checked={row.categoricalChoices.includes(option)}
-                              onChange={e =>
-                                updateRow(meta.key, {
-                                  categoricalChoices: e.target.checked
-                                    ? [...row.categoricalChoices, option]
-                                    : row.categoricalChoices.filter(
-                                        o => o !== option,
-                                      ),
-                                })
-                              }
-                            />
-                          }
-                          label={option}
-                        />
-                      ))}
-                    </Box>
-                  ) : (
-                    <Box
-                      display="flex"
-                      alignItems="flex-start"
-                      style={{ gap: 8 }}
-                    >
-                      <TextField
-                        select
-                        variant="outlined"
-                        size="small"
-                        value={row.mode}
-                        onChange={e =>
-                          updateRow(meta.key, {
-                            mode: e.target.value as 'range' | 'choices',
-                          })
-                        }
-                        style={{ minWidth: 110 }}
-                      >
-                        <MenuItem value="range">Range</MenuItem>
-                        <MenuItem value="choices">Choices</MenuItem>
-                      </TextField>
-                      {row.mode === 'range' ? (
-                        <>
-                          <TextField
-                            variant="outlined"
-                            size="small"
-                            label="Low"
-                            value={row.low}
-                            onChange={e =>
-                              updateRow(meta.key, { low: e.target.value })
-                            }
-                            style={{ width: 100 }}
-                          />
-                          <TextField
-                            variant="outlined"
-                            size="small"
-                            label="High"
-                            value={row.high}
-                            onChange={e =>
-                              updateRow(meta.key, { high: e.target.value })
-                            }
-                            style={{ width: 100 }}
-                          />
-                        </>
-                      ) : (
-                        <TextField
-                          variant="outlined"
-                          size="small"
-                          label="Comma-separated values"
-                          placeholder="e.g. 16, 32, 64"
-                          value={row.choicesText}
-                          onChange={e =>
-                            updateRow(meta.key, { choicesText: e.target.value })
-                          }
-                          fullWidth
-                        />
-                      )}
-                    </Box>
-                  )}
-                </TableCell>
+                <TableCell>{renderValueCell(row, meta)}</TableCell>
               </TableRow>
             );
           })}
@@ -3216,8 +3450,17 @@ function StepLayout(
   const requiredFields = new Set(schema.required ?? []);
   const groups = uiSchema['ui:options']?.groups ?? [];
   const data = formData ?? {};
-  const datasetColumns = useDatasetColumns(data.datasetUri);
-  const datasets = useDatasets();
+  const { datasets, loading: datasetsLoading } = useDatasets();
+  // Which source the currently-picked dataset came from — passed to the
+  // preview/columns/validation reads so an s3 dataset is fetched from
+  // MinIO/S3 rather than a same-named local file.
+  const selectedDatasetSource = datasets.find(
+    d => d.uri === data.datasetUri,
+  )?.source;
+  const datasetColumns = useDatasetColumns(
+    data.datasetUri,
+    selectedDatasetSource,
+  );
   const dataSources = groupDatasetsBySource(datasets).map(([source]) => source);
   const models = useModels();
   const availableFeatures = useAvailableFeatures();
@@ -3228,6 +3471,7 @@ function StepLayout(
   const ragCollections = useRagCollections();
   const ragIndexVersions = useRagIndexVersions(data.collectionName);
   const llmModels = useLlmModels();
+  const evalSets = useEvalSets();
 
   // Three kinds of stale formData this step's own branching
   // (modelCategory/algorithmFamily/architecture) can produce, none of
@@ -3415,10 +3659,12 @@ function StepLayout(
     rollbackPreview?: boolean,
     actionPicker?: boolean,
     promptNamePicker?: boolean,
+    promptNameCombo?: boolean,
     promptVersionPicker?: boolean,
     ragCollectionPicker?: boolean,
     ragIndexVersionPicker?: boolean,
     llmModelPicker?: boolean,
+    evalSetNamePicker?: boolean,
     huggingFaceModelValidator?: boolean,
     gpuRecommendationPanel?: boolean,
     rolloutEligibilityGate?: boolean,
@@ -3673,6 +3919,27 @@ function StepLayout(
         </Fragment>
       );
     }
+    if (promptNameCombo) {
+      return (
+        <Grid item xs={12} md={width} key={name}>
+          <ComboPickerField
+            name={name}
+            title={
+              typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+            }
+            description={
+              typeof fieldSchema.description === 'string'
+                ? fieldSchema.description
+                : undefined
+            }
+            required={requiredFields.has(name)}
+            options={promptNames}
+            value={data[name]}
+            onChange={value => onChange({ ...data, [name]: value })}
+          />
+        </Grid>
+      );
+    }
     if (promptNamePicker && promptNames.length > 0) {
       return (
         <Grid item xs={12} md={width} key={name}>
@@ -3780,6 +4047,27 @@ function StepLayout(
         </Grid>
       );
     }
+    if (evalSetNamePicker && evalSets.length > 0) {
+      return (
+        <Grid item xs={12} md={width} key={name}>
+          <OptionPickerField
+            name={name}
+            title={
+              typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+            }
+            description={
+              typeof fieldSchema.description === 'string'
+                ? fieldSchema.description
+                : undefined
+            }
+            required={requiredFields.has(name)}
+            options={evalSets}
+            value={data[name]}
+            onChange={value => onChange({ ...data, [name]: value })}
+          />
+        </Grid>
+      );
+    }
     if (
       huggingFaceModelValidator ||
       gpuRecommendationPanel ||
@@ -3848,7 +4136,7 @@ function StepLayout(
         </Grid>
       );
     }
-    if (datasetPicker && datasets.length > 0) {
+    if (datasetPicker && (datasetsLoading || datasets.length > 0)) {
       // Scoped to whichever source the sibling dataSourcePicker field
       // currently holds — falls back to showing everything if this step
       // never declared a dataSource field (dataSourcePicker is opt-in per
@@ -3904,6 +4192,7 @@ function StepLayout(
             }
             required={requiredFields.has(name)}
             datasets={scopedDatasets}
+            loading={datasetsLoading}
             value={data[name]}
             onChange={value => onChange({ ...data, [name]: value })}
           />
@@ -3915,7 +4204,10 @@ function StepLayout(
           {picker}
           {datasetPreview && (
             <Grid item xs={12}>
-              <DatasetPreviewPanel datasetUri={data[name]} />
+              <DatasetPreviewPanel
+                datasetUri={data[name]}
+                source={selectedDatasetSource}
+              />
             </Grid>
           )}
           {datasetValidation && (
@@ -3925,6 +4217,7 @@ function StepLayout(
                 taskType={data.taskType}
                 targetColumn={data.targetColumn}
                 timeColumn={data.timeColumn}
+                source={selectedDatasetSource}
               />
             </Grid>
           )}
@@ -4074,10 +4367,12 @@ function StepLayout(
           rollbackPreview,
           actionPicker,
           promptNamePicker,
+          promptNameCombo,
           promptVersionPicker,
           ragCollectionPicker,
           ragIndexVersionPicker,
           llmModelPicker,
+          evalSetNamePicker,
           huggingFaceModelValidator,
           gpuRecommendationPanel,
           rolloutEligibilityGate,
@@ -4103,10 +4398,12 @@ function StepLayout(
           rollbackPreview,
           actionPicker,
           promptNamePicker,
+          promptNameCombo,
           promptVersionPicker,
           ragCollectionPicker,
           ragIndexVersionPicker,
           llmModelPicker,
+          evalSetNamePicker,
           huggingFaceModelValidator,
           gpuRecommendationPanel,
           rolloutEligibilityGate,

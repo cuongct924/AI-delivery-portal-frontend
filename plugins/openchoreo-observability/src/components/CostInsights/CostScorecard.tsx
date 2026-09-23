@@ -51,6 +51,17 @@ const ICONS: Record<Status, typeof CheckCircleIcon> = {
   info: InfoIcon,
 };
 
+/** pass/warn/fail band for a 0-1 coverage ratio. */
+function coverageStatus(
+  value: number,
+  passThreshold: number,
+  warnThreshold: number,
+): Status {
+  if (value >= passThreshold) return 'pass';
+  if (value >= warnThreshold) return 'warn';
+  return 'fail';
+}
+
 /** The compliance checks a scope is measured against, worst-first. */
 export function buildScorecardChecks(summary: CostSummary): Check[] {
   const checks: Check[] = [];
@@ -87,7 +98,8 @@ export function buildScorecardChecks(summary: CostSummary): Check[] {
     id: 'anomaly',
     label: 'Spend anomalies',
     status: anomalies === 0 ? 'pass' : 'warn',
-    detail: anomalies === 0 ? 'None in window' : `${anomalies} spike(s) flagged`,
+    detail:
+      anomalies === 0 ? 'None in window' : `${anomalies} spike(s) flagged`,
     cta:
       anomalies === 0
         ? undefined
@@ -99,7 +111,8 @@ export function buildScorecardChecks(summary: CostSummary): Check[] {
     id: 'saving',
     label: 'Right-sizing',
     status: saving > 0 ? 'warn' : 'pass',
-    detail: saving > 0 ? `${formatUsd(saving)} reclaimable` : 'Fully right-sized',
+    detail:
+      saving > 0 ? `${formatUsd(saving)} reclaimable` : 'Fully right-sized',
     cta:
       saving > 0
         ? { label: 'Apply recommendations', href: '#cost-optimize' }
@@ -110,7 +123,7 @@ export function buildScorecardChecks(summary: CostSummary): Check[] {
   checks.push({
     id: 'attribution',
     label: 'Cost attribution',
-    status: coverage >= 0.9 ? 'pass' : coverage >= 0.5 ? 'warn' : 'fail',
+    status: coverageStatus(coverage, 0.9, 0.5),
     detail: `${Math.round(coverage * 100)}% of spend attributed`,
     cta:
       coverage >= 0.9
@@ -122,7 +135,7 @@ export function buildScorecardChecks(summary: CostSummary): Check[] {
   checks.push({
     id: 'ttl',
     label: 'Notebook TTL',
-    status: ttlCoverage >= 1 ? 'pass' : ttlCoverage >= 0.5 ? 'warn' : 'fail',
+    status: coverageStatus(ttlCoverage, 1, 0.5),
     detail: `${Math.round(ttlCoverage * 100)}% of notebooks auto-shutdown`,
   });
 
