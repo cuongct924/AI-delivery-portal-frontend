@@ -65,7 +65,14 @@ export class ObservabilityService {
     finopsAgentUrl?: string;
   }> {
     if (this.mockObserverUrl) {
-      return { observerUrl: this.mockObserverUrl };
+      // The local mock observer (orchestration-api) also serves the RCA and
+      // FinOps agent contracts, so point all three at it — otherwise the
+      // Cost Analysis tab reports "FinOps service is not configured".
+      return {
+        observerUrl: this.mockObserverUrl,
+        rcaAgentUrl: this.mockObserverUrl,
+        finopsAgentUrl: this.mockObserverUrl,
+      };
     }
     return this.resolver.resolveForEnvironment(
       namespaceName,

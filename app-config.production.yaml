@@ -170,7 +170,17 @@ catalog:
   # top-level rules.
   rules:
     - allow:
-        [Component, System, API, Resource, Location, User, Group, Environment, Template]
+        [
+          Component,
+          System,
+          API,
+          Resource,
+          Location,
+          User,
+          Group,
+          Environment,
+          Template,
+        ]
   locations:
     # Placeholder groups for Backstage entity owner references
     - type: file
@@ -277,7 +287,6 @@ catalog:
       target: /app/templates/llm-evaluate-activate/template.yaml
       rules:
         - allow: [Template]
-
 # AI Delivery Portal — orchestration-api Custom Scaffolder Actions base URL
 # (packages/backend/src/actions/mlopsActions.ts), services/orchestration-api
 # in the separate backend repo. Optional: unset falls back to

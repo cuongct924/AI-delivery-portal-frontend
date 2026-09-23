@@ -188,3 +188,21 @@ describe('ObservabilityService release binding methods', () => {
     );
   });
 });
+
+describe('ObservabilityService.resolveUrls with a mock observer', () => {
+  it('points observer, RCA, and FinOps at the mock observer', async () => {
+    const service = ObservabilityService.create(
+      logger,
+      'http://test:8080',
+      'http://localhost:8000',
+    );
+
+    const urls = await service.resolveUrls('ns-1', 'development');
+
+    expect(urls).toEqual({
+      observerUrl: 'http://localhost:8000',
+      rcaAgentUrl: 'http://localhost:8000',
+      finopsAgentUrl: 'http://localhost:8000',
+    });
+  });
+});

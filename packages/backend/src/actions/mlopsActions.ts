@@ -12,7 +12,12 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createTemplateAction } from '@backstage/plugin-scaffolder-node';
-import { ActionDeps, authHeaders, getBaseUrl, postJson } from './actionsHttpClient';
+import {
+  ActionDeps,
+  authHeaders,
+  getBaseUrl,
+  postJson,
+} from './actionsHttpClient';
 
 const POLL_INTERVAL_MS = 3_000;
 const POLL_TIMEOUT_MS = 5 * 60 * 1000;
@@ -270,26 +275,6 @@ export function createTriggerTrainingAction({
                 '"adam" (default) or "sgd" — architecture=mlp/lstm/nlp/cv',
             })
             .optional(),
-        codeRepoUrl: z =>
-          z
-            .string({
-              description: 'Git repo URL to clone — algorithm="custom" (BYOC)',
-            })
-            .optional(),
-        entrypointPath: z =>
-          z
-            .string({
-              description:
-                'Path, relative to the repo root, to the file defining train() — algorithm="custom"',
-            })
-            .optional(),
-        customConfig: z =>
-          z
-            .string({
-              description:
-                'JSON object of hyperparameters passed to train()\'s config arg — algorithm="custom"',
-            })
-            .optional(),
         searchStrategy: z =>
           z
             .string({
@@ -374,9 +359,6 @@ export function createTriggerTrainingAction({
             epochs: ctx.input.epochs,
             batch_size: ctx.input.batchSize,
             optimizer: ctx.input.optimizer,
-            code_repo_url: ctx.input.codeRepoUrl,
-            entrypoint_path: ctx.input.entrypointPath,
-            custom_config: ctx.input.customConfig,
             search_strategy: ctx.input.searchStrategy,
             num_trials: ctx.input.numTrials,
             search_space_json: ctx.input.searchSpaceJson,
@@ -946,7 +928,9 @@ export function createPromoteModelAction({ config, tokenService }: ActionDeps) {
           }),
         environment: z => z.string({ description: 'Echoes targetEnvironment' }),
         projectRelease: z =>
-          z.string({ description: 'Release the manifest would bind in environment' }),
+          z.string({
+            description: 'Release the manifest would bind in environment',
+          }),
       },
     },
     async handler(ctx) {
@@ -1005,7 +989,9 @@ export function createRollbackPromotionAction({
           }),
         environment: z => z.string({ description: 'Echoes environment' }),
         projectRelease: z =>
-          z.string({ description: 'Release the manifest would restore in environment' }),
+          z.string({
+            description: 'Release the manifest would restore in environment',
+          }),
       },
     },
     async handler(ctx) {
@@ -1042,7 +1028,10 @@ export function createRollbackPromotionAction({
  * `orchestration:record-deploy` for dev (nothing here detects the actual
  * GitHub merge event).
  */
-export function createConfirmPromotionAction({ config, tokenService }: ActionDeps) {
+export function createConfirmPromotionAction({
+  config,
+  tokenService,
+}: ActionDeps) {
   return createTemplateAction({
     id: 'orchestration:confirm-promotion',
     description:
@@ -1230,4 +1219,3 @@ export function createSetupMonitoringAction({
     },
   });
 }
-

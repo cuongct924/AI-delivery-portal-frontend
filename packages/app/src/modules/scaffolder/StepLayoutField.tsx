@@ -249,7 +249,8 @@ interface GroupField {
 }
 
 /**
- * A conditional child block (e.g. BYOC fields under Algorithm) — dashed
+ * A conditional child block (e.g. Search configuration under Hyperparameter
+ * Search) — dashed
  * border + small caps label, rendered INSIDE its parent group, never as
  * its own top-level panel. Skipped entirely (no empty box) when none of
  * its fields exist in the current (branch-resolved) schema.
@@ -2707,21 +2708,25 @@ function DeploySummaryPanel({
         for <strong>{modelName}</strong>, one step back.
       </>
     );
-  } else if (action === 'promote-confirm' || action === 'promote-rollback-confirm') {
+  } else if (
+    action === 'promote-confirm' ||
+    action === 'promote-rollback-confirm'
+  ) {
     const confirmEnvironment =
       typeof data.confirmEnvironment === 'string' && data.confirmEnvironment
         ? data.confirmEnvironment
         : '(environment not chosen yet)';
     const confirmProjectRelease =
-      typeof data.confirmProjectRelease === 'string' && data.confirmProjectRelease
+      typeof data.confirmProjectRelease === 'string' &&
+      data.confirmProjectRelease
         ? data.confirmProjectRelease
         : '(project release not entered yet)';
     sentence = (
       <>
         Will bind <strong>{modelName}</strong> to{' '}
         <strong>{confirmProjectRelease}</strong> in{' '}
-        <strong>{confirmEnvironment}</strong> — only run this after merging
-        the PR a prior promote/promote-rollback run opened.
+        <strong>{confirmEnvironment}</strong> — only run this after merging the
+        PR a prior promote/promote-rollback run opened.
       </>
     );
   } else {
@@ -3303,9 +3308,7 @@ function StepLayout(
       // is only a fallback for a dev machine running the API directly
       // without the cluster's MinIO reachable (see
       // LocalFileObjectStorageAdapter's own doc comment).
-      const defaultSource = dataSources.includes('s3')
-        ? 's3'
-        : dataSources[0];
+      const defaultSource = dataSources.includes('s3') ? 's3' : dataSources[0];
       onChange({ ...data, dataSource: defaultSource, datasetUri: undefined });
       return;
     }
@@ -4158,8 +4161,8 @@ function StepLayout(
         // group whose every field belongs to a branch that isn't active
         // right now (e.g. "Training parameters" when modelCategory is still
         // traditional-ml + taskType=clustering, or "Algorithm" once
-        // modelCategory=deep-learning empties out its algorithm/BYOC
-        // fields) has nothing to justify showing an empty card — skip the
+        // modelCategory=deep-learning empties out its algorithm fields) has
+        // nothing to justify showing an empty card — skip the
         // whole panel instead of rendering a header over blank space. A
         // toggleField panel (e.g. Fine-tune) still shows as long as the
         // toggle itself exists, even before it's switched on.

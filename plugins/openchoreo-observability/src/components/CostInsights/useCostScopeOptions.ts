@@ -59,14 +59,24 @@ export function useCostProjectOptions(namespace?: string): {
     async () => {
       const { items } = await catalogApi.getEntities({
         filter: { kind: 'System', 'metadata.namespace': namespace! },
-        fields: ['metadata.name', 'metadata.title'],
+        fields: ['metadata.name', 'metadata.title', 'metadata.annotations'],
       });
-      return items
-        .map(e => ({
-          value: projectValue({ namespace: namespace!, name: e.metadata.name }),
-          label: titleOf(e),
-        }))
-        .sort(byLabel);
+      return (
+        items
+          // OpenChoreo Projects are System entities, but so are hand-written
+          // Systems (e.g. the platform's own `ai-delivery-portal`) that have no
+          // OpenChoreo Project behind them — the project-id annotation is what
+          // tells them apart, so the picker only offers real projects.
+          .filter(e => e.metadata.annotations?.[CHOREO_ANNOTATIONS.PROJECT_ID])
+          .map(e => ({
+            value: projectValue({
+              namespace: namespace!,
+              name: e.metadata.name,
+            }),
+            label: titleOf(e),
+          }))
+          .sort(byLabel)
+      );
     },
     { enabled: Boolean(namespace) },
   );

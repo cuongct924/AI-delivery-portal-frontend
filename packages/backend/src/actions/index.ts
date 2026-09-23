@@ -2,12 +2,17 @@
  * Backend module registering the orchestration-api Custom Scaffolder
  * Actions used by Golden Path #1 (Train->Track->Register), #2
  * (Register->Deploy), #3 (Recommend->Track->Register), "Register External
- * Run", and "Setup Model Monitoring" (mlopsActions.ts), plus "Serving LLM"
- * and the LLMOps Lifecycle (RAG ingest/evaluate/activate, prompt
- * draft/evaluate/activate) (llmOpsActions.ts) — see examples/templates/.
+ * Run", and "Setup Model Monitoring" (mlopsActions.ts), the AI Notebook
+ * branch of Golden Path #1 (notebookActions.ts), plus "Serving LLM" and the
+ * LLMOps Lifecycle (RAG
+ * ingest/evaluate/activate, prompt draft/evaluate/activate)
+ * (llmOpsActions.ts) — see examples/templates/.
  */
 
-import { coreServices, createBackendModule } from '@backstage/backend-plugin-api';
+import {
+  coreServices,
+  createBackendModule,
+} from '@backstage/backend-plugin-api';
 import { scaffolderActionsExtensionPoint } from '@backstage/plugin-scaffolder-node';
 import { openChoreoTokenServiceRef } from '@openchoreo/openchoreo-auth';
 import {
@@ -35,6 +40,7 @@ import {
   createRagEvaluateAction,
   createRagIngestAction,
 } from './llmOpsActions';
+import { createNotebookAction } from './notebookActions';
 
 export default createBackendModule({
   pluginId: 'scaffolder',
@@ -69,6 +75,7 @@ export default createBackendModule({
           createActivatePromptAction({ config, tokenService }),
           createDraftEvalSetAction({ config, tokenService }),
           createFetchEvalSetAction({ config, tokenService }),
+          createNotebookAction({ config, tokenService }),
         );
       },
     });

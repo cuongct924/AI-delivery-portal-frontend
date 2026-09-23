@@ -2,7 +2,7 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: train-track-register
-  title: "Train & Register Model"
+  title: 'Train & Register Model'
   description: >
     Trains or fine-tunes a model, tracks the run in MLflow, and registers
     the resulting version with a Catalog entry.
@@ -13,7 +13,6 @@ spec:
   owner: user:guest
   type: service
 
-
   parameters:
     - title: General Information
       required:
@@ -22,7 +21,22 @@ spec:
         - repoUrl
         - businessDomain
         - useCase
+        - trainingMode
       properties:
+        trainingMode:
+          title: How to train
+          type: string
+          oneOf:
+            - const: platform
+              title: Platform training (no code)
+            - const: notebook
+              title: AI Notebook (write your own code)
+          default: platform
+          description: >
+            "Platform training" picks an algorithm and runs it in the
+            platform's pipeline. "AI Notebook" provisions a JupyterHub
+            notebook instead — write and run code there, log to MLflow, then
+            register. The steps below only apply to platform training.
         owner:
           title: Owning team
           type: string
@@ -117,6 +131,87 @@ spec:
             properties:
               useCase:
                 enum: [house-price-prediction]
+        # Notebook fields live in THIS step (not a separate one) so picking
+        # "AI Notebook" above immediately reveals them — a separate step
+        # looked like nothing happened. Declared in the allOf so they're
+        # absent (and skipped) in platform mode.
+        - if:
+            properties:
+              trainingMode:
+                const: notebook
+          then:
+            required:
+              - environment
+              - cpuCores
+              - ramGb
+              - storageGb
+            properties:
+              environment:
+                title: Environment
+                type: string
+                oneOf:
+                  - const: pytorch-cuda
+                    title: PyTorch + CUDA
+                  - const: tensorflow-cuda
+                    title: TensorFlow + CUDA
+                  - const: pytorch-cpu
+                    title: PyTorch (CPU)
+                  - const: tensorflow-cpu
+                    title: TensorFlow (CPU)
+                  - const: sklearn-cpu
+                    title: scikit-learn (CPU)
+                default: pytorch-cuda
+                description: >
+                  Pre-built image with the AI/ML libraries already installed —
+                  must match a JupyterHub spawner profile on the cluster.
+              cpuCores:
+                title: CPU cores
+                type: number
+                default: 2
+                minimum: 1
+                description: vCPU cores allocated to the notebook.
+              ramGb:
+                title: RAM (GB)
+                type: number
+                default: 8
+                minimum: 1
+                description: Memory allocated to the notebook.
+              gpuType:
+                title: GPU
+                type: string
+                oneOf:
+                  - const: none
+                    title: CPU only
+                  - const: t4
+                    title: NVIDIA T4
+                  - const: a100
+                    title: NVIDIA A100
+                default: none
+                description: >
+                  Pick a GPU only when the workload needs one — GPU profiles
+                  are scarcer and cost more.
+              gpuCount:
+                title: GPU count
+                type: number
+                default: 1
+                minimum: 1
+                description: Number of GPUs to attach.
+              storageGb:
+                title: Storage (GB)
+                type: number
+                default: 20
+                minimum: 1
+                description: >
+                  Persistent volume for the working environment — survives
+                  stop/start, so your files and installed packages are kept.
+              idleTimeoutMinutes:
+                title: Auto-shutdown after (minutes idle)
+                type: number
+                default: 60
+                minimum: 0
+                description: >
+                  The notebook powers off automatically after this long with
+                  no activity, freeing CPU/GPU. Set 0 to never auto-shutdown.
       # StepLayout is a custom Scaffolder field extension (see
       # packages/app-backstage/src/modules/scaffolder/) registered via
       # FormFieldBlueprint — renders this step's own unchanged properties
@@ -129,6 +224,8 @@ spec:
         groups:
           - title: General Information
             fields:
+              - name: trainingMode
+                width: 12
               - name: owner
                 width: 6
               - name: modelName
@@ -138,6 +235,25 @@ spec:
               - name: useCase
                 width: 6
               - repoUrl
+          # Only exists in the resolved schema when trainingMode=notebook —
+          # skipped entirely (no empty card) in platform mode.
+          - title: Notebook environment
+            icon: apps
+            fields:
+              - name: environment
+                width: 6
+              - name: cpuCores
+                width: 6
+              - name: ramGb
+                width: 6
+              - name: gpuType
+                width: 6
+              - name: gpuCount
+                width: 6
+              - name: storageGb
+                width: 6
+              - name: idleTimeoutMinutes
+                width: 6
 
     # Branches on `architecture` (and, for the sklearn branch, `algorithm`).
     # Each architecture's fields only appear once that architecture is
@@ -154,42 +270,7 @@ spec:
     # names) — the lstm/nlp branches below only keep their non-column
     # hyperparameters, so this move didn't touch this step's other branches.
     - title: Architecture & Task
-      required:
-        - modelCategory
-        - architecture
-        - taskType
-      properties:
-        modelCategory:
-          title: Model category
-          type: string
-          oneOf:
-            - const: traditional-ml
-              title: Traditional ML
-            - const: deep-learning
-              title: Deep Learning
-          default: traditional-ml
-          # Traditional ML = scikit-learn (plus XGBoost/LightGBM/CatBoost
-          # via Library below). Deep Learning = PyTorch (mlp/lstm)
-          # or fine-tuning a Transformer/CNN. Pick this first — the choices
-          # below only show for this category.
-          description: Pick first — narrows the choices below to this category.
-        architecture:
-          type: string
-        taskType:
-          title: Task type
-          type: string
-          enum: [classification, regression, clustering, anomaly-detection]
-          default: classification
-          # Also decides which data columns need picking in the next
-          # Dataset step (e.g. Target column). This base enum/default only
-          # matters transiently — every businessDomain option below forces
-          # taskType to its own const, so this is really just the fallback
-          # shape before that resolves.
-          description: Set automatically from the use case chosen in General Information.
-        # finetuneEnabled/baseModelUri are declared conditionally in the
-        # allOf below, not here — only combos that support mode=finetune
-        # get them, and StepLayoutField's own stale-value cleanup then
-        # hides the toggle panel for free when a user switches away.
+      properties: {}
       ui:field: StepLayout
       ui:options:
         groups:
@@ -228,17 +309,6 @@ spec:
             icon: function
             fields:
               - algorithm
-              # Dashed subpanel, not a sibling panel — BYOC is a CHILD of
-              # "Algorithm = Custom", not an independent decision. Skipped
-              # entirely (no empty dashed box) unless that branch is active.
-              - subpanel:
-                  title: Custom code (BYOC)
-                  fields:
-                    - name: codeRepoUrl
-                      width: 6
-                    - name: entrypointPath
-                      width: 6
-                    - customConfig
           # One panel shared by all 4 deep-learning architectures instead
           # of leaving them ungrouped — each field only exists in the
           # branch-resolved schema for its own architecture (StepLayout
@@ -270,8 +340,41 @@ spec:
               - name: optimizer
                 width: 6
       allOf:
+        # Base fields only exist in platform mode — declared here (not in
+        # base properties) so the whole step is empty in notebook mode.
         - if:
             properties:
+              trainingMode:
+                const: platform
+          then:
+            required:
+              - modelCategory
+              - architecture
+              - taskType
+            properties:
+              modelCategory:
+                title: Model category
+                type: string
+                oneOf:
+                  - const: traditional-ml
+                    title: Traditional ML
+                  - const: deep-learning
+                    title: Deep Learning
+                default: traditional-ml
+                description: Pick first — narrows the choices below to this category.
+              architecture:
+                type: string
+              taskType:
+                title: Task type
+                type: string
+                enum:
+                  [classification, regression, clustering, anomaly-detection]
+                default: classification
+                description: Set automatically from the use case chosen in General Information.
+        - if:
+            properties:
+              trainingMode:
+                const: platform
               finetuneEnabled:
                 const: true
           then:
@@ -281,10 +384,12 @@ spec:
         # for combos train.py actually supports: architecture=sklearn (via
         # warm_start=True) and mlp/lstm (via mlflow_pytorch.load_model).
         # NOT nlp/cv (train.py raises — both already fine-tune from their
-        # own pretrained weights, an unrelated mechanism), algorithm=custom
-        # (BYOC has no base model to resume), or taskType=clustering
-        # (nothing persists to continue from).
+        # own pretrained weights, an unrelated mechanism) or
+        # taskType=clustering (nothing persists to continue from).
         - if:
+            properties:
+              trainingMode:
+                const: platform
             not:
               anyOf:
                 - required:
@@ -292,11 +397,6 @@ spec:
                   properties:
                     architecture:
                       enum: [nlp, cv]
-                - required:
-                    - algorithm
-                  properties:
-                    algorithm:
-                      const: custom
                 - required:
                     - taskType
                   properties:
@@ -329,6 +429,8 @@ spec:
         # rendering any field that resolves to one).
         - if:
             properties:
+              trainingMode:
+                const: platform
               businessDomain:
                 const: fraud-risk
           then:
@@ -337,6 +439,8 @@ spec:
                 const: classification
         - if:
             properties:
+              trainingMode:
+                const: platform
               businessDomain:
                 const: real-estate-construction
           then:
@@ -345,6 +449,8 @@ spec:
                 const: regression
         - if:
             properties:
+              trainingMode:
+                const: platform
               businessDomain:
                 const: marketing-sales
           then:
@@ -353,6 +459,8 @@ spec:
                 const: clustering
         - if:
             properties:
+              trainingMode:
+                const: platform
               businessDomain:
                 const: network-infrastructure
           then:
@@ -361,6 +469,8 @@ spec:
                 const: anomaly-detection
         - if:
             properties:
+              trainingMode:
+                const: platform
               businessDomain:
                 const: finance-operations
           then:
@@ -386,6 +496,8 @@ spec:
         # dropdown is already filtered by the time the user reaches them.
         - if:
             properties:
+              trainingMode:
+                const: platform
               modelCategory:
                 const: traditional-ml
           then:
@@ -428,6 +540,8 @@ spec:
         # same reasoning as useCase/objectiveMetric elsewhere in this file.
         - if:
             properties:
+              trainingMode:
+                const: platform
               modelCategory:
                 const: traditional-ml
               taskType:
@@ -438,6 +552,8 @@ spec:
                 enum: [scikit-learn]
         - if:
             properties:
+              trainingMode:
+                const: platform
               modelCategory:
                 const: deep-learning
           then:
@@ -448,17 +564,19 @@ spec:
               architecture:
                 oneOf:
                   - const: mlp
-                    title: "MLP (Multi-Layer Perceptron)"
+                    title: 'MLP (Multi-Layer Perceptron)'
                   - const: lstm
-                    title: "LSTM (recurrent network — sequential/time-series data)"
+                    title: 'LSTM (recurrent network — sequential/time-series data)'
                   - const: nlp
-                    title: "Transformer fine-tune (NLP — text classification)"
+                    title: 'Transformer fine-tune (NLP — text classification)'
                   - const: cv
-                    title: "CNN fine-tune (ResNet18 — images)"
+                    title: 'CNN fine-tune (ResNet18 — images)'
 
         # --- traditional-ml: pick an algorithm within the chosen library ---
         - if:
             properties:
+              trainingMode:
+                const: platform
               modelCategory:
                 const: traditional-ml
           then:
@@ -470,9 +588,8 @@ spec:
                 type: string
                 description: >
                   Options depend on the library above and the use case
-                  chosen in General Information. Choose "Custom (BYOC)" —
-                  Dev-supplied training code instead of a registry
-                  algorithm; 3 more fields appear below when chosen.
+                  chosen in General Information. For custom training code,
+                  pick "AI Notebook" in General Information instead.
                 default: LogisticRegression
         # Every algorithmFamily-keyed branch below is anchored to BOTH
         # `required: [algorithmFamily]` AND an explicit
@@ -493,6 +610,8 @@ spec:
             required:
               - algorithmFamily
             properties:
+              trainingMode:
+                const: platform
               modelCategory:
                 const: traditional-ml
               algorithmFamily:
@@ -502,11 +621,21 @@ spec:
           then:
             properties:
               algorithm:
-                enum: [LogisticRegression, RandomForestClassifier, GradientBoostingClassifier, KNeighborsClassifier, SVC, GaussianNB, custom]
+                enum:
+                  [
+                    LogisticRegression,
+                    RandomForestClassifier,
+                    GradientBoostingClassifier,
+                    KNeighborsClassifier,
+                    SVC,
+                    GaussianNB,
+                  ]
         - if:
             required:
               - algorithmFamily
             properties:
+              trainingMode:
+                const: platform
               modelCategory:
                 const: traditional-ml
               algorithmFamily:
@@ -516,11 +645,21 @@ spec:
           then:
             properties:
               algorithm:
-                enum: [LinearRegression, Ridge, Lasso, RandomForestRegressor, GradientBoostingRegressor, SVR, custom]
+                enum:
+                  [
+                    LinearRegression,
+                    Ridge,
+                    Lasso,
+                    RandomForestRegressor,
+                    GradientBoostingRegressor,
+                    SVR,
+                  ]
         - if:
             required:
               - algorithmFamily
             properties:
+              trainingMode:
+                const: platform
               modelCategory:
                 const: traditional-ml
               algorithmFamily:
@@ -530,11 +669,13 @@ spec:
           then:
             properties:
               algorithm:
-                enum: [KMeans, DBSCAN, AgglomerativeClustering, GaussianMixture, custom]
+                enum: [KMeans, DBSCAN, AgglomerativeClustering, GaussianMixture]
         - if:
             required:
               - algorithmFamily
             properties:
+              trainingMode:
+                const: platform
               modelCategory:
                 const: traditional-ml
               algorithmFamily:
@@ -544,11 +685,13 @@ spec:
           then:
             properties:
               algorithm:
-                enum: [IsolationForest, LocalOutlierFactor, custom]
+                enum: [IsolationForest, LocalOutlierFactor]
         - if:
             required:
               - algorithmFamily
             properties:
+              trainingMode:
+                const: platform
               modelCategory:
                 const: traditional-ml
               algorithmFamily:
@@ -558,11 +701,13 @@ spec:
           then:
             properties:
               algorithm:
-                enum: [XGBClassifier, custom]
+                enum: [XGBClassifier]
         - if:
             required:
               - algorithmFamily
             properties:
+              trainingMode:
+                const: platform
               modelCategory:
                 const: traditional-ml
               algorithmFamily:
@@ -572,11 +717,13 @@ spec:
           then:
             properties:
               algorithm:
-                enum: [XGBRegressor, custom]
+                enum: [XGBRegressor]
         - if:
             required:
               - algorithmFamily
             properties:
+              trainingMode:
+                const: platform
               modelCategory:
                 const: traditional-ml
               algorithmFamily:
@@ -586,11 +733,13 @@ spec:
           then:
             properties:
               algorithm:
-                enum: [LGBMClassifier, custom]
+                enum: [LGBMClassifier]
         - if:
             required:
               - algorithmFamily
             properties:
+              trainingMode:
+                const: platform
               modelCategory:
                 const: traditional-ml
               algorithmFamily:
@@ -600,11 +749,13 @@ spec:
           then:
             properties:
               algorithm:
-                enum: [LGBMRegressor, custom]
+                enum: [LGBMRegressor]
         - if:
             required:
               - algorithmFamily
             properties:
+              trainingMode:
+                const: platform
               modelCategory:
                 const: traditional-ml
               algorithmFamily:
@@ -614,11 +765,13 @@ spec:
           then:
             properties:
               algorithm:
-                enum: [CatBoostClassifier, custom]
+                enum: [CatBoostClassifier]
         - if:
             required:
               - algorithmFamily
             properties:
+              trainingMode:
+                const: platform
               modelCategory:
                 const: traditional-ml
               algorithmFamily:
@@ -628,41 +781,11 @@ spec:
           then:
             properties:
               algorithm:
-                enum: [CatBoostRegressor, custom]
-        # required: [algorithm] closes the same vacuous-truth gap as above
-        # — without it, algorithm being absent right after switching to
-        # Deep Learning would vacuously match `algorithm: {const: custom}`
-        # and show the BYOC fields under Deep Learning too.
-        - if:
-            required:
-              - algorithm
-            properties:
-              modelCategory:
-                const: traditional-ml
-              algorithm:
-                const: custom
-          then:
-            required:
-              - codeRepoUrl
-              - entrypointPath
-            properties:
-              codeRepoUrl:
-                title: Code repository
-                type: string
-                description: Git repo URL containing your training script.
-              entrypointPath:
-                title: Entrypoint path
-                type: string
-                description: >
-                  Path, relative to the repo root, to the file defining
-                  `def train(dataset: pd.DataFrame, config: dict) -> tuple[Any, dict[str, float]]`.
-              customConfig:
-                title: Config JSON
-                type: string
-                description: >
-                  JSON object of hyperparameters passed as `config` to your
-                  train() function, e.g. {"lr": 0.01}.
-                default: "{}"
+                enum: [CatBoostRegressor]
+        # BYOC ("algorithm: custom" + codeRepoUrl/entrypointPath/customConfig)
+        # was removed — custom training code now goes through the AI Notebook
+        # mode (trainingMode=notebook: provision JupyterHub, write code there,
+        # log to MLflow, register).
 
         # Every architecture-keyed branch below (mlp/lstm/nlp/cv) adds
         # `required: [architecture]` to its own `if` for the same reason
@@ -677,6 +800,8 @@ spec:
             required:
               - architecture
             properties:
+              trainingMode:
+                const: platform
               architecture:
                 const: mlp
           then:
@@ -730,6 +855,8 @@ spec:
             required:
               - architecture
             properties:
+              trainingMode:
+                const: platform
               architecture:
                 const: lstm
           then:
@@ -772,6 +899,8 @@ spec:
             required:
               - architecture
             properties:
+              trainingMode:
+                const: platform
               architecture:
                 const: nlp
           then:
@@ -806,6 +935,8 @@ spec:
             required:
               - architecture
             properties:
+              trainingMode:
+                const: platform
               architecture:
                 const: cv
           then:
@@ -830,37 +961,7 @@ spec:
                 default: adam
 
     - title: Dataset & Task
-      required:
-        - dataSource
-        - datasetUri
-      properties:
-        # Descriptions stay short/user-facing — the "how" (which adapters
-        # back these, why the value looks like a file:// path) belongs in
-        # comments, not in front of someone picking a dataset from a list.
-        dataSource:
-          title: Data source
-          type: string
-          description: Where the dataset is stored — pick this before browsing the list below.
-        # dataSourcePicker/datasetPicker (ui:options below) populate both
-        # from GET /datasets, which merges every IObjectStorageAdapter
-        # that's wired up (local filesystem, MinIO/S3, whatever gets added
-        # later — no template change needed). Falls back to a plain
-        # file:// text field if that list is empty/unreachable.
-        datasetUri:
-          title: Dataset name
-          type: string
-          description: >
-            Dataset used for training — a .zip of images for Computer
-            Vision, CSV for everything else.
-        idColumns:
-          title: ID columns to exclude
-          type: array
-          items:
-            type: string
-          description: >
-            Identifier columns to drop before training (never used as a
-            feature), e.g. "transaction_id".
-          default: [transaction_id]
+      properties: {}
       ui:field: StepLayout
       ui:options:
         groups:
@@ -897,6 +998,45 @@ spec:
               - name: idColumns
                 columnPicker: multi
       allOf:
+        # Base fields only exist in platform mode (see Architecture & Task).
+        - if:
+            properties:
+              trainingMode:
+                const: platform
+          then:
+            required:
+              - dataSource
+              - datasetUri
+            properties:
+              # Descriptions stay short/user-facing — the "how" (which
+              # adapters back these, why the value looks like a file:// path)
+              # belongs in comments, not in front of someone picking a
+              # dataset from a list.
+              dataSource:
+                title: Data source
+                type: string
+                description: Where the dataset is stored — pick this before browsing the list below.
+              # dataSourcePicker/datasetPicker (ui:options below) populate
+              # both from GET /datasets, which merges every
+              # IObjectStorageAdapter that's wired up (local filesystem,
+              # MinIO/S3, whatever gets added later — no template change
+              # needed). Falls back to a plain file:// text field if that
+              # list is empty/unreachable.
+              datasetUri:
+                title: Dataset name
+                type: string
+                description: >
+                  Dataset used for training — a .zip of images for Computer
+                  Vision, CSV for everything else.
+              idColumns:
+                title: ID columns to exclude
+                type: array
+                items:
+                  type: string
+                description: >
+                  Identifier columns to drop before training (never used as a
+                  feature), e.g. "transaction_id".
+                default: [transaction_id]
         # --- lstm's time column — architecture is already in formData by
         # the time this step renders (the previous step requires it).
         # `required: [architecture]` kept anyway, same as every other
@@ -905,6 +1045,8 @@ spec:
             required:
               - architecture
             properties:
+              trainingMode:
+                const: platform
               architecture:
                 const: lstm
           then:
@@ -931,6 +1073,8 @@ spec:
             required:
               - architecture
             properties:
+              trainingMode:
+                const: platform
               taskType:
                 const: regression
               architecture:
@@ -950,6 +1094,8 @@ spec:
             required:
               - architecture
             properties:
+              trainingMode:
+                const: platform
               architecture:
                 const: nlp
           then:
@@ -967,6 +1113,8 @@ spec:
             required:
               - architecture
             properties:
+              trainingMode:
+                const: platform
               taskType:
                 enum: [classification, regression]
               architecture:
@@ -990,6 +1138,8 @@ spec:
         # after the fact. No `required` here, unlike the branch above.
         - if:
             properties:
+              trainingMode:
+                const: platform
               taskType:
                 const: anomaly-detection
           then:
@@ -1006,20 +1156,7 @@ spec:
     # Both fields here default off (fixed / no Feast) — most runs skip
     # both, so they share one step instead of two near-empty ones.
     - title: Advanced customization (optional)
-      properties:
-        searchStrategy:
-          title: Hyperparameter search strategy
-          type: string
-          enum: [fixed, grid, random, bayesian]
-          default: fixed
-          description: >
-            "fixed" trains once, unchanged. "grid"/"random"/"bayesian" run
-            multiple trials — configure the search below.
-        useFeast:
-          title: Enrich with Feast features
-          type: boolean
-          default: false
-          description: Merges precomputed Feature Store features into the dataset before training.
+      properties: {}
       ui:field: StepLayout
       ui:options:
         groups:
@@ -1030,8 +1167,7 @@ spec:
                 width: 6
               # Only exists in the resolved schema once searchStrategy !=
               # fixed — a subpanel (dashed, child-of-a-decision) rather
-              # than a sibling group, same convention as Algorithm's BYOC
-              # block above.
+              # than a sibling group.
               - subpanel:
                   title: Search configuration
                   fields:
@@ -1056,8 +1192,30 @@ spec:
                 width: 6
                 featureNamesPicker: true
       allOf:
+        # Base fields only exist in platform mode (see Architecture & Task).
         - if:
             properties:
+              trainingMode:
+                const: platform
+          then:
+            properties:
+              searchStrategy:
+                title: Hyperparameter search strategy
+                type: string
+                enum: [fixed, grid, random, bayesian]
+                default: fixed
+                description: >
+                  "fixed" trains once, unchanged. "grid"/"random"/"bayesian"
+                  run multiple trials — configure the search below.
+              useFeast:
+                title: Enrich with Feast features
+                type: boolean
+                default: false
+                description: Merges precomputed Feature Store features into the dataset before training.
+        - if:
+            properties:
+              trainingMode:
+                const: platform
               searchStrategy:
                 enum: [grid, random, bayesian]
           then:
@@ -1067,7 +1225,7 @@ spec:
               searchSpaceJson:
                 title: Search space
                 type: string
-                default: "{}"
+                default: '{}'
                 description: Unchecked hyperparameters stay fixed at the value from Architecture & Task.
               objectiveMetric:
                 title: Objective metric
@@ -1089,6 +1247,8 @@ spec:
         # into view even for "fixed".
         - if:
             properties:
+              trainingMode:
+                const: platform
               searchStrategy:
                 enum: [grid, random, bayesian]
               taskType:
@@ -1099,6 +1259,8 @@ spec:
                 enum: [accuracy, precision, recall, f1]
         - if:
             properties:
+              trainingMode:
+                const: platform
               searchStrategy:
                 enum: [grid, random, bayesian]
               taskType:
@@ -1109,6 +1271,8 @@ spec:
                 enum: [r2, mean_absolute_percentage_error]
         - if:
             properties:
+              trainingMode:
+                const: platform
               searchStrategy:
                 enum: [grid, random, bayesian]
               taskType:
@@ -1129,6 +1293,8 @@ spec:
         # on the base field's own enum/default (maximize).
         - if:
             properties:
+              trainingMode:
+                const: platform
               searchStrategy:
                 enum: [grid, random, bayesian]
               taskType:
@@ -1146,6 +1312,8 @@ spec:
             required:
               - objectiveMetric
             properties:
+              trainingMode:
+                const: platform
               objectiveMetric:
                 const: mean_absolute_percentage_error
           then:
@@ -1156,6 +1324,8 @@ spec:
             required:
               - objectiveMetric
             properties:
+              trainingMode:
+                const: platform
               objectiveMetric:
                 enum: [accuracy, precision, recall, f1, r2, silhouette_score]
           then:
@@ -1164,6 +1334,8 @@ spec:
                 const: maximize
         - if:
             properties:
+              trainingMode:
+                const: platform
               searchStrategy:
                 enum: [random, bayesian]
           then:
@@ -1176,6 +1348,8 @@ spec:
                 description: Ignored by "grid" — trial count there is the full grid size.
         - if:
             properties:
+              trainingMode:
+                const: platform
               useFeast:
                 const: true
           then:
@@ -1195,21 +1369,39 @@ spec:
                 description: Pick from the features this Feast store actually has.
 
   steps:
+    # Notebook mode short-circuits the platform pipeline: provision a
+    # JupyterHub notebook and stop. The Dev writes/runs code there, logs to
+    # MLflow, then registers through the normal register path.
+    - id: create-notebook
+      name: 'Provision the AI Notebook'
+      action: orchestration:create-notebook
+      if: ${{ parameters.trainingMode === 'notebook' }}
+      input:
+        environment: ${{ parameters.environment }}
+        cpuCores: ${{ parameters.cpuCores }}
+        ramGb: ${{ parameters.ramGb }}
+        # "none" is the UI's CPU-only sentinel; the adapter wants an absent
+        # gpu_type for CPU, not the literal string.
+        gpuType: ${{ parameters.gpuType === 'none' and '' or parameters.gpuType }}
+        gpuCount: ${{ parameters.gpuCount }}
+        storageGb: ${{ parameters.storageGb }}
+        idleTimeoutMinutes: ${{ parameters.idleTimeoutMinutes }}
+
     - id: enrich-features
-      name: "Enrich dataset with Feast features"
+      name: 'Enrich dataset with Feast features'
       action: orchestration:enrich-dataset-features
-      if: ${{ parameters.useFeast }}
+      if: ${{ parameters.trainingMode === 'platform' and parameters.useFeast }}
       input:
         datasetUri: ${{ parameters.datasetUri }}
         entityIdColumn: ${{ parameters.entityIdColumn }}
         featureNames: ${{ parameters.featureNames }}
 
     - id: validate-dataset
-      name: "Validate the dataset"
+      name: 'Validate the dataset'
       action: orchestration:validate-dataset
       # Data Quality checks assume a CSV read via pd.read_csv — CV's
       # datasetUri is a .zip of images, skip this step.
-      if: ${{ parameters.architecture !== 'cv' }}
+      if: ${{ parameters.trainingMode === 'platform' and parameters.architecture !== 'cv' }}
       input:
         datasetUri: ${{ parameters.useFeast and steps['enrich-features'].output.datasetUri or parameters.datasetUri }}
         taskType: ${{ parameters.taskType }}
@@ -1217,8 +1409,9 @@ spec:
         timeColumn: ${{ parameters.timeColumn }}
 
     - id: trigger-training
-      name: "Train and register the model"
+      name: 'Train and register the model'
       action: orchestration:trigger-training
+      if: ${{ parameters.trainingMode === 'platform' }}
       input:
         modelName: ${{ parameters.modelName }}
         datasetUri: ${{ parameters.useFeast and steps['enrich-features'].output.datasetUri or parameters.datasetUri }}
@@ -1238,9 +1431,6 @@ spec:
         epochs: ${{ parameters.epochs }}
         batchSize: ${{ parameters.batchSize }}
         optimizer: ${{ parameters.optimizer }}
-        codeRepoUrl: ${{ parameters.codeRepoUrl }}
-        entrypointPath: ${{ parameters.entrypointPath }}
-        customConfig: ${{ parameters.customConfig }}
         searchStrategy: ${{ parameters.searchStrategy }}
         numTrials: ${{ parameters.numTrials }}
         searchSpaceJson: ${{ parameters.searchSpaceJson }}
@@ -1252,6 +1442,7 @@ spec:
     - id: model-summary
       name: "Fetch the model version's metrics"
       action: orchestration:model-summary
+      if: ${{ parameters.trainingMode === 'platform' }}
       input:
         modelName: ${{ parameters.modelName }}
         modelVersion: ${{ steps['trigger-training'].output.modelVersion }}
@@ -1259,6 +1450,7 @@ spec:
     - id: render-catalog-info
       name: "Generate the model's catalog entity"
       action: fetch:template
+      if: ${{ parameters.trainingMode === 'platform' }}
       input:
         url: ./skeleton
         targetPath: catalog-output
@@ -1273,8 +1465,9 @@ spec:
           useCase: ${{ parameters.useCase }}
 
     - id: publish-catalog-pr
-      name: "Open the catalog entry PR"
+      name: 'Open the catalog entry PR'
       action: publish:github:pull-request
+      if: ${{ parameters.trainingMode === 'platform' }}
       input:
         repoUrl: ${{ parameters.repoUrl }}
         branchName: register-${{ parameters.modelName }}-${{ steps['trigger-training'].output.modelVersion }}
@@ -1288,6 +1481,8 @@ spec:
 
   output:
     links:
+      - title: Open the notebook
+        url: ${{ steps['create-notebook'].output.notebookUrl }}
       - title: View run in MLflow
         url: http://localhost:5000
       - title: View catalog entry pull request
@@ -1295,7 +1490,16 @@ spec:
     text:
       - title: Result
         content: |
-          Trained and registered **${{ parameters.modelName }}** version
+          **${{ parameters.trainingMode }}** mode.
+
+          Notebook mode — notebook
+          `${{ steps['create-notebook'].output.notebookId }}` is starting.
+          Open it at ${{ steps['create-notebook'].output.notebookUrl }},
+          write and run your code, log the run to MLflow, then register the
+          model through the normal register path.
+
+          Platform mode — trained and registered
+          **${{ parameters.modelName }}** version
           **${{ steps['trigger-training'].output.modelVersion }}**
           (${{ parameters.algorithm }}, Argo Workflow
           `${{ steps['trigger-training'].output.workflowName }}`, finished

@@ -111,6 +111,21 @@ export const ForecastDivergenceChart: FC<ForecastDivergenceChartProps> = ({
     [forecast],
   );
 
+  // At most ~8 evenly spaced date ticks (first + last always included). A
+  // month-long axis has one point per day; without this, recharts' own
+  // minTickGap still lets all 30 through on a wide chart and the labels
+  // collide. Passing an explicit candidate set caps the density, while
+  // minTickGap below still thins it further on narrow charts.
+  const xTicks = useMemo(() => {
+    const n = data.length;
+    const count = Math.min(8, n);
+    if (count <= 1) return data.map(p => p.t);
+    return Array.from(
+      { length: count },
+      (_, i) => data[Math.round((i * (n - 1)) / (count - 1))].t,
+    );
+  }, [data]);
+
   // Month label from the first (month-start) point.
   const monthLabel =
     data.length > 0
@@ -175,6 +190,7 @@ export const ForecastDivergenceChart: FC<ForecastDivergenceChartProps> = ({
               type="number"
               scale="time"
               domain={['dataMin', 'dataMax']}
+              ticks={xTicks}
               tickFormatter={ms => formatDay(new Date(ms).toISOString())}
               tick={{ fontSize: 12, fill: theme.palette.text.secondary }}
               // Hide ticks that would collide instead of drawing them on top

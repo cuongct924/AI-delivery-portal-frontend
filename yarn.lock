@@ -18701,6 +18701,7 @@ __metadata:
     "@backstage/plugin-kubernetes-backend": "npm:^0.21.4"
     "@backstage/plugin-permission-common": "npm:^0.9.9"
     "@backstage/plugin-permission-node": "npm:^0.11.0"
+    "@backstage/plugin-scaffolder-node": "npm:^0.13.3"
     "@backstage/plugin-search-backend-module-techdocs": "npm:^0.4.14"
     "@backstage/plugin-search-backend-node": "npm:^1.4.4"
     "@immobiliarelabs/backstage-plugin-gitlab-backend": "npm:^6.13.0"
