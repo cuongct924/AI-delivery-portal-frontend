@@ -540,6 +540,21 @@ describe('buildCostInsightsData', () => {
     expect(data.summary.costPer1kInference).toBe(5);
     expect(data.summary.costPer1kToken).toBe(0.5);
   });
+
+  it('computes cost-weighted GPU utilization', () => {
+    const data = buildCostInsightsData({
+      level: 'namespace',
+      currentItems: [
+        costItem({ project: 'a', cpuCost: 10, gpuUtilization: 0.8 }),
+        costItem({ project: 'b', cpuCost: 30, gpuUtilization: 0.4 }),
+      ],
+      previousItems: [],
+      monthStart: new Date(2026, 6, 1),
+      now: new Date(2026, 6, 15),
+    });
+    // (0.8*10 + 0.4*30) / 40 = 0.5
+    expect(data.summary.gpuUtilization).toBeCloseTo(0.5);
+  });
 });
 
 describe('detectAnomalies', () => {

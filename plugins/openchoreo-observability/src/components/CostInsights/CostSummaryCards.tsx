@@ -170,6 +170,17 @@ export const CostSummaryCards: FC<{ summary: CostSummary }> = ({ summary }) => {
           hint="Unit economics"
         />
       </Box>
+      <Box className={classes.cardWrap}>
+        <KpiCard
+          label="GPU utilization"
+          value={
+            summary.gpuUtilization !== undefined
+              ? `${Math.round(summary.gpuUtilization * 100)}%`
+              : '—'
+          }
+          hint="Resource efficiency"
+        />
+      </Box>
     </Box>
   );
 };

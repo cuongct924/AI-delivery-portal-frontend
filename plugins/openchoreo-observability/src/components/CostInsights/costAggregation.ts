@@ -144,6 +144,22 @@ export function totalCost(items: CostItem[]): number {
 }
 
 /**
+ * Cost-weighted average GPU utilization across the items that report it.
+ * Returns undefined when no item carries a utilization.
+ */
+function weightedGpuUtilization(items: CostItem[]): number | undefined {
+  let weightSum = 0;
+  let utilSum = 0;
+  for (const item of items) {
+    if (item.gpuUtilization === undefined) continue;
+    const weight = itemTotal(item);
+    weightSum += weight;
+    utilSum += item.gpuUtilization * weight;
+  }
+  return weightSum > 0 ? utilSum / weightSum : undefined;
+}
+
+/**
  * Flag spend spikes against each dimension's own recent baseline. A bucket is
  * anomalous when its total exceeds `threshold`× the median bucket for that
  * dimension. Client-side and dependency-free, so the dashboard surfaces
@@ -431,6 +447,7 @@ export function computeSummary(
     gateCost: stages.gate,
     runCost: stages.run,
     attributionCoverage: total > 0 ? attributedCost / total : 1,
+    gpuUtilization: weightedGpuUtilization(currentItems),
   };
 }
 

@@ -479,6 +479,11 @@ export interface CostItem {
    * Optional — absent means the unit metric can't be computed for this item.
    */
   usage?: { inferences?: number; tokens?: number };
+  /**
+   * GPU utilization ratio (0..1) for GPU-backed items, for the
+   * resource-utilization-efficiency KPI. Absent for CPU-only items.
+   */
+  gpuUtilization?: number;
 }
 
 /** Current or recommended resource allocation + its cost, from the observer. */

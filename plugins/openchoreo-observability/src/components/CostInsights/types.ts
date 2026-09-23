@@ -180,6 +180,8 @@ export interface CostSummary {
    * scorecard's attribution check; 1 when there is no spend to attribute.
    */
   attributionCoverage?: number;
+  /** Cost-weighted average GPU utilization (0..1), when GPU items are present. */
+  gpuUtilization?: number;
 }
 
 /** One stacked-bar time bucket: `{ timestamp, [dimensionValue]: cost }`. */
