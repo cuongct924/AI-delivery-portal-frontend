@@ -36,6 +36,7 @@ import { CostSummaryCards } from './CostSummaryCards';
 import { CostActionPanel } from './CostActionPanel';
 import { CostLifecycleWaterfall } from './CostLifecycleWaterfall';
 import { CostBudgetDialog } from './CostBudgetDialog';
+import { CostRateOptimization } from './CostRateOptimization';
 import { CostSavingCard } from './CostSavingCard';
 import { CostScorecard } from './CostScorecard';
 import { useCostBudget } from './useCostBudget';
@@ -429,6 +430,13 @@ const CostInsightsInsightsTab: FC<InsightsTabProps> = ({
                 }
                 stage={stage}
                 mode="recommendation"
+              />
+            </Box>
+            <Box className={classes.section}>
+              <CostRateOptimization
+                timeRange={timeRange}
+                customStartTime={customStartTime}
+                customEndTime={customEndTime}
               />
             </Box>
           </CostZone>
