@@ -4,6 +4,7 @@ import path from 'node:path';
 import { ConfigReader } from '@backstage/config';
 import {
   createConfirmPromotionAction,
+  createCostGateAction,
   createEstimateCostAction,
   createModelSummaryAction,
   createPolicyCheckAction,
@@ -529,6 +530,66 @@ describe('orchestration:estimate-cost', () => {
       stage: 'run',
       artifact: 'qwen',
     });
+  });
+});
+
+describe('orchestration:cost-gate', () => {
+  it('outputs the level and does not throw in warn mode', async () => {
+    mockFetchResponses([
+      {
+        ok: true,
+        body: {
+          allow: true,
+          level: 'warn',
+          estimated_cost: 120,
+          budget: 100,
+          reasons: ['over budget'],
+        },
+      },
+    ]);
+    const action = createCostGateAction({ config });
+    const { ctx, outputs } = createMockContext<typeof action>(
+      {
+        goldenPath: 'llm-serve-deploy',
+        stage: 'run',
+        artifact: 'qwen',
+        params: { gpuType: 'H100' },
+      },
+      '/tmp/workspace',
+    );
+
+    await action.handler(ctx);
+
+    expect(outputs.level).toBe('warn');
+    expect(outputs.estimatedCost).toBe(120);
+    expect(outputs.budget).toBe(100);
+  });
+
+  it('throws when enforce mode blocks a fail', async () => {
+    mockFetchResponses([
+      {
+        ok: true,
+        body: {
+          allow: false,
+          level: 'fail',
+          estimated_cost: 300,
+          budget: 100,
+          reasons: ['way over budget'],
+        },
+      },
+    ]);
+    const action = createCostGateAction({ config });
+    const { ctx } = createMockContext<typeof action>(
+      {
+        goldenPath: 'llm-serve-deploy',
+        stage: 'run',
+        artifact: 'qwen',
+        mode: 'enforce',
+      },
+      '/tmp/workspace',
+    );
+
+    await expect(action.handler(ctx)).rejects.toThrow('way over budget');
   });
 });
 

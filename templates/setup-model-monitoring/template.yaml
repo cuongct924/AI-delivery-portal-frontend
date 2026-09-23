@@ -300,6 +300,19 @@ spec:
         params:
           schedule: ${{ parameters.schedule }}
 
+    # Pre-flight cost guardrail: warn (never block) when the estimate is over
+    # budget. Flip mode to `enforce` to block a fail-level overrun.
+    - id: cost-gate
+      name: 'Check the cost budget'
+      action: orchestration:cost-gate
+      input:
+        goldenPath: setup-model-monitoring
+        stage: run
+        artifact: ${{ parameters.modelName }}
+        params:
+          schedule: ${{ parameters.schedule }}
+        mode: warn
+
     - id: setup-monitoring
       name: 'Register the monitoring schedule'
       action: orchestration:setup-monitoring

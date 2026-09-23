@@ -89,12 +89,21 @@ interface PolicyCheckResponse {
   readonly thresholds: Record<string, number>;
 }
 
-/** Response body of `POST {baseUrl}/cost/estimate`. */
+/** Response body of `POST {baseUrl}/costs/estimate`. */
 interface EstimateCostResponse {
   readonly estimated_cost: number;
   readonly currency: string;
   readonly stage: string;
   readonly breakdown: Record<string, number>;
+}
+
+/** Response body of `POST {baseUrl}/costs/check`. */
+interface CostCheckResponse {
+  readonly allow: boolean;
+  readonly level: string;
+  readonly estimated_cost: number;
+  readonly budget: number | null;
+  readonly reasons: string[];
 }
 
 /** Response body of `POST {baseUrl}/deploy-model/prepare`. */
@@ -812,6 +821,74 @@ export function createEstimateCostAction({ config, tokenService }: ActionDeps) {
       );
       ctx.output('estimatedCost', result.estimated_cost);
       ctx.output('breakdown', result.breakdown ?? {});
+    },
+  });
+}
+
+/**
+ * `orchestration:cost-gate` — the pre-flight cost guardrail. Compares a run's
+ * estimate against the budget and returns ok/warn/fail. In `warn` mode it never
+ * blocks; in `enforce` mode a fail-level overrun throws so the run stops.
+ */
+export function createCostGateAction({ config, tokenService }: ActionDeps) {
+  return createTemplateAction({
+    id: 'orchestration:cost-gate',
+    description:
+      'Warns or blocks a golden-path run whose estimate exceeds its budget.',
+    schema: {
+      input: {
+        goldenPath: z =>
+          z.string({ description: 'Golden path name, e.g. train-track-register' }),
+        stage: z =>
+          z.enum(['build', 'gate', 'run'], {
+            description: 'Lifecycle stage the cost belongs to',
+          }),
+        artifact: z =>
+          z.string({ description: 'Artifact the cost is attributed to' }),
+        params: z =>
+          z
+            .record(z.string(), z.any(), {
+              description: 'Path-specific inputs (gpuType, epochs, ...)',
+            })
+            .optional(),
+        mode: z =>
+          z
+            .enum(['warn', 'enforce'], {
+              description: 'warn (default) never blocks; enforce blocks a fail',
+            })
+            .optional(),
+      },
+      output: {
+        level: z => z.string({ description: 'ok | warn | fail' }),
+        estimatedCost: z => z.number({ description: 'Estimated cost in USD' }),
+        budget: z =>
+          z.number({ description: 'Budget the estimate was checked against' }),
+        reasons: z =>
+          z.array(z.string(), { description: 'Why the level was chosen' }),
+      },
+    },
+    async handler(ctx) {
+      const baseUrl = getBaseUrl(config);
+      const result = await postJson<CostCheckResponse>(
+        `${baseUrl}/costs/check`,
+        {
+          golden_path: ctx.input.goldenPath,
+          stage: ctx.input.stage,
+          artifact: ctx.input.artifact,
+          params: ctx.input.params ?? {},
+          mode: ctx.input.mode ?? 'warn',
+        },
+        tokenService,
+      );
+      ctx.output('level', result.level);
+      ctx.output('estimatedCost', result.estimated_cost);
+      if (result.budget !== null) ctx.output('budget', result.budget);
+      ctx.output('reasons', result.reasons);
+      if (!result.allow) {
+        throw new Error(
+          `Cost gate blocked ${ctx.input.goldenPath}: ${result.reasons.join('; ')}`,
+        );
+      }
     },
   });
 }

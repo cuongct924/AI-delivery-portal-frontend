@@ -188,6 +188,19 @@ spec:
         params:
           artifactKind: ${{ parameters.artifactKind }}
 
+    # Pre-flight cost guardrail: warn (never block) when the estimate is over
+    # budget. Flip mode to `enforce` to block a fail-level overrun.
+    - id: cost-gate
+      name: 'Check the cost budget'
+      action: orchestration:cost-gate
+      input:
+        goldenPath: llm-draft-ingest
+        stage: build
+        artifact: ${{ parameters.artifactKind === 'rag-index' and parameters.collectionName or parameters.promptName }}
+        params:
+          artifactKind: ${{ parameters.artifactKind }}
+        mode: warn
+
     - id: draft-prompt
       name: 'Draft the prompt'
       action: orchestration:draft-prompt

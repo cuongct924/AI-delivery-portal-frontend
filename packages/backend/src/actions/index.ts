@@ -17,6 +17,7 @@ import { scaffolderActionsExtensionPoint } from '@backstage/plugin-scaffolder-no
 import { openChoreoTokenServiceRef } from '@openchoreo/openchoreo-auth';
 import {
   createConfirmPromotionAction,
+  createCostGateAction,
   createEnrichDatasetFeaturesAction,
   createEstimateCostAction,
   createModelSummaryAction,
@@ -62,6 +63,7 @@ export default createBackendModule({
           createModelSummaryAction({ config, tokenService }),
           createPolicyCheckAction({ config, tokenService }),
           createEstimateCostAction({ config, tokenService }),
+          createCostGateAction({ config, tokenService }),
           createPrepareDeployManifestAction({ config, tokenService }),
           createPrepareLlmDeployManifestAction({ config, tokenService }),
           createRecordDeployAction({ config, tokenService }),

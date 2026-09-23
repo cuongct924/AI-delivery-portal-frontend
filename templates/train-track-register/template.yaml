@@ -1422,6 +1422,21 @@ spec:
           epochs: ${{ parameters.epochs }}
           numTrials: ${{ parameters.numTrials }}
 
+    # Pre-flight cost guardrail: warn (never block) when the estimate is over
+    # budget. Flip mode to `enforce` to block a fail-level overrun.
+    - id: cost-gate
+      name: 'Check the cost budget'
+      action: orchestration:cost-gate
+      if: ${{ parameters.trainingMode === 'platform' }}
+      input:
+        goldenPath: train-track-register
+        stage: build
+        artifact: ${{ parameters.modelName }}
+        params:
+          epochs: ${{ parameters.epochs }}
+          numTrials: ${{ parameters.numTrials }}
+        mode: warn
+
     - id: trigger-training
       name: 'Train and register the model'
       action: orchestration:trigger-training

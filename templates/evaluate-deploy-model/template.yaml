@@ -310,6 +310,21 @@ spec:
           deployStrategy: ${{ parameters.deployStrategy }}
           trafficPercent: ${{ parameters.trafficPercent }}
 
+    # Pre-flight cost guardrail: warn (never block) when the estimate is over
+    # budget. Flip mode to `enforce` to block a fail-level overrun.
+    - id: cost-gate
+      name: "Check the cost budget"
+      action: orchestration:cost-gate
+      if: ${{ parameters.action === 'deploy' }}
+      input:
+        goldenPath: evaluate-deploy-model
+        stage: run
+        artifact: ${{ parameters.modelName }}
+        params:
+          deployStrategy: ${{ parameters.deployStrategy }}
+          trafficPercent: ${{ parameters.trafficPercent }}
+        mode: warn
+
     - id: prepare-manifest
       name: "Render the InferenceService manifest / deploy"
       action: orchestration:prepare-deploy-manifest
