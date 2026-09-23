@@ -82,13 +82,15 @@ export function dimensionOf(
   level: CostScopeLevel,
   dimension: CostDimension = 'infra',
 ): string {
+  // `||` (not `??`) so an empty-string attribution field — which the observer
+  // emits for an untagged item — still falls back to the infra field.
   switch (dimension) {
     case 'artifact':
-      return item.artifact ?? item.component;
+      return item.artifact || item.component;
     case 'team':
-      return item.team ?? item.project;
+      return item.team || item.project;
     case 'domain':
-      return item.businessDomain ?? item.project;
+      return item.businessDomain || item.project;
     case 'infra':
     default:
       return infraDimensionOf(item, level);
@@ -413,6 +415,11 @@ export function computeSummary(
     totalSaving += Math.max(0, (currentTotals.get(dim) ?? 0) - recDimTotal);
   }
   const stages = stageTotals(currentItems);
+  // Share of spend that carries an attribution dimension, so the scorecard can
+  // flag untagged spend (the framework's "everyone owns their usage").
+  const attributedCost = totalCost(
+    currentItems.filter(i => i.artifact || i.team || i.businessDomain),
+  );
   return {
     totalCost: total,
     deltaPct: percentChange(total, prevTotal || undefined),
@@ -421,6 +428,7 @@ export function computeSummary(
     buildCost: stages.build,
     gateCost: stages.gate,
     runCost: stages.run,
+    attributionCoverage: total > 0 ? attributedCost / total : 1,
   };
 }
 

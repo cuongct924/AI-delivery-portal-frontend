@@ -148,24 +148,28 @@ export const CostSummaryCards: FC<{ summary: CostSummary }> = ({ summary }) => {
           }
         />
       </Box>
-      {summary.costPer1kInference !== undefined && (
-        <Box className={classes.cardWrap}>
-          <KpiCard
-            label="Cost / 1k inferences"
-            value={formatUnitCost(summary.costPer1kInference)}
-            hint="Unit economics"
-          />
-        </Box>
-      )}
-      {summary.costPer1kToken !== undefined && (
-        <Box className={classes.cardWrap}>
-          <KpiCard
-            label="Cost / 1k tokens"
-            value={formatUnitCost(summary.costPer1kToken)}
-            hint="Unit economics"
-          />
-        </Box>
-      )}
+      <Box className={classes.cardWrap}>
+        <KpiCard
+          label="Cost / 1k inferences"
+          value={
+            summary.costPer1kInference !== undefined
+              ? formatUnitCost(summary.costPer1kInference)
+              : '—'
+          }
+          hint="Unit economics"
+        />
+      </Box>
+      <Box className={classes.cardWrap}>
+        <KpiCard
+          label="Cost / 1k tokens"
+          value={
+            summary.costPer1kToken !== undefined
+              ? formatUnitCost(summary.costPer1kToken)
+              : '—'
+          }
+          hint="Unit economics"
+        />
+      </Box>
     </Box>
   );
 };

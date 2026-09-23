@@ -34,6 +34,9 @@ import { CostInsightsTable } from './CostInsightsTable';
 import { CostInsightsGraphs } from './CostInsightsGraphs';
 import { CostSummaryCards } from './CostSummaryCards';
 import { CostActionPanel } from './CostActionPanel';
+import { CostLifecycleWaterfall } from './CostLifecycleWaterfall';
+import { CostScorecard } from './CostScorecard';
+import { CostZone } from './CostZone';
 import { ForecastDivergenceChart } from './ForecastDivergenceChart';
 import { useNamespaceEnvironments } from './useNamespaceEnvironments';
 import { useDimensionTitles } from './useDimensionTitles';
@@ -333,56 +336,83 @@ const CostInsightsInsightsTab: FC<InsightsTabProps> = ({
       {!loading && data && (
         <Box position="relative">
           <RefreshOverlay active={isRefetching} label="Refreshing cost data" />
-          <Box className={classes.section}>
-            <CostSummaryCards summary={data.summary} />
-          </Box>
-          {/* Forecast covers the whole month, so it sits above the time range. */}
-          <Box className={classes.section}>
-            <ForecastDivergenceChart
-              forecast={data.forecast}
-              budget={data.budget?.amount ?? null}
-            />
-          </Box>
-          <Box className={`${classes.section} ${classes.timeRangeRow}`}>
-            <Typography variant="body2" color="textSecondary">
-              Time range for everything below
-            </Typography>
-            <TimeRangeFilter
-              value={timeRange}
-              customStartTime={customStartTime}
-              customEndTime={customEndTime}
-              onChange={onTimeRangeChange}
-            />
-          </Box>
-          <Box className={classes.section}>
-            <CostInsightsGraphs
-              data={data}
-              granularity={granularity}
-              onGranularityChange={onGranularityChange}
-            />
-          </Box>
-          <Box className={classes.section}>
-            <CostInsightsTable
-              level={data.level}
-              rows={data.rows}
-              icon={app.getSystemIcon(`kind:${LEVEL_KIND[data.level]}`)}
-              titles={titles}
-              scope={optimizeScope}
-              onOptimized={refresh}
-              singleComponent={
-                data.level === 'component' && scopes.length === 1
-              }
-              stage={stage}
-            />
-          </Box>
-          <Box className={classes.section}>
-            <CostActionPanel
-              anomalies={data.anomalies ?? []}
-              budget={data.budget ?? null}
-              forecastTotal={data.summary.forecastTotal ?? null}
-              totalSaving={data.summary.totalSaving}
-            />
-          </Box>
+
+          <CostZone
+            step="Inform"
+            title="Visibility"
+            subtitle="What are we spending, and on what?"
+          >
+            <Box className={classes.section}>
+              <CostSummaryCards summary={data.summary} />
+            </Box>
+            <Box className={classes.section}>
+              <CostLifecycleWaterfall summary={data.summary} />
+            </Box>
+            {/* Forecast covers the whole month, so it sits above the time range. */}
+            <Box className={classes.section}>
+              <ForecastDivergenceChart
+                forecast={data.forecast}
+                budget={data.budget?.amount ?? null}
+              />
+            </Box>
+            <Box className={`${classes.section} ${classes.timeRangeRow}`}>
+              <Typography variant="body2" color="textSecondary">
+                Time range for everything below
+              </Typography>
+              <TimeRangeFilter
+                value={timeRange}
+                customStartTime={customStartTime}
+                customEndTime={customEndTime}
+                onChange={onTimeRangeChange}
+              />
+            </Box>
+            <Box className={classes.section}>
+              <CostInsightsGraphs
+                data={data}
+                granularity={granularity}
+                onGranularityChange={onGranularityChange}
+              />
+            </Box>
+          </CostZone>
+
+          <CostZone
+            step="Optimize"
+            title="Right-sizing"
+            subtitle="What can we improve?"
+          >
+            <Box className={classes.section}>
+              <CostInsightsTable
+                level={data.level}
+                rows={data.rows}
+                icon={app.getSystemIcon(`kind:${LEVEL_KIND[data.level]}`)}
+                titles={titles}
+                scope={optimizeScope}
+                onOptimized={refresh}
+                singleComponent={
+                  data.level === 'component' && scopes.length === 1
+                }
+                stage={stage}
+              />
+            </Box>
+          </CostZone>
+
+          <CostZone
+            step="Operate"
+            title="Action needed"
+            subtitle="What needs a decision now?"
+          >
+            <Box className={classes.section}>
+              <CostScorecard summary={data.summary} />
+            </Box>
+            <Box className={classes.section}>
+              <CostActionPanel
+                anomalies={data.anomalies ?? []}
+                budget={data.budget ?? null}
+                forecastTotal={data.summary.forecastTotal ?? null}
+                totalSaving={data.summary.totalSaving}
+              />
+            </Box>
+          </CostZone>
         </Box>
       )}
 

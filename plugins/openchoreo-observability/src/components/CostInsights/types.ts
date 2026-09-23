@@ -52,7 +52,9 @@ export const COST_DIMENSION_LABELS: Record<CostDimension, string> = {
 };
 
 export const DEFAULT_COST_STAGE: CostStageFilter = 'all';
-export const DEFAULT_COST_DIMENSION: CostDimension = 'infra';
+// Artifact-first by default: cost follows the model/prompt/RAG index a golden
+// path produced, not the K8s topology — the whole point of the AI cost model.
+export const DEFAULT_COST_DIMENSION: CostDimension = 'artifact';
 
 /** A spend spike the platform flags against its own recent baseline. */
 export interface CostAnomaly {
@@ -171,6 +173,11 @@ export interface CostSummary {
   costPer1kInference?: number;
   /** Cost per 1,000 tokens, when usage is known. */
   costPer1kToken?: number;
+  /**
+   * Share of spend carrying artifact/team/domain attribution (0..1). Drives the
+   * scorecard's attribution check; 1 when there is no spend to attribute.
+   */
+  attributionCoverage?: number;
 }
 
 /** One stacked-bar time bucket: `{ timestamp, [dimensionValue]: cost }`. */

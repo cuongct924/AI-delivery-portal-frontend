@@ -129,6 +129,32 @@ describe('dimensionOf', () => {
     expect(dimensionOf(item, 'project')).toBe('c1');
     expect(dimensionOf(item, 'component')).toBe('e1');
   });
+
+  it('uses the attribution field when present', () => {
+    const tagged = costItem({
+      project: 'p1',
+      component: 'c1',
+      artifact: 'model-a',
+      team: 'team-a',
+      businessDomain: 'fraud-risk',
+    });
+    expect(dimensionOf(tagged, 'namespace', 'artifact')).toBe('model-a');
+    expect(dimensionOf(tagged, 'namespace', 'team')).toBe('team-a');
+    expect(dimensionOf(tagged, 'namespace', 'domain')).toBe('fraud-risk');
+  });
+
+  it('falls back to the infra field on an empty-string attribution', () => {
+    const untagged = costItem({
+      project: 'p1',
+      component: 'c1',
+      artifact: '',
+      team: '',
+      businessDomain: '',
+    });
+    expect(dimensionOf(untagged, 'namespace', 'artifact')).toBe('c1');
+    expect(dimensionOf(untagged, 'namespace', 'team')).toBe('p1');
+    expect(dimensionOf(untagged, 'namespace', 'domain')).toBe('p1');
+  });
 });
 
 describe('totalCost & percentChange', () => {

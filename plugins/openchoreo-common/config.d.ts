@@ -135,6 +135,38 @@ export interface Config {
     };
 
     /**
+     * Observability tuning. Declared so the frontend can read the optional
+     * cost budget; the other keys stay backend-only.
+     * @deepVisibility frontend
+     */
+    observability?: {
+      /**
+       * Optional monthly cost budget (USD) for the Cost Insights page. When
+       * set, the forecast shows burn against it and the budget cards render.
+       * @visibility frontend
+       */
+      costBudget?: number;
+
+      /**
+       * Local mock observer base URL (backend repo services/orchestration-api).
+       * @visibility backend
+       */
+      mockObserverUrl?: string;
+
+      /**
+       * Wirelogs SSE stream tuning.
+       * @visibility backend
+       */
+      wirelogs?: {
+        /**
+         * Hard cap (seconds) on a single wirelogs SSE stream.
+         * @visibility backend
+         */
+        streamTimeoutSeconds?: number;
+      };
+    };
+
+    /**
      * Schedule configuration for entity providers
      * @visibility backend
      */
