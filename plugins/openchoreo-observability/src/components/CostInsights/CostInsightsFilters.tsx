@@ -93,7 +93,7 @@ export const CostInsightsFilters: FC<CostInsightsFiltersProps> = ({
 
       {onDimensionChange && (
         <SingleSelectFilter
-          label="Group by"
+          label="Persona view"
           options={DIMENSION_OPTIONS}
           value={dimension}
           onChange={next => onDimensionChange(next as CostDimension)}
