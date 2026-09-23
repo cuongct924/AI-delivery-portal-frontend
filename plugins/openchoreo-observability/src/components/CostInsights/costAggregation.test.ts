@@ -554,6 +554,18 @@ describe('detectAnomalies', () => {
     expect(anomalies).toHaveLength(1);
     expect(anomalies[0].dimension).toBe('proj');
     expect(anomalies[0].deltaPct).toBeCloseTo(700);
+    expect(anomalies[0].severity).toBe('high');
+  });
+
+  it('bands severity by the delta', () => {
+    const items = [
+      costItem({ startTime: '2026-07-01T00:00:00.000Z', cpuCost: 1 }),
+      costItem({ startTime: '2026-07-02T00:00:00.000Z', cpuCost: 1 }),
+      costItem({ startTime: '2026-07-03T00:00:00.000Z', cpuCost: 1 }),
+      // 2.4x the median → +140% → medium.
+      costItem({ startTime: '2026-07-04T00:00:00.000Z', cpuCost: 2.4 }),
+    ];
+    expect(detectAnomalies(items, 'namespace')[0].severity).toBe('medium');
   });
 
   it('needs at least three buckets to establish a baseline', () => {

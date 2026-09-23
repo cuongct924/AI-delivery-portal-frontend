@@ -83,23 +83,27 @@ export const CostActionPanel: FC<CostActionPanelProps> = ({
         </Paper>
       )}
 
-      {anomalies.map(anomaly => (
-        <Paper key={anomaly.id} variant="outlined" className={classes.row}>
-          <TrendingUpIcon className={`${classes.icon} ${classes.iconWarn}`} />
-          <Box className={classes.body}>
-            <Typography className={classes.title}>
-              {anomaly.dimension} · {anomaly.stage}
+      {anomalies.map(anomaly => {
+        const severe = anomaly.severity === 'high';
+        const tone = severe ? classes.iconDanger : classes.iconWarn;
+        return (
+          <Paper key={anomaly.id} variant="outlined" className={classes.row}>
+            <TrendingUpIcon className={`${classes.icon} ${tone}`} />
+            <Box className={classes.body}>
+              <Typography className={classes.title}>
+                {anomaly.dimension} · {anomaly.stage} · {anomaly.severity}
+              </Typography>
+              <Typography className={classes.detail}>
+                Spend {formatCostUsd(anomaly.observed)} vs{' '}
+                {formatCostUsd(anomaly.expected)} expected.
+              </Typography>
+            </Box>
+            <Typography className={`${classes.amount} ${tone}`}>
+              +{Math.round(anomaly.deltaPct)}%
             </Typography>
-            <Typography className={classes.detail}>
-              Spend {formatCostUsd(anomaly.observed)} vs{' '}
-              {formatCostUsd(anomaly.expected)} expected.
-            </Typography>
-          </Box>
-          <Typography className={`${classes.amount} ${classes.iconWarn}`}>
-            +{Math.round(anomaly.deltaPct)}%
-          </Typography>
-        </Paper>
-      ))}
+          </Paper>
+        );
+      })}
 
       {totalSaving > 0 && (
         <Paper variant="outlined" className={classes.row}>

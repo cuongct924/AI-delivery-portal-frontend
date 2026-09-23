@@ -171,13 +171,15 @@ export function detectAnomalies(
     if (median <= 0) continue;
     for (const b of buckets) {
       if (b.total > median * threshold) {
+        const deltaPct = ((b.total - median) / median) * 100;
         anomalies.push({
           id: `${dim}:${b.ts}`,
           dimension: dim,
           stage: b.stage,
           observed: b.total,
           expected: median,
-          deltaPct: ((b.total - median) / median) * 100,
+          deltaPct,
+          severity: deltaPct >= 150 ? 'high' : deltaPct >= 50 ? 'medium' : 'low',
           detectedAt: b.ts,
         });
       }

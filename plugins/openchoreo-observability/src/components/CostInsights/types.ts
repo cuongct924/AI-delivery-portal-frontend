@@ -66,6 +66,8 @@ export interface CostAnomaly {
   expected: number;
   /** Signed percent over the expected baseline. */
   deltaPct: number;
+  /** Severity band from the delta: low <50%, medium <150%, high beyond. */
+  severity: 'low' | 'medium' | 'high';
   detectedAt: string;
 }
 
