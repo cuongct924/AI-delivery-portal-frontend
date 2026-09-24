@@ -11,4 +11,4 @@ spec:
     projectName: telco-fraud-detection
     componentName: serving
   container:
-    image: models:/house-price-prediction/2
+    image: models:/telco-fraud-detection/4
