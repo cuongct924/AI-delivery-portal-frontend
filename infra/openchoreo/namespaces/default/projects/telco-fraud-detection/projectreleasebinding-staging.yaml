@@ -1,0 +1,13 @@
+apiVersion: openchoreo.dev/v1alpha1
+kind: ProjectReleaseBinding
+metadata:
+  name: telco-fraud-detection-staging
+  namespace: default
+  labels:
+    openchoreo.dev/project: telco-fraud-detection
+    openchoreo.dev/environment: staging
+spec:
+  environment: staging
+  owner:
+    projectName: telco-fraud-detection
+  projectRelease: telco-fraud-detection-6d675ddbf6
