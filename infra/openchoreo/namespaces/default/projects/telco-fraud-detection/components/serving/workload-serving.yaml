@@ -1,0 +1,14 @@
+apiVersion: openchoreo.dev/v1alpha1
+kind: Workload
+metadata:
+  name: serving-workload
+  namespace: default
+  labels:
+    openchoreo.dev/project: telco-fraud-detection
+    openchoreo.dev/component: serving
+spec:
+  owner:
+    projectName: telco-fraud-detection
+    componentName: serving
+  container:
+    image: models:/house-price-prediction/2
