@@ -1,0 +1,48 @@
+{
+  "products": [
+    {
+      "id": "p1",
+      "name": "AI Keyboard",
+      "description": "Compact mechanical keyboard for developers.",
+      "price": 89.0,
+      "stock": 12
+    },
+    {
+      "id": "p2",
+      "name": "AI Mouse",
+      "description": "Wireless ergonomic mouse with silent clicks.",
+      "price": 49.0,
+      "stock": 20
+    },
+    {
+      "id": "p3",
+      "name": "Developer Headphones",
+      "description": "Closed-back headphones for focused work.",
+      "price": 129.0,
+      "stock": 8
+    },
+    {
+      "id": "p4",
+      "name": "USB-C Hub",
+      "description": "7-in-1 hub with HDMI, USB and SD card reader.",
+      "price": 59.0,
+      "stock": 15
+    },
+    {
+      "id": "p5",
+      "name": "Laptop Stand",
+      "description": "Adjustable aluminum stand for laptops.",
+      "price": 45.0,
+      "stock": 18
+    },
+    {
+      "id": "p6",
+      "name": "4K Webcam",
+      "description": "4K webcam with autofocus and dual microphones.",
+      "price": 99.0,
+      "stock": 6
+    }
+  ],
+  "cart": [],
+  "orders": []
+}

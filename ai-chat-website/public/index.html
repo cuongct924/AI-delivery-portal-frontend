@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Store Agent</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <main class="shell">
+    <aside class="sidebar">
+      <div>
+        <div class="brand"><span class="brandMark">✦</span> Agent Store</div>
+        <p class="muted">Chat with AI. The AI can use website tools.</p>
+      </div>
+
+      <nav class="navBlock">
+        <div class="navTitle">Try these</div>
+        <button class="promptChip" data-prompt="Find me a good keyboard">⌨ Find a keyboard</button>
+        <button class="promptChip" data-prompt="Add the AI Mouse to my cart">＋ Add AI Mouse</button>
+        <button class="promptChip" data-prompt="What's in my cart?">🛒 Check my cart</button>
+        <button class="promptChip" data-prompt="Checkout my cart">✓ Demo checkout</button>
+        <button class="promptChip" data-prompt="Show my orders">▤ Show orders</button>
+      </nav>
+
+      <div class="sidebarBottom">
+        <button id="newChat" class="secondary">New conversation</button>
+        <button id="resetDemo" class="dangerGhost">Reset demo data</button>
+      </div>
+    </aside>
+
+    <section class="workspace">
+      <header class="topbar">
+        <div>
+          <h1>AI shopping assistant</h1>
+          <p>Ask naturally — the model can search products, manage the cart and create demo orders.</p>
+        </div>
+        <div class="status"><i></i> Tool calling enabled</div>
+      </header>
+
+      <div class="contentGrid">
+        <section class="chatPanel">
+          <div id="messages" class="messages"></div>
+
+          <form id="chatForm" class="composer">
+            <textarea id="messageInput" rows="1" placeholder="e.g. Add two USB-C Hubs to my cart" autocomplete="off"></textarea>
+            <button id="sendButton" type="submit">Send</button>
+          </form>
+        </section>
+
+        <aside class="statePanel">
+          <section class="card">
+            <div class="cardHead">
+              <h2>Cart</h2>
+              <span id="cartBadge" class="badge">0</span>
+            </div>
+            <div id="cartList" class="stack"></div>
+            <div class="cartTotal"><span>Total</span><strong id="cartTotal">$0.00</strong></div>
+          </section>
+
+          <section class="card">
+            <div class="cardHead"><h2>Recent orders</h2></div>
+            <div id="ordersList" class="stack"></div>
+          </section>
+
+          <section class="card productsCard">
+            <div class="cardHead"><h2>Catalog</h2></div>
+            <div id="productList" class="productList"></div>
+          </section>
+        </aside>
+      </div>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

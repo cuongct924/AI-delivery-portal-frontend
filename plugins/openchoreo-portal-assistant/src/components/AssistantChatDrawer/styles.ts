@@ -171,6 +171,30 @@ export const useStyles = makeStyles(theme => ({
     color: theme.palette.error.main,
     fontSize: 12,
   },
+  // "Drafted <template>" card shown above the composer when the agent
+  // filled a Golden Path form — the affordance to open the prefilled form.
+  draftCard: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: theme.spacing(1),
+    margin: theme.spacing(0, 2, 1),
+    padding: theme.spacing(1, 1.5),
+    border: `1px solid ${theme.palette.primary.main}`,
+    borderRadius: 8,
+    backgroundColor: theme.palette.action.hover,
+  },
+  draftCardText: {
+    display: 'flex',
+    flexDirection: 'column',
+    minWidth: 0,
+  },
+  draftCardTitle: {
+    fontSize: 13,
+  },
+  draftCardSub: {
+    color: theme.palette.text.secondary,
+  },
   composer: {
     display: 'flex',
     alignItems: 'center',

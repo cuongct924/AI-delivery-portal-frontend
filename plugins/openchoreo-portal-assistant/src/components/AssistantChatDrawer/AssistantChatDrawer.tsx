@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import {
+  clearTemplateDraft,
+  getTemplateDraft,
+  setTemplateDraft,
+} from '@openchoreo/backstage-plugin';
 import {
   Box,
   Button,
@@ -53,6 +58,40 @@ function stripEntityTags(text: string): string {
 // Module-level sentinel — a per-render symbol would never match the previous
 // render's symbol, breaking the conversationKey continuity check.
 const NO_KEY_YET = Symbol('no-key-yet');
+
+// Persisted per-conversation id. The agent keys the server-side session
+// (message history + template draft) on it, so a reload restores both.
+const SESSION_ID_KEY = 'openchoreo.assistant.sessionId';
+
+function newSessionId(): string {
+  const id =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  try {
+    localStorage.setItem(SESSION_ID_KEY, id);
+  } catch {
+    // localStorage can be unavailable (private mode) — the id just won't
+    // survive a reload.
+  }
+  return id;
+}
+
+function readOrCreateSessionId(): string {
+  try {
+    const existing = localStorage.getItem(SESSION_ID_KEY);
+    if (existing) return existing;
+  } catch {
+    // fall through to a fresh id
+  }
+  return newSessionId();
+}
+
+/** Golden Path template name from a `/create/templates/<ns>/<name>` URL. */
+function deriveTemplateFromPath(pathname: string): string | undefined {
+  const match = /^\/create\/templates\/[^/]+\/([^/]+)/.exec(pathname);
+  return match?.[1];
+}
 
 /**
  * Derive a default ChatScope from the current Backstage URL. This is a
@@ -153,6 +192,15 @@ export const AssistantChatDrawer = ({
   const api = useApi(perchAgentApiRef);
   const identityApi = useApi(identityApiRef);
   const location = useLocation();
+  const navigate = useNavigate();
+  // Stable for the conversation's lifetime; rotated by handleClear.
+  const sessionIdRef = useRef<string>(readOrCreateSessionId());
+  // The most recent template draft, rendered as a "Review & run" card.
+  const [draftCard, setDraftCard] = useState<{
+    template: string;
+    missing: string[];
+    complete: boolean;
+  } | null>(null);
 
   // Greeting name for the empty state. Best-effort: the identity API is
   // mocked out in some test harnesses, so guard the call and fall back
@@ -192,7 +240,10 @@ export const AssistantChatDrawer = ({
   // overrides URL-derived component/namespace so an explicit pin always wins.
   // scopeOverrides is applied last and wins over everything.
   const scope = useMemo(() => {
-    const fromPath = deriveScopeFromPath(location.pathname);
+    const fromPath: ChatScope = {
+      ...deriveScopeFromPath(location.pathname),
+      currentTemplate: deriveTemplateFromPath(location.pathname),
+    };
     const fromPin: ChatScope = pin
       ? {
           ...fromPath,
@@ -293,7 +344,14 @@ export const AssistantChatDrawer = ({
     // chat would reopen against unrelated assistant turns once new
     // items land at the same positions.
     setExpandedPrompts(new Set());
-  }, []);
+    // Drop the server session + the shared draft, then rotate the id so
+    // the next turn starts a fresh conversation.
+    const previous = sessionIdRef.current;
+    sessionIdRef.current = newSessionId();
+    setDraftCard(null);
+    clearTemplateDraft();
+    void api.deleteSession(previous);
+  }, [api]);
 
   // Copy whatever the backend put on ``DoneEvent.fix_prompt`` into the
   // clipboard. The drawer does NOT synthesise the prompt — the agent
@@ -391,6 +449,7 @@ export const AssistantChatDrawer = ({
           {
             messages: nextHistory,
             scope: Object.keys(scope).length > 0 ? scope : undefined,
+            sessionId: sessionIdRef.current,
           },
           (event: StreamEvent) => {
             switch (event.type) {
@@ -400,6 +459,22 @@ export const AssistantChatDrawer = ({
                 break;
               case 'tool_call':
                 setToolStatus(event.activeForm ?? `Running ${event.tool}…`);
+                break;
+              case 'template_draft':
+                // Publish to the shared store so an open Scaffolder form
+                // merges the values live, and surface a card so the user
+                // can open the form if it isn't already.
+                setTemplateDraft({
+                  template: event.template,
+                  formData: event.formData,
+                  missing: event.missing,
+                  complete: event.complete,
+                });
+                setDraftCard({
+                  template: event.template,
+                  missing: event.missing,
+                  complete: event.complete,
+                });
                 break;
               case 'done':
                 if (typeof event.message === 'string' && event.message !== '') {
@@ -529,6 +604,41 @@ export const AssistantChatDrawer = ({
       });
     }
   }, [open, openSeq, initialMessage, conversationKey, resetConversation]);
+
+  // Restore the persisted session (message history + template draft) the
+  // first time the drawer opens, so a reload doesn't lose the conversation.
+  // Skipped when a launcher seeded an initialMessage — that path owns the
+  // timeline.
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (!open || restoredRef.current || initialMessage) return undefined;
+    restoredRef.current = true;
+    let cancelled = false;
+    void (async () => {
+      const session = await api.getSession(sessionIdRef.current);
+      if (cancelled) return;
+      if (session.messages.length > 0) {
+        setTimeline(
+          session.messages.map(message => ({
+            kind: 'message' as const,
+            role: message.role,
+            content: message.content,
+          })),
+        );
+      }
+      if (session.draft) {
+        setTemplateDraft(session.draft);
+        setDraftCard({
+          template: session.draft.template,
+          missing: session.draft.missing,
+          complete: session.draft.complete,
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, initialMessage, api]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -909,6 +1019,38 @@ export const AssistantChatDrawer = ({
         )}
         {error && <Box className={classes.errorMsg}>{error}</Box>}
       </div>
+
+      {draftCard && (
+        <Box className={classes.draftCard}>
+          <Box className={classes.draftCardText}>
+            <Typography variant="body2" className={classes.draftCardTitle}>
+              Drafted <strong>{draftCard.template}</strong>
+            </Typography>
+            <Typography variant="caption" className={classes.draftCardSub}>
+              {draftCard.complete
+                ? 'All required fields filled — review and run.'
+                : `Still missing: ${draftCard.missing.join(', ')}`}
+            </Typography>
+          </Box>
+          <Button
+            size="small"
+            variant="contained"
+            color="primary"
+            onClick={() => {
+              const encoded = encodeURIComponent(
+                JSON.stringify(
+                  getTemplateDraft()?.formData ?? {},
+                ),
+              );
+              navigate(
+                `/create/templates/default/${draftCard.template}?formData=${encoded}`,
+              );
+            }}
+          >
+            Review &amp; run
+          </Button>
+        </Box>
+      )}
 
       <Box className={classes.composer}>
         <TextField

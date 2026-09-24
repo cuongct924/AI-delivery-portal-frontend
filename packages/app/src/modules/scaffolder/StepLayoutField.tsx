@@ -70,7 +70,10 @@ import {
   useApi,
 } from '@backstage/core-plugin-api';
 import type { FieldExtensionComponentProps } from '@backstage/plugin-scaffolder-react';
-import { openChoreoAuthApiRef } from '@openchoreo/backstage-plugin';
+import {
+  openChoreoAuthApiRef,
+  useTemplateDraft,
+} from '@openchoreo/backstage-plugin';
 import type { JSONSchema7 } from 'json-schema';
 import { NEUTRAL, STATUS } from '../theme/colors';
 
@@ -5188,6 +5191,10 @@ function StepLayout(
   const requiredFields = new Set(schema.required ?? []);
   const groups = uiSchema['ui:options']?.groups ?? [];
   const data = formData ?? {};
+  // Live template draft the Portal Assistant filled (null when none). The
+  // effect below merges it into formData so the form fills in as the agent
+  // streams, without a navigation/remount.
+  const templateDraft = useTemplateDraft();
   const { datasets, loading: datasetsLoading } = useDatasets();
   // Which source the currently-picked dataset came from — passed to the
   // preview/columns/validation reads so an s3 dataset is fetched from
@@ -5286,6 +5293,23 @@ function StepLayout(
       });
     }
     if (Object.keys(updates).length > 0) onChange({ ...data, ...updates });
+  });
+
+  // Merge a Portal Assistant template draft into the form. Guarded by the
+  // draft's object identity so it applies once per agent update (not every
+  // render), and scoped to fields this step's schema actually declares so a
+  // draft for a different template can't pollute the form.
+  const appliedDraft = useRef<unknown>(null);
+  useEffect(() => {
+    if (!templateDraft || appliedDraft.current === templateDraft) return;
+    appliedDraft.current = templateDraft;
+    const draftUpdates: Record<string, unknown> = {};
+    Object.entries(templateDraft.formData).forEach(([name, value]) => {
+      if (properties[name] !== undefined) draftUpdates[name] = value;
+    });
+    if (Object.keys(draftUpdates).length > 0) {
+      onChange({ ...data, ...draftUpdates });
+    }
   });
 
   // release_strategy='instant' needs the llm-ops-admin role server-side; when

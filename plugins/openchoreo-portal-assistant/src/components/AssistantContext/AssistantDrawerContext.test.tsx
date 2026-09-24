@@ -6,11 +6,14 @@ import {
 
 jest.mock('@backstage/core-plugin-api', () => ({
   createApiRef: (config: { id: string }) => ({ id: config.id }),
+  createRouteRef: (config: { id: string }) => ({ id: config.id }),
   identityApiRef: { id: 'core.identity' },
   useApi: () => ({
     getBackstageIdentity: async () => ({ userEntityRef: 'user:default/ada' }),
     warmup: async () => {},
     streamChat: async () => {},
+    getSession: async () => ({ messages: [], draft: null }),
+    deleteSession: async () => {},
     getProfileInfo: () => ({
       then: (cb: (profile: unknown) => void) => {
         cb({ displayName: 'Ada Lovelace' });
@@ -26,6 +29,13 @@ jest.mock('@openchoreo/backstage-plugin-react', () => ({
 
 jest.mock('react-router-dom', () => ({
   useLocation: () => ({ pathname: '/' }),
+  useNavigate: () => jest.fn(),
+}));
+
+jest.mock('@openchoreo/backstage-plugin', () => ({
+  setTemplateDraft: jest.fn(),
+  clearTemplateDraft: jest.fn(),
+  getTemplateDraft: jest.fn(() => null),
 }));
 
 jest.mock('react-markdown', () => ({

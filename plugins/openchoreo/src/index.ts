@@ -109,6 +109,14 @@ export {
   useScaffolderPreselection,
 } from './scaffolder/ScaffolderPreselectionContext';
 export {
+  clearTemplateDraft,
+  getTemplateDraft,
+  setTemplateDraft,
+  subscribeTemplateDraft,
+  useTemplateDraft,
+  type TemplateDraft,
+} from './scaffolder/templateDraftStore';
+export {
   ForeignCardsSection,
   selectForeignCards,
 } from './extensions/entityLayouts/foreignCards';

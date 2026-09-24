@@ -54,6 +54,12 @@ export type ChatScope = {
   component?: string;
   environment?: string;
   /**
+   * Golden Path template the user currently has open (derived from the
+   * URL). A hint only — lets the agent skip the list_golden_paths round;
+   * it still reads the live schema from the Catalog.
+   */
+  currentTemplate?: string;
+  /**
    * Optional pinned workflow-run name. Set by external triggers (e.g. the
    * failed-build snackbar) so the portal-assistant's prompt knows which run
    * is being discussed without the LLM having to infer it from text.
@@ -148,6 +154,28 @@ export type ChatScope = {
 export type ChatRequest = {
   messages: ChatMessage[];
   scope?: ChatScope;
+  /**
+   * Opaque per-conversation id (a UUID the client generates and keeps in
+   * localStorage). The agent persists the message history + any template
+   * draft under it, so a reload can restore both via {@link PerchAgentApi.getSession}.
+   */
+  sessionId?: string;
+};
+
+/** A template draft the agent filled — seeds the Scaffolder form. */
+export type TemplateDraft = {
+  template: string;
+  formData: Record<string, unknown>;
+  /** Required fields the agent left out (branch-aware). */
+  missing: string[];
+  /** True when the draft passes the template's schema validation. */
+  complete: boolean;
+};
+
+/** Server-side session state restored after a reload. */
+export type ChatSession = {
+  messages: ChatMessage[];
+  draft: TemplateDraft | null;
 };
 
 // Mirrors the StreamEvent discriminated union emitted by portal-assistant.
@@ -157,6 +185,13 @@ export type ChatRequest = {
 export type StreamEvent =
   | { type: 'tool_call'; tool: string; activeForm?: string; args?: string }
   | { type: 'message_chunk'; content: string }
+  | {
+      type: 'template_draft';
+      template: string;
+      formData: Record<string, unknown>;
+      missing: string[];
+      complete: boolean;
+    }
   | {
       type: 'done';
       message: string;
@@ -186,6 +221,13 @@ export interface PerchAgentApi {
    * runs in the background server-side.
    */
   warmup(): Promise<void>;
+  /**
+   * Restore a session's message history + template draft after a reload.
+   * Returns empty state when the session is unknown or expired.
+   */
+  getSession(sessionId: string): Promise<ChatSession>;
+  /** Delete a session server-side (the drawer's "clear conversation"). */
+  deleteSession(sessionId: string): Promise<void>;
 }
 
 export const perchAgentApiRef = createApiRef<PerchAgentApi>({
@@ -312,6 +354,45 @@ export class PerchAgentClient implements PerchAgentApi {
       });
     } catch {
       // best-effort — first chat will simply pay the cache miss
+    }
+  }
+
+  async getSession(sessionId: string): Promise<ChatSession> {
+    const base = await this.discoveryApi.getBaseUrl(
+      'openchoreo-portal-assistant-backend',
+    );
+    const url = `${base}/api/v1alpha1/portal-assistant/sessions/${encodeURIComponent(
+      sessionId,
+    )}`;
+    try {
+      const response = await this.fetchApi.fetch(url, {
+        headers: { 'x-openchoreo-direct': 'true' },
+      });
+      if (!response.ok) return { messages: [], draft: null };
+      const body = (await response.json()) as {
+        messages?: ChatMessage[];
+        draft?: TemplateDraft | null;
+      };
+      return { messages: body.messages ?? [], draft: body.draft ?? null };
+    } catch {
+      return { messages: [], draft: null };
+    }
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    const base = await this.discoveryApi.getBaseUrl(
+      'openchoreo-portal-assistant-backend',
+    );
+    const url = `${base}/api/v1alpha1/portal-assistant/sessions/${encodeURIComponent(
+      sessionId,
+    )}`;
+    try {
+      await this.fetchApi.fetch(url, {
+        method: 'DELETE',
+        headers: { 'x-openchoreo-direct': 'true' },
+      });
+    } catch {
+      // best-effort — a stale server session just expires on its own
     }
   }
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderInTestApp, TestApiProvider } from '@backstage/test-utils';
@@ -13,9 +13,30 @@ const openChoreoAuthApiRef = createApiRef<{
   getAccessToken: () => Promise<string>;
 }>({ id: 'test.openchoreo.auth' });
 
+const draftHolder: { draft: unknown; listeners: Set<() => void> } = {
+  draft: null,
+  listeners: new Set(),
+};
+function setDraft(draft: unknown) {
+  draftHolder.draft = draft;
+  draftHolder.listeners.forEach(listener => listener());
+}
+
 jest.mock('@openchoreo/backstage-plugin', () => ({
   get openChoreoAuthApiRef() {
     return openChoreoAuthApiRef;
+  },
+  // Minimal subscribable stand-in for the real store hook.
+  useTemplateDraft: () => {
+    const [, force] = useState(0);
+    useEffect(() => {
+      const listener = () => force(n => n + 1);
+      draftHolder.listeners.add(listener);
+      return () => {
+        draftHolder.listeners.delete(listener);
+      };
+    }, []);
+    return draftHolder.draft;
   },
 }));
 
@@ -1873,5 +1894,90 @@ describe('StepLayout step description', () => {
     expect(
       screen.queryByText('Pick a model to deploy.'),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe('StepLayout template draft merge', () => {
+  beforeEach(() => {
+    draftHolder.draft = null;
+    fetchMock.mockReset();
+    fetchMock.mockImplementation(async () => ({
+      ok: true,
+      json: async () => ({ names: [] }),
+    }));
+  });
+
+  async function renderWithDraft(onChange: jest.Mock) {
+    await renderInTestApp(
+      <TestApiProvider
+        apis={[
+          [configApiRef, { getOptionalBoolean: () => false }],
+          [discoveryApiRef, { getBaseUrl: async () => 'http://proxy' }],
+          [fetchApiRef, { fetch: fetchMock }],
+          [openChoreoAuthApiRef, { getAccessToken: async () => 'token' }],
+        ]}
+      >
+        <StepLayout
+          schema={
+            {
+              type: 'object',
+              properties: {
+                modelName: { type: 'string', title: 'Model name' },
+                unknownField: { type: 'string', title: 'Unknown' },
+              },
+            } as any
+          }
+          uiSchema={
+            {
+              'ui:options': {
+                groups: [
+                  {
+                    title: 'General',
+                    fields: [{ name: 'modelName' }],
+                  },
+                ],
+              },
+            } as any
+          }
+          formData={{}}
+          onChange={onChange}
+          idSchema={{} as any}
+          registry={
+            { fields: { SchemaField: () => <div data-testid="plain-field" /> } } as any
+          }
+          errorSchema={{} as any}
+          name="step"
+          required={false}
+          disabled={false}
+          readonly={false}
+          rawErrors={[]}
+          onBlur={jest.fn()}
+          onFocus={jest.fn()}
+        />
+      </TestApiProvider>,
+    );
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+  }
+
+  it('merges a matching draft field into formData', async () => {
+    const onChange = jest.fn();
+    await renderWithDraft(onChange);
+
+    await act(async () => {
+      setDraft({
+        template: 'train-track-register',
+        formData: { modelName: 'fraud', unknownField: 'x' },
+        missing: [],
+        complete: true,
+      });
+    });
+
+    await waitFor(() =>
+      expect(onChange).toHaveBeenCalledWith(
+        expect.objectContaining({ modelName: 'fraud' }),
+      ),
+    );
   });
 });

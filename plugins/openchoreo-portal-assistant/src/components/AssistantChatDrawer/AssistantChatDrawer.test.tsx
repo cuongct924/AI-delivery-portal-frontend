@@ -19,6 +19,9 @@ const holder: {
   onEvent: ((event: StreamEvent) => void) | null;
   resolveStream: (() => void) | null;
   lastRequest: StreamRequest | null;
+  navigate: jest.Mock;
+  getSession: jest.Mock;
+  deleteSession: jest.Mock;
 } = {
   // Reassigned per-test in beforeEach; declared here so the jest.mock
   // factory closures can refer to ``holder.streamChat``.
@@ -28,16 +31,23 @@ const holder: {
   onEvent: null,
   resolveStream: null,
   lastRequest: null,
+  navigate: jest.fn(),
+  getSession: jest.fn(),
+  deleteSession: jest.fn(),
 };
 
 jest.mock('@backstage/core-plugin-api', () => ({
   // PerchAgentApi.ts calls createApiRef at module load — keep a real-ish
   // stub so the import doesn't blow up during test setup.
   createApiRef: (config: { id: string }) => ({ id: config.id }),
+  // @openchoreo/backstage-plugin's routes.ts calls createRouteRef at import.
+  createRouteRef: (config: { id: string }) => ({ id: config.id }),
   identityApiRef: { id: 'core.identity' },
   useApi: () => ({
     streamChat: holder.streamChat,
     warmup: holder.warmup,
+    getSession: holder.getSession,
+    deleteSession: holder.deleteSession,
     // Synchronously-resolving thenable so the greeting's setFirstName
     // lands inside the render's act() window instead of emitting an
     // "update not wrapped in act" warning on every test.
@@ -55,6 +65,16 @@ jest.mock('@backstage/core-plugin-api', () => ({
 
 jest.mock('react-router-dom', () => ({
   useLocation: () => ({ pathname: holder.pathname }),
+  useNavigate: () => holder.navigate,
+}));
+
+// The plugin's index pulls in its whole plugin.ts (createApiFactory etc.),
+// which the core-plugin-api stub above doesn't cover — mock just the store
+// surface the drawer uses.
+jest.mock('@openchoreo/backstage-plugin', () => ({
+  setTemplateDraft: jest.fn(),
+  clearTemplateDraft: jest.fn(),
+  getTemplateDraft: jest.fn(() => null),
 }));
 
 // react-markdown is ESM and renders nothing useful in jsdom without a
@@ -110,6 +130,9 @@ beforeEach(() => {
   holder.resolveStream = null;
   holder.lastRequest = null;
   holder.warmup = jest.fn().mockResolvedValue(undefined);
+  holder.navigate = jest.fn();
+  holder.getSession = jest.fn().mockResolvedValue({ messages: [], draft: null });
+  holder.deleteSession = jest.fn().mockResolvedValue(undefined);
   holder.streamChat = jest
     .fn<Promise<void>, [StreamRequest, (event: StreamEvent) => void]>()
     .mockImplementation((req, onEvent) => {
@@ -302,6 +325,27 @@ describe('AssistantChatDrawer fix-prompt banner', () => {
     } as StreamEvent);
 
     expect(screen.getByText(/looking up workflow run/i)).toBeInTheDocument();
+  });
+
+  it('renders a Review & run card on a template_draft event and navigates', async () => {
+    render(<AssistantChatDrawer {...baseProps} />);
+    sendMessage('create a fraud model');
+    await fireStreamEvent({
+      type: 'template_draft',
+      template: 'train-track-register',
+      formData: { modelName: 'fraud' },
+      missing: [],
+      complete: true,
+    } as StreamEvent);
+
+    const button = await screen.findByRole('button', { name: /review & run/i });
+    fireEvent.click(button);
+
+    expect(holder.navigate).toHaveBeenCalledWith(
+      expect.stringContaining(
+        '/create/templates/default/train-track-register?formData=',
+      ),
+    );
   });
 
   it('renders the error message when the agent emits an error event', async () => {
