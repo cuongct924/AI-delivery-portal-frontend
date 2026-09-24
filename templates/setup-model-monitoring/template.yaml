@@ -11,7 +11,7 @@ metadata:
     - monitoring
   links:
     - title: Troubleshooting FAQ
-      url: /docs/default/system/ai-delivery-portal/troubleshooting-faq
+      url: http://localhost:3000/docs/default/system/ai-delivery-portal/troubleshooting-faq
 
 spec:
   owner: user:guest
