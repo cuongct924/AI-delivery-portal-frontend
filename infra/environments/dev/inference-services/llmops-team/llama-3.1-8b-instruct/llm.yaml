@@ -1,0 +1,50 @@
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: llama-3.1-8b-instruct
+  labels:
+    version: "1"
+spec:
+  predictor:
+    
+    model:
+      modelFormat:
+        name: huggingface
+      runtime: vllm-runtime
+      storageUri: hf://meta-llama/Llama-3.1-8B-Instruct
+      args:
+        - --tensor-parallel-size=1
+        - --max-model-len=8192
+        
+        - --quantization=fp8
+        
+        
+        - --batching-strategy=continuous
+        
+        
+        
+        - --enable-paged-attention
+        
+        
+        
+        
+        - --enable-prefix-caching
+        
+        
+        
+        
+        - --pipeline-parallel-size=1
+        
+      
+      env:
+        - name: HUGGING_FACE_HUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-token
+              key: token
+      
+      resources:
+        requests:
+          nvidia.com/gpu: "1"
+        limits:
+          nvidia.com/gpu: "1"
