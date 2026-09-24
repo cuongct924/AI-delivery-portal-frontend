@@ -2,7 +2,7 @@ import { useRef } from 'react';
 import { useApi } from '@backstage/core-plugin-api';
 import { useAssistantEnabled } from '@openchoreo/backstage-plugin-react';
 import { Button, Tooltip, makeStyles } from '@material-ui/core';
-import ChatOutlinedIcon from '@material-ui/icons/ChatOutlined';
+import { AssistantBotIcon } from '../AssistantBotIcon/AssistantBotIcon';
 import {
   perchAgentApiRef,
   type ChatScope,
@@ -143,7 +143,7 @@ export const InvestigateDependencyButton = ({
         variant="outlined"
         size="small"
         className={classes.button}
-        startIcon={<ChatOutlinedIcon className={classes.icon} />}
+        startIcon={<AssistantBotIcon className={classes.icon} />}
         onClick={handleClick}
         onMouseEnter={warmIfStale}
         onFocus={warmIfStale}

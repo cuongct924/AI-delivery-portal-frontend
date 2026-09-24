@@ -5520,7 +5520,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@backstage/plugin-scaffolder-react@npm:^2.0.0":
+"@backstage/plugin-scaffolder-react@npm:2.0.0":
   version: 2.0.0
   resolution: "@backstage/plugin-scaffolder-react@npm:2.0.0"
   dependencies:
@@ -5576,6 +5576,65 @@ __metadata:
     "@types/react":
       optional: true
   checksum: 10c0/64b9909c1e6488f446140dbc32ba538638ed0aa0e8aae543fbcf224b86ee4888aa04c6d206587d89a16ea5a05dc8d9aa5dc6feabafac47df0886a5ff719e4909
+  languageName: node
+  linkType: hard
+
+"@backstage/plugin-scaffolder-react@patch:@backstage/plugin-scaffolder-react@npm%3A2.0.0#~/.yarn/patches/@backstage-plugin-scaffolder-react-npm-2.0.0-c0ef78831e.patch":
+  version: 2.0.0
+  resolution: "@backstage/plugin-scaffolder-react@patch:@backstage/plugin-scaffolder-react@npm%3A2.0.0#~/.yarn/patches/@backstage-plugin-scaffolder-react-npm-2.0.0-c0ef78831e.patch::version=2.0.0&hash=79843a"
+  dependencies:
+    "@backstage/catalog-client": "npm:^1.15.1"
+    "@backstage/catalog-model": "npm:^1.9.0"
+    "@backstage/core-components": "npm:^0.18.10"
+    "@backstage/core-plugin-api": "npm:^1.12.6"
+    "@backstage/frontend-plugin-api": "npm:^0.17.0"
+    "@backstage/plugin-catalog-react": "npm:^3.0.0"
+    "@backstage/plugin-permission-react": "npm:^0.5.1"
+    "@backstage/plugin-scaffolder-common": "npm:^2.2.0"
+    "@backstage/theme": "npm:^0.7.3"
+    "@backstage/types": "npm:^1.2.2"
+    "@backstage/ui": "npm:^0.15.0"
+    "@backstage/version-bridge": "npm:^1.0.12"
+    "@material-ui/core": "npm:^4.12.2"
+    "@material-ui/icons": "npm:^4.9.1"
+    "@material-ui/lab": "npm:4.0.0-alpha.61"
+    "@react-hookz/web": "npm:^24.0.0"
+    "@remixicon/react": "npm:^4.6.0"
+    "@rjsf/core": "npm:5.24.13"
+    "@rjsf/material-ui": "npm:5.24.13"
+    "@rjsf/utils": "npm:5.24.13"
+    "@rjsf/validator-ajv8": "npm:5.24.13"
+    "@types/json-schema": "npm:^7.0.9"
+    ajv: "npm:^8.0.1"
+    ajv-errors: "npm:^3.0.0"
+    classnames: "npm:^2.2.6"
+    flatted: "npm:^3.4.2"
+    humanize-duration: "npm:^3.25.1"
+    immer: "npm:^9.0.6"
+    json-schema: "npm:^0.4.0"
+    json-schema-library: "npm:^9.0.0"
+    lodash: "npm:^4.17.21"
+    luxon: "npm:^3.0.0"
+    qs: "npm:^6.9.4"
+    react-aria-components: "npm:^1.14.0"
+    react-use: "npm:^17.2.4"
+    use-immer: "npm:^0.11.0"
+    zen-observable: "npm:^0.10.0"
+    zod: "npm:^3.25.76 || ^4.0.0"
+    zod-to-json-schema: "npm:^3.25.1"
+  peerDependencies:
+    "@backstage/frontend-test-utils": ^0.6.0
+    "@types/react": ^17.0.0 || ^18.0.0
+    react: ^17.0.0 || ^18.0.0
+    react-dom: ^17.0.0 || ^18.0.0
+    react-router: ^6.30.3
+    react-router-dom: ^6.30.2
+  peerDependenciesMeta:
+    "@backstage/frontend-test-utils":
+      optional: true
+    "@types/react":
+      optional: true
+  checksum: 10c0/c774344a7debfc04dc3e2120b418ed84312342235dc86c2d87f163ad3a7813c02b3acebb2309192999b61617fb6ed1b654415616e49765f731c6e9e5a2c1659f
   languageName: node
   linkType: hard
 
@@ -11189,7 +11248,7 @@ __metadata:
     "@backstage/plugin-catalog-react": "npm:^3.0.0"
     "@backstage/plugin-permission-common": "npm:^0.9.9"
     "@backstage/plugin-permission-react": "npm:^0.5.1"
-    "@backstage/plugin-scaffolder-react": "npm:^2.0.0"
+    "@backstage/plugin-scaffolder-react": "patch:@backstage/plugin-scaffolder-react@npm%3A2.0.0#~/.yarn/patches/@backstage-plugin-scaffolder-react-npm-2.0.0-c0ef78831e.patch"
     "@backstage/plugin-techdocs-common": "npm:^0.1.1"
     "@backstage/test-utils": "npm:^1.7.18"
     "@backstage/theme": "npm:^0.7.3"
@@ -11270,7 +11329,7 @@ __metadata:
     "@backstage/plugin-permission-react": "npm:^0.5.1"
     "@backstage/plugin-scaffolder": "npm:^1.37.0"
     "@backstage/plugin-scaffolder-common": "npm:^2.2.0"
-    "@backstage/plugin-scaffolder-react": "npm:^2.0.0"
+    "@backstage/plugin-scaffolder-react": "patch:@backstage/plugin-scaffolder-react@npm%3A2.0.0#~/.yarn/patches/@backstage-plugin-scaffolder-react-npm-2.0.0-c0ef78831e.patch"
     "@backstage/plugin-search": "npm:^1.7.4"
     "@backstage/plugin-search-react": "npm:^1.11.4"
     "@backstage/plugin-techdocs": "npm:^1.17.6"
@@ -18071,7 +18130,7 @@ __metadata:
     "@backstage/plugin-notifications": "npm:^0.5.20"
     "@backstage/plugin-permission-react": "npm:^0.5.1"
     "@backstage/plugin-scaffolder-common": "npm:^2.2.0"
-    "@backstage/plugin-scaffolder-react": "npm:^2.0.0"
+    "@backstage/plugin-scaffolder-react": "patch:@backstage/plugin-scaffolder-react@npm%3A2.0.0#~/.yarn/patches/@backstage-plugin-scaffolder-react-npm-2.0.0-c0ef78831e.patch"
     "@backstage/plugin-search": "npm:^1.7.4"
     "@backstage/plugin-techdocs": "npm:^1.17.6"
     "@backstage/plugin-user-settings": "npm:^0.9.3"
@@ -18092,6 +18151,7 @@ __metadata:
     "@testing-library/user-event": "npm:14.6.1"
     "@types/react-dom": "npm:*"
     cross-env: "npm:7.0.3"
+    immer: "npm:^9.0.21"
     react: "npm:18.3.1"
     react-dom: "npm:18.3.1"
     react-router-dom: "npm:6.30.1"
@@ -25974,7 +26034,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"immer@npm:^9.0.6, immer@npm:^9.0.7":
+"immer@npm:^9.0.21, immer@npm:^9.0.6, immer@npm:^9.0.7":
   version: 9.0.21
   resolution: "immer@npm:9.0.21"
   checksum: 10c0/03ea3ed5d4d72e8bd428df4a38ad7e483ea8308e9a113d3b42e0ea2cc0cc38340eb0a6aca69592abbbf047c685dbda04e3d34bf2ff438ab57339ed0a34cc0a05

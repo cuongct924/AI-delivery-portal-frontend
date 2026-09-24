@@ -43,6 +43,7 @@ import {
   createRagIngestAction,
 } from './llmOpsActions';
 import { createNotebookAction } from './notebookActions';
+import { createSecurityScanAction } from './securityActions';
 
 export default createBackendModule({
   pluginId: 'scaffolder',
@@ -80,6 +81,7 @@ export default createBackendModule({
           createDraftEvalSetAction({ config, tokenService }),
           createFetchEvalSetAction({ config, tokenService }),
           createNotebookAction({ config, tokenService }),
+          createSecurityScanAction({ config, tokenService }),
         );
       },
     });

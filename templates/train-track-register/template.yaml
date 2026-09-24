@@ -4,10 +4,13 @@ metadata:
   name: train-track-register
   title: 'Train & Register Model'
   description: >
-    Trains or fine-tunes a model, tracks the run in MLflow, and registers
-    the resulting version with a Catalog entry.
+    Train or fine-tune a model, track the run in MLflow, and register it with
+    a Catalog entry.
   tags:
     - mlops
+  links:
+    - title: Troubleshooting FAQ
+      url: /docs/default/system/ai-delivery-portal/troubleshooting-faq
 
 spec:
   owner: user:guest
@@ -15,6 +18,10 @@ spec:
 
   parameters:
     - title: General Information
+      description: >
+        Name the model and pick how to train it. Platform training runs a
+        managed pipeline; AI Notebook provisions a JupyterHub notebook you
+        drive yourself.
       required:
         - owner
         - modelName
@@ -33,10 +40,9 @@ spec:
               title: AI Notebook (write your own code)
           default: platform
           description: >
-            "Platform training" picks an algorithm and runs it in the
-            platform's pipeline. "AI Notebook" provisions a JupyterHub
-            notebook instead — write and run code there, log to MLflow, then
-            register. The steps below only apply to platform training.
+            Platform training runs a managed pipeline. AI Notebook provisions
+            a JupyterHub notebook you drive yourself (the steps below then
+            only apply to platform training).
         owner:
           title: Owning team
           type: string
@@ -71,13 +77,13 @@ spec:
               title: Real Estate & Construction
           default: fraud-risk
           description: >
-            Business context for this model — tags the Catalog entry for
-            search/filtering only, doesn't affect training config below.
+            Prefills a matching sample dataset, model name, algorithm and
+            columns — all still editable.
         useCase:
           title: Use case
           type: string
           default: telco-fraud-detection
-          description: Specific problem this model solves — Catalog metadata only.
+          description: Selects the sample training preset for this problem.
         repoUrl:
           title: Repository
           type: string
@@ -224,6 +230,7 @@ spec:
       ui:options:
         groups:
           - title: General Information
+            icon: info
             fields:
               - name: trainingMode
                 width: 12
@@ -239,7 +246,7 @@ spec:
           # Only exists in the resolved schema when trainingMode=notebook —
           # skipped entirely (no empty card) in platform mode.
           - title: Notebook environment
-            icon: apps
+            icon: memory
             fields:
               - name: environment
                 width: 6
@@ -271,6 +278,9 @@ spec:
     # names) — the lstm/nlp branches below only keep their non-column
     # hyperparameters, so this move didn't touch this step's other branches.
     - title: Architecture & Task
+      description: >
+        Choose the model family and algorithm. The fields below adapt to your
+        choice — only the ones that apply to it are shown.
       properties: {}
       ui:field: StepLayout
       ui:options:
@@ -278,7 +288,7 @@ spec:
           # No longer "& Task" — taskType is const-forced by businessDomain
           # (see the allOf below) and never renders here anymore.
           - title: Model Category
-            icon: apps
+            icon: category
             fields:
               - name: modelCategory
                 width: 6
@@ -300,14 +310,14 @@ spec:
           # variant=optional -> light-gray surface, signaling "off by
           # default" the same way everywhere a toggleField is used.
           - title: Continue training from an existing model
-            icon: tune
+            icon: history
             variant: optional
             toggleField: finetuneEnabled
             fields:
               - name: baseModelUri
                 baseModelPicker: true
           - title: Algorithm
-            icon: function
+            icon: build
             fields:
               - algorithm
           # One panel shared by all 4 deep-learning architectures instead
@@ -416,7 +426,6 @@ spec:
               baseModelUri:
                 title: Base model
                 type: string
-                default: models:/fraud-detection/1
                 description: >
                   Reuses that model's own algorithm — your Algorithm
                   choice above (if any) is ignored while this is on.
@@ -990,12 +999,15 @@ spec:
                 default: adam
 
     - title: Dataset & Task
+      description: >
+        Pick the training dataset and the columns the model learns from. The
+        column fields adapt to the task chosen in the previous step.
       properties: {}
       ui:field: StepLayout
       ui:options:
         groups:
           - title: Dataset & Task
-            icon: apps
+            icon: menu_book
             fields:
               - name: dataSource
                 dataSourcePicker: true
@@ -1009,7 +1021,7 @@ spec:
           # applies, and disappears for combos with nothing (e.g.
           # clustering has no Target column).
           - title: Data columns
-            icon: tune
+            icon: table_chart
             fields:
               - name: targetColumn
                 width: 12
@@ -1067,7 +1079,7 @@ spec:
                 description: >
                   Identifier columns to drop before training (never used as a
                   feature), e.g. "transaction_id".
-                default: [transaction_id]
+                default: []
         # --- lstm's time column — architecture is already in formData by
         # the time this step renders (the previous step requires it).
         # `required: [architecture]` kept anyway, same as every other
@@ -1117,7 +1129,6 @@ spec:
               timeColumn:
                 title: Time column (optional)
                 type: string
-                default: date
                 description: >
                   Set this for time-ordered data to use a chronological
                   train/test split instead of a random one.
@@ -1165,7 +1176,6 @@ spec:
                   Label column to predict — required for classification/
                   regression, leave empty for clustering. Doesn't apply to
                   architecture=cv (class comes from the image folder name).
-                default: is_fraud
         # --- anomaly-detection's target column is optional — IsolationForest/
         # LocalOutlierFactor never train on it (train.py fits unsupervised
         # either way); if set, it's only used to compute precision/recall/f1
@@ -1190,12 +1200,82 @@ spec:
     # Both fields here default off (fixed / no Feast) — most runs skip
     # both, so they share one step instead of two near-empty ones.
     - title: Advanced customization (optional)
-      properties: {}
+      description: >
+        Optional extras — hyperparameter search, Feast feature enrichment, and
+        the security controls. Most runs can leave these at their defaults.
+      properties:
+        # Pre-flight FinOps panel (StepLayoutField's costEstimate flag) —
+        # calls the same /costs/estimate + /costs/check the estimate-cost/
+        # cost-gate steps below call at submit time. Its own value is never
+        # read; only its group placement matters.
+        costEstimate:
+          title: Cost estimate
+          type: string
+          readOnly: true
+          # Carries the golden path name so the Review step can resolve the
+          # same estimate config; the panel itself reads its ui:options.
+          default: train-track-register
+          description: Computed automatically — nothing to fill in.
+        # Security control surface (StepLayoutField's securityScan flag) —
+        # training is where a poisoned dataset or an unprovenanced artifact
+        # enters the registry, so classification/provenance are blocking.
+        dataClassification:
+          title: Data classification
+          type: string
+          oneOf:
+            - const: public
+              title: Public
+            - const: internal
+              title: Internal
+            - const: confidential
+              title: Confidential
+            - const: restricted
+              title: Restricted
+          default: internal
+          description: >
+            Tag the training data. Confidential/restricted requires PII
+            detection & masking below.
+        piiScan:
+          title: PII detection & masking
+          type: boolean
+          default: true
+          description: Scan and mask PII in the training data before it is used.
+        provenanceTracking:
+          title: Provenance tracking
+          type: boolean
+          default: true
+          description: Record dataset version + code commit with the model version.
+        modelSigning:
+          title: Model signing
+          type: boolean
+          default: false
+          description: Sign the artifact so a tampered registry entry is detectable.
+        encryptionAtRest:
+          title: Encryption at rest
+          type: boolean
+          default: true
+          description: Encrypt the artifact/dataset at rest, not only in transit.
+        tenantNamespace:
+          title: Tenant namespace
+          type: string
+          default: default
+          description: Namespace boundary the training workload is isolated to.
+        auditLogging:
+          title: Inference audit trail
+          type: boolean
+          default: true
+          description: Record the training run with actor and artifact.
+        securityScan:
+          title: Security posture
+          type: string
+          readOnly: true
+          default: train-track-register
+          description: Computed automatically — nothing to fill in.
       ui:field: StepLayout
       ui:options:
         groups:
           - title: Hyperparameter Search
-            icon: tune
+            icon: speed
             fields:
               - name: searchStrategy
                 width: 6
@@ -1215,7 +1295,7 @@ spec:
                       width: 12
                       searchSpaceBuilder: true
           - title: Feature enrichment (Feast)
-            icon: list
+            icon: layers
             variant: optional
             toggleField: useFeast
             fields:
@@ -1226,6 +1306,51 @@ spec:
               - name: featureNames
                 width: 6
                 featureNamesPicker: true
+          - title: Security
+            icon: security
+            fields:
+              - name: dataClassification
+                width: 6
+              - name: piiScan
+                width: 6
+              - name: provenanceTracking
+                width: 6
+              - name: modelSigning
+                width: 6
+              - name: encryptionAtRest
+                width: 6
+              - name: tenantNamespace
+                width: 6
+              - name: auditLogging
+                width: 6
+              - name: securityScan
+                securityScan:
+                  goldenPath: train-track-register
+                  stage: build
+                  artifactFields: [modelName]
+                  paramFields:
+                    [
+                      dataClassification,
+                      piiScan,
+                      provenanceTracking,
+                      modelSigning,
+                      encryptionAtRest,
+                      tenantNamespace,
+                      auditLogging,
+                    ]
+                  when:
+                    trainingMode: platform
+          - title: Cost estimate
+            icon: attach_money
+            fields:
+              - name: costEstimate
+                costEstimate:
+                  goldenPath: train-track-register
+                  stage: build
+                  artifactFields: [modelName]
+                  paramFields: [epochs, numTrials]
+                  when:
+                    trainingMode: platform
       allOf:
         # Base fields only exist in platform mode (see Architecture & Task).
         - if:
@@ -1449,6 +1574,7 @@ spec:
         datasetUri: ${{ parameters.useFeast and steps['enrich-features'].output.datasetUri or parameters.datasetUri }}
         taskType: ${{ parameters.taskType }}
         targetColumn: ${{ parameters.targetColumn }}
+        idColumns: ${{ parameters.idColumns }}
         timeColumn: ${{ parameters.timeColumn }}
 
     # Pre-flight FinOps: estimate the build cost before training starts,
@@ -1472,12 +1598,33 @@ spec:
       action: orchestration:cost-gate
       if: ${{ parameters.trainingMode === 'platform' }}
       input:
+        # Block a fail-level overrun (the estimate step above only warns).
+        mode: enforce
         goldenPath: train-track-register
         stage: build
         artifact: ${{ parameters.modelName }}
         params:
           epochs: ${{ parameters.epochs }}
           numTrials: ${{ parameters.numTrials }}
+
+    # Pre-flight security scan: a poisoned dataset or an unprovenanced
+    # artifact is blocked before any training compute is spent.
+    - id: security-scan
+      name: 'Scan the security posture'
+      action: orchestration:security-scan
+      if: ${{ parameters.trainingMode === 'platform' }}
+      input:
+        goldenPath: train-track-register
+        stage: build
+        artifact: ${{ parameters.modelName }}
+        params:
+          dataClassification: ${{ parameters.dataClassification }}
+          piiScan: ${{ parameters.piiScan }}
+          provenanceTracking: ${{ parameters.provenanceTracking }}
+          modelSigning: ${{ parameters.modelSigning }}
+          encryptionAtRest: ${{ parameters.encryptionAtRest }}
+          tenantNamespace: ${{ parameters.tenantNamespace }}
+          auditLogging: ${{ parameters.auditLogging }}
 
     - id: trigger-training
       name: 'Train and register the model'
@@ -1492,7 +1639,7 @@ spec:
         targetColumn: ${{ parameters.targetColumn }}
         idColumns: ${{ parameters.idColumns }}
         timeColumn: ${{ parameters.timeColumn }}
-        baseModelUri: ${{ parameters.baseModelUri }}
+        baseModelUri: ${{ parameters.finetuneEnabled and parameters.baseModelUri or undefined }}
         hiddenLayers: ${{ parameters.hiddenLayers }}
         dropout: ${{ parameters.dropout }}
         sequenceLength: ${{ parameters.sequenceLength }}
@@ -1551,11 +1698,27 @@ spec:
         targetPath: catalog/${{ parameters.modelName }}
 
   output:
+    # Pre-flight FinOps recap — the same estimate/gate the form panel showed,
+    # surfaced on the task result. Values are empty when the estimate step was
+    # skipped (e.g. a non-deploy action); the card then renders nothing.
+    costGoldenPath: train-track-register
+    costStage: build
+    costEstimated: ${{ steps['estimate-cost'].output.estimatedCost }}
+    costLevel: ${{ steps['cost-gate'].output.level }}
+    costBudget: ${{ steps['cost-gate'].output.budget }}
+    costReasons: ${{ steps['cost-gate'].output.reasons }}
+    costAlternatives: ${{ steps['cost-gate'].output.alternatives }}
+    securityScore: ${{ steps['security-scan'].output.score }}
+    securityPassed: ${{ steps['security-scan'].output.passed }}
     links:
       - title: Open the notebook
         url: ${{ steps['create-notebook'].output.notebookUrl }}
-      - title: View run in MLflow
+      - title: View runs in MLflow
         url: http://localhost:5000
+      - title: View this model in MLflow
+        url: http://localhost:5000/#/models/${{ parameters.modelName }}
+      - title: 'Next: Evaluate & Deploy this version'
+        url: /create/templates/default/evaluate-deploy-model
       - title: View catalog entry pull request
         url: ${{ steps['publish-catalog-pr'].output.remoteUrl }}
     text:
@@ -1569,6 +1732,11 @@ spec:
           write and run your code, log the run to MLflow, then register the
           model through the normal register path.
 
+          The notebook opens in a new tab on JupyterHub's own page. Sign in
+          there with username
+          `${{ steps['create-notebook'].output.notebookId }}` and any
+          password (dev auth), then run your code.
+
           Platform mode — trained and registered
           **${{ parameters.modelName }}** version
           **${{ steps['trigger-training'].output.modelVersion }}**
@@ -1577,6 +1745,13 @@ spec:
           as `${{ steps['trigger-training'].output.phase }}`).
 
           Metrics: `${{ steps['model-summary'].output.metrics }}`
+
+          Security posture: **${{ steps['security-scan'].output.score }}/100** —
+          data classification, PII masking and provenance tracking are enforced.
+
+          **Next step:** open **Evaluate & Deploy Model** (link above) with
+          modelName=`${{ parameters.modelName }}` and
+          modelVersion=`${{ steps['trigger-training'].output.modelVersion }}`.
 
           Catalog entry PR opened:
           ${{ steps['publish-catalog-pr'].output.remoteUrl }} — merge it to

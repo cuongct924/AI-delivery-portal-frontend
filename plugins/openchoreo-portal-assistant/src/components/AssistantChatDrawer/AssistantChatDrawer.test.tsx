@@ -34,9 +34,22 @@ jest.mock('@backstage/core-plugin-api', () => ({
   // PerchAgentApi.ts calls createApiRef at module load — keep a real-ish
   // stub so the import doesn't blow up during test setup.
   createApiRef: (config: { id: string }) => ({ id: config.id }),
+  identityApiRef: { id: 'core.identity' },
   useApi: () => ({
     streamChat: holder.streamChat,
     warmup: holder.warmup,
+    // Synchronously-resolving thenable so the greeting's setFirstName
+    // lands inside the render's act() window instead of emitting an
+    // "update not wrapped in act" warning on every test.
+    getProfileInfo: () => ({
+      then: (onFulfilled: (profile: unknown) => void) => {
+        onFulfilled({
+          displayName: 'Ada Lovelace',
+          email: 'ada@example.com',
+        });
+        return { catch: () => undefined };
+      },
+    }),
   }),
 }));
 
@@ -117,6 +130,10 @@ beforeEach(() => {
 const baseProps = {
   open: true,
   onClose: jest.fn(),
+  width: 480,
+  isResizing: false,
+  onResizeStart: jest.fn(),
+  onResizeKeyDown: jest.fn(),
 };
 
 describe('AssistantChatDrawer fix-prompt banner', () => {
@@ -474,5 +491,53 @@ describe('AssistantChatDrawer scope plumbing', () => {
       caseType: 'build_failure',
       repoUrl: 'https://github.com/foo/svc-a',
     });
+  });
+});
+
+describe('AssistantChatDrawer empty state + resize', () => {
+  it('greets the user by first name and renders prominent suggestion pills', async () => {
+    render(<AssistantChatDrawer {...baseProps} />);
+
+    expect(await screen.findByText(/hello, ada/i)).toBeInTheDocument();
+    expect(screen.getByText(/how can i help you today\?/i)).toBeInTheDocument();
+    // Generic (no caseType) default chips render as full-width pills.
+    expect(
+      screen.getByRole('button', { name: /list my components/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('sends the suggestion message when a pill is clicked', async () => {
+    render(<AssistantChatDrawer {...baseProps} />);
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: /list my components/i }),
+    );
+
+    expect(holder.streamChat).toHaveBeenCalledTimes(1);
+    expect(holder.lastRequest?.messages.at(-1)).toEqual({
+      role: 'user',
+      content: 'List my components',
+    });
+  });
+
+  it('wires the resize handle to the controlled width + handlers', () => {
+    const onResizeKeyDown = jest.fn();
+    render(
+      <AssistantChatDrawer
+        {...baseProps}
+        width={520}
+        onResizeKeyDown={onResizeKeyDown}
+      />,
+    );
+
+    const handle = screen.getByRole('separator', {
+      name: /resize assistant panel/i,
+    });
+    // Width is controlled by the provider, so the handle reflects the
+    // prop rather than owning state.
+    expect(handle.getAttribute('aria-valuenow')).toBe('520');
+
+    fireEvent.keyDown(handle, { key: 'ArrowLeft' });
+    expect(onResizeKeyDown).toHaveBeenCalledTimes(1);
   });
 });

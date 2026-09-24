@@ -26,7 +26,12 @@ export type CostStageFilter = CostStage | 'all';
  * namespace/project/component/environment grouping; the others re-key rows by
  * the AI artifact, owning team, or business domain the cost is attributed to.
  */
-export type CostDimension = 'artifact' | 'team' | 'domain' | 'infra';
+export type CostDimension =
+  | 'artifact'
+  | 'goldenPath'
+  | 'team'
+  | 'domain'
+  | 'infra';
 
 export const COST_STAGES: CostStage[] = ['build', 'gate', 'run'];
 
@@ -39,6 +44,7 @@ export const COST_STAGE_LABELS: Record<CostStageFilter, string> = {
 
 export const COST_DIMENSIONS: CostDimension[] = [
   'artifact',
+  'goldenPath',
   'team',
   'domain',
   'infra',
@@ -46,6 +52,7 @@ export const COST_DIMENSIONS: CostDimension[] = [
 
 export const COST_DIMENSION_LABELS: Record<CostDimension, string> = {
   artifact: 'Artifact',
+  goldenPath: 'Golden path',
   team: 'Team',
   domain: 'Domain',
   infra: 'Infrastructure',

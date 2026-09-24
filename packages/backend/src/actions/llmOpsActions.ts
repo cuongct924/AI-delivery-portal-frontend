@@ -452,9 +452,9 @@ export function createDraftPromptAction({ config, tokenService }: ActionDeps) {
     description: 'Registers a new (inactive) prompt version.',
     schema: {
       input: {
-        name: z => z.string({ description: 'Persona key, e.g. "mlops"' }),
+        name: z => z.string({ description: 'Persona key, e.g. "llmops"' }),
         persona: z =>
-          z.string({ description: 'Display name, e.g. "MLOps Assistant"' }),
+          z.string({ description: 'Display name, e.g. "LLMOps Assistant"' }),
         content: z => z.string({ description: 'System prompt content' }),
       },
       output: {

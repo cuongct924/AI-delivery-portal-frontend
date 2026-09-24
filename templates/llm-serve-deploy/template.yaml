@@ -4,12 +4,13 @@ metadata:
   name: llm-serve-deploy
   title: 'Serve LLM (Self-hosted)'
   description: >
-    Deploys a self-hosted LLM (vLLM, from a HuggingFace Hub model id) as a
-    KServe InferenceService. Requires a GPU-enabled cluster with the vLLM
-    ServingRuntime installed.
+    Deploy a self-hosted LLM (vLLM on KServe) from a HuggingFace Hub model id.
   tags:
     - llmops
     - llm-serving
+  links:
+    - title: Troubleshooting FAQ
+      url: /docs/default/system/ai-delivery-portal/troubleshooting-faq
 
 spec:
   owner: user:guest
@@ -24,11 +25,32 @@ spec:
     # would render nothing. Visual separation still comes from StepLayout
     # groups, same as evaluate-deploy-model's single-step / multi-group layout.
     - title: Model & Compute
+      description: >
+        Pick a model and the GPU it runs on. The GPU suggestion panel sizes
+        VRAM from the model you choose — start there, then tune the advanced
+        options only if you need to.
       required:
         - modelName
         - huggingFaceModelId
         - gpuType
       properties:
+        modelPreset:
+          title: Model preset
+          type: string
+          enum:
+            - custom
+            - llama-3.1-8b-instruct
+            - llama-3.1-70b-instruct
+            - qwen2.5-7b-instruct
+            - qwen2.5-32b-instruct
+            - mistral-7b-instruct
+            - mixtral-8x7b-instruct
+            - gemma-2-9b-it
+            - phi-3.5-mini-instruct
+          default: custom
+          description: >
+            Pick a verified model to auto-fill the HuggingFace id, name and a
+            fitting compute profile — or "Custom" to type your own.
         modelName:
           title: Model name
           type: string
@@ -44,18 +66,16 @@ spec:
           type: string
           default: hf-token
           description: >
-            K8s Secret NAME holding the HuggingFace token — never the token
-            itself. Required server-side when the model above is gated
-            (see the validator panel below); ignored for public models.
+            K8s Secret NAME holding the HuggingFace token (not the token).
+            Required only for gated models.
         runtime:
           title: Serving runtime
           type: string
           enum: [vllm, tensorrt-llm, triton]
           default: vllm
           description: >
-            vLLM runs on the cluster demo today. TensorRT-LLM and Triton are
-            on the roadmap — picking them will fail at prepare-manifest with a
-            friendly error pointing to infra/llm-serving/README.md.
+            vLLM is the only runtime that runs today; TensorRT-LLM and Triton
+            are roadmap.
         gpuType:
           title: GPU type
           type: string
@@ -73,10 +93,8 @@ spec:
           enum: [none, fp8, int8, int4-awq]
           default: none
           description: >
-            Not every GPU supports every value — Ampere (A100) has no full
-            FP8 compute, Blackwell (B200) has no INT8. The list narrows
-            automatically once a GPU type is picked; orchestration-api
-            re-validates regardless of what this form allows.
+            Not every GPU supports every value (A100 has no FP8, B200 no INT8).
+            The list narrows once a GPU type is picked.
         maxContextLength:
           title: Max context length (tokens)
           type: integer
@@ -113,22 +131,21 @@ spec:
           default: none
           description: >
             Speculative decoding mode. "none" (default) disables; "ngram" uses
-            n-gram lookup; "draft-model" requires draftModelId below.
-            Roadmap — not supported in MVP, will error at prepare time.
+            vLLM's built-in n-gram proposer (no draft model); "draft-model"
+            requires draftModelId below.
         draftModelId:
           title: Draft model ID (for speculative decoding)
           type: string
           default: meta-llama/Llama-3.2-1B-Instruct
           description: >
             HuggingFace model ID of the draft model when speculativeDecoding=draft-model.
-            Roadmap — not supported in MVP.
         pipelineParallelSize:
           title: Pipeline parallel size
           type: integer
           default: 1
           description: >
             Number of pipeline parallel stages (vLLM --pipeline-parallel-size).
-            >1 splits model across multiple GPUs. Roadmap for >1.
+            >1 splits model across multiple GPUs.
       allOf:
         - if:
             properties:
@@ -159,6 +176,11 @@ spec:
           - title: Model
             icon: apps
             fields:
+              # Curated presets first: picking one fills the HF id + name AND
+              # a fitting compute profile, so a Dev doesn't have to know a 70B
+              # needs 4x A100 with int4-awq. "Custom" leaves the fields alone.
+              - name: modelPreset
+                modelPresetPicker: true
               - name: modelName
                 width: 6
                 rolloutEligibilityGate: true
@@ -178,7 +200,7 @@ spec:
               - name: runtime
                 width: 6
           - title: Compute
-            icon: tune
+            icon: memory
             fields:
               - name: gpuType
                 width: 6
@@ -190,7 +212,7 @@ spec:
               - name: maxContextLength
                 width: 6
           - title: Optimization (Advanced)
-            icon: bolt
+            icon: speed
             fields:
               - name: batchingStrategy
                 width: 6
@@ -198,20 +220,18 @@ spec:
                 width: 6
               - name: enablePrefixCaching
                 width: 6
-              # Roadmap — not wired server-side yet, so these are shown
-              # disabled rather than letting a Dev pick a value that fails at
-              # prepare time.
               - name: speculativeDecoding
                 width: 6
-                disabled: true
               - name: draftModelId
                 width: 6
-                disabled: true
               - name: pipelineParallelSize
                 width: 6
-                disabled: true
 
     - title: Strategy & Release
+      description: >
+        How the new version takes traffic, and whether it ships via a PR or
+        deploys instantly. Canary/A-B/Blue-Green need a prior deploy of this
+        model.
       properties:
         deployStrategy:
           title: Deploy strategy
@@ -219,12 +239,8 @@ spec:
           enum: [direct, canary, ab, blue-green]
           default: direct
           description: >
-            Same mechanism as the MLOps deploy Golden Path — Direct always
-            valid; Canary/A-B/Blue-Green require a prior deploy of this
-            model to already exist (see the eligibility panel on the Model
-            step — the backend rejects without one, this form keeps all
-            options so a first deploy never looks broken before that check
-            resolves).
+            Direct always works. Canary/A-B/Blue-Green need a prior deploy of
+            this model (see the eligibility panel on the Model step).
         trafficPercent:
           title: Traffic percent
           type: integer
@@ -236,19 +252,17 @@ spec:
           enum: [dev, staging, prod]
           default: dev
           description: >
-            Target environment. Instant releases are dev-only server-side —
-            picking staging/prod narrows releaseStrategy to pr-gated below.
+            Instant releases are dev-only — staging/prod narrow releaseStrategy
+            to pr-gated.
         releaseStrategy:
           title: Release strategy
           type: string
           enum: [pr-gated, instant]
           default: pr-gated
           description: >
-            PR-gated (default) opens a PR against repoUrl. Instant calls
-            orchestration-api directly, no PR/Git involved — repoUrl is
-            unused in this case. Instant is only offered for environment=dev;
-            hiding it here is UX only, the real guardrail is the backend's
-            own ValueError plus user_has_role.
+            PR-gated opens a PR against repoUrl. Instant calls the API
+            directly (no PR) and needs environment=dev + the llm-ops-admin
+            role.
       allOf:
         # Instant is dev-only — static (environment lives in this same step,
         # so allOf can see it). The rollout gate (prior deploy?) is live API
@@ -285,25 +299,94 @@ spec:
               - deployStrategy
               - trafficPercent
           - title: Release
-            icon: function
+            icon: launch
             fields:
               - name: environment
                 width: 6
               - name: releaseStrategy
                 width: 6
+                # instant needs the llm-ops-admin role server-side; the panel
+                # warns and the form falls back to pr-gated when it's missing,
+                # so the run can't 403 at prepare time.
+                releaseEligibilityPanel: true
 
     - title: Repository
+      description: >
+        Where the deploy manifest PR is opened. Only used for pr-gated
+        releases.
       properties:
         repoUrl:
           title: Repository
           type: string
           default: github.com?owner=cuongct924&repo=backstage-plugins
           description: >
-            Target GitOps repo for the deploy manifest PR — required when
-            releaseStrategy is pr-gated, in the format
-            github.com?owner=<org>&repo=<repo>. No RepoUrlPicker field
-            extension is confirmed available in this repo's frontend, so
-            this is a plain string field.
+            Target GitOps repo, format github.com?owner=<org>&repo=<repo>.
+            Required when releaseStrategy is pr-gated.
+        # Pre-flight FinOps panel (StepLayoutField's costEstimate flag) —
+        # calls the same /costs/estimate + /costs/check the estimate-cost/
+        # cost-gate steps below call at submit time. Its own value is never
+        # read; only its group placement matters.
+        costEstimate:
+          title: Cost estimate
+          type: string
+          readOnly: true
+          # Carries the golden path name so the Review step can resolve the
+          # same estimate config; the panel itself reads its ui:options.
+          default: llm-serve-deploy
+          description: Computed automatically — nothing to fill in.
+        # Security control surface (StepLayoutField's securityScan flag) —
+        # the platform is the trust boundary: these controls are scanned
+        # before the manifest is rendered, and a blocking finding stops the
+        # run. Defaults are secure-by-default; a Dev opts out deliberately.
+        inputGuardrails:
+          title: Input guardrails
+          type: boolean
+          default: true
+          description: Sanitize and length-bound every prompt before inference.
+        outputGuardrails:
+          title: Output guardrails
+          type: boolean
+          default: true
+          description: Filter model output for leakage and hallucination markers.
+        injectionDetection:
+          title: Prompt-injection detection
+          type: boolean
+          default: true
+          description: Detect prompt-injection in live inference streams.
+        tenantNamespace:
+          title: Tenant namespace
+          type: string
+          default: default
+          description: Namespace boundary the serving workload is isolated to.
+        auditLogging:
+          title: Inference audit trail
+          type: boolean
+          default: true
+          description: Record every inference with actor, input hash and output.
+        contextBoundary:
+          title: Context boundary (tokens)
+          type: integer
+          default: 4096
+          description: Cap the context window so retrieved text can't overrun it.
+        encryptionAtRest:
+          title: Encryption at rest
+          type: boolean
+          default: true
+          description: Encrypt the model artifact at rest, not only in transit.
+        explainability:
+          title: Explainability
+          type: boolean
+          default: false
+          description: Attach reasoning/attribution to each audited inference.
+        # Pre-flight security panel — calls the same /security/scan the
+        # security-scan step below calls at submit time. Its own value is
+        # never read; only its group placement matters.
+        securityScan:
+          title: Security posture
+          type: string
+          readOnly: true
+          default: llm-serve-deploy
+          description: Computed automatically — nothing to fill in.
       ui:field: StepLayout
       ui:options:
         groups:
@@ -311,6 +394,50 @@ spec:
             icon: list
             fields:
               - repoUrl
+          - title: Security
+            icon: security
+            fields:
+              - name: inputGuardrails
+                width: 6
+              - name: outputGuardrails
+                width: 6
+              - name: injectionDetection
+                width: 6
+              - name: tenantNamespace
+                width: 6
+              - name: auditLogging
+                width: 6
+              - name: contextBoundary
+                width: 6
+              - name: encryptionAtRest
+                width: 6
+              - name: explainability
+                width: 6
+              - name: securityScan
+                securityScan:
+                  goldenPath: llm-serve-deploy
+                  stage: run
+                  artifactFields: [modelName]
+                  paramFields:
+                    [
+                      inputGuardrails,
+                      outputGuardrails,
+                      injectionDetection,
+                      tenantNamespace,
+                      auditLogging,
+                      contextBoundary,
+                      encryptionAtRest,
+                      explainability,
+                    ]
+          - title: Cost estimate
+            icon: attach_money
+            fields:
+              - name: costEstimate
+                costEstimate:
+                  goldenPath: llm-serve-deploy
+                  stage: run
+                  artifactFields: [modelName]
+                  paramFields: [gpuType, gpuCount]
 
   steps:
     # Pre-flight FinOps: estimate the recurring GPU serving cost before the
@@ -332,12 +459,34 @@ spec:
       name: 'Check the cost budget'
       action: orchestration:cost-gate
       input:
+        # Block a fail-level overrun (the estimate step above only warns).
+        mode: enforce
         goldenPath: llm-serve-deploy
         stage: run
         artifact: ${{ parameters.modelName }}
         params:
           gpuType: ${{ parameters.gpuType }}
           gpuCount: ${{ parameters.gpuCount }}
+
+    # Pre-flight security scan: block the run on a policy violation (missing
+    # guardrails, no tenant boundary, no audit trail) before anything is
+    # rendered or deployed.
+    - id: security-scan
+      name: 'Scan the security posture'
+      action: orchestration:security-scan
+      input:
+        goldenPath: llm-serve-deploy
+        stage: run
+        artifact: ${{ parameters.modelName }}
+        params:
+          inputGuardrails: ${{ parameters.inputGuardrails }}
+          outputGuardrails: ${{ parameters.outputGuardrails }}
+          injectionDetection: ${{ parameters.injectionDetection }}
+          tenantNamespace: ${{ parameters.tenantNamespace }}
+          auditLogging: ${{ parameters.auditLogging }}
+          contextBoundary: ${{ parameters.contextBoundary }}
+          encryptionAtRest: ${{ parameters.encryptionAtRest }}
+          explainability: ${{ parameters.explainability }}
 
     - id: prepare-manifest
       name: 'Render the InferenceService manifest / deploy'
@@ -386,9 +535,25 @@ spec:
         targetPath: infra/environments/dev/inference-services/llmops-team
 
   output:
+    # Pre-flight FinOps recap — the same estimate/gate the form panel showed,
+    # surfaced on the task result. Values are empty when the estimate step was
+    # skipped (e.g. a non-deploy action); the card then renders nothing.
+    costGoldenPath: llm-serve-deploy
+    costStage: run
+    costEstimated: ${{ steps['estimate-cost'].output.estimatedCost }}
+    costLevel: ${{ steps['cost-gate'].output.level }}
+    costBudget: ${{ steps['cost-gate'].output.budget }}
+    costReasons: ${{ steps['cost-gate'].output.reasons }}
+    costAlternatives: ${{ steps['cost-gate'].output.alternatives }}
+    securityScore: ${{ steps['security-scan'].output.score }}
+    securityPassed: ${{ steps['security-scan'].output.passed }}
     text:
       - title: Result
         content: |
+          Security posture: **${{ steps['security-scan'].output.score }}/100** —
+          input/output guardrails, injection detection, tenant isolation and
+          the inference audit trail are enforced.
+
           Rendered the InferenceService manifest for
           **${{ parameters.modelName }}** (${{ parameters.huggingFaceModelId }}),
           batchingStrategy=${{ parameters.batchingStrategy }},

@@ -265,7 +265,7 @@ metadata:
     Portal-native chat UI (@backstage-community/plugin-mcp-chat) — talks to
     the LiteLLM gateway and the llmops-golden-paths/mlops-golden-paths/
     observability MCP servers via
-    services/orchestration-api/routers/chat.py, using the "mlops" prompt
+    services/orchestration-api/routers/chat.py, using the "llmops" prompt
     below as its system prompt (tool list filtered server-side —
     persona_tool_scope.py). The "k8s" persona was removed — OpenChoreo's
     own built-in MCP server now covers pod/log/event lookups.
@@ -274,7 +274,7 @@ spec:
   lifecycle: experimental
   owner: group:platform-team
   system: ai-delivery-portal
-  dependsOn: [resource:default/mlops]
+  dependsOn: [resource:default/llmops]
 ---
 # Sample data for the Catalog's Kind=Resource / type=prompt filter — a real
 # prompt draft (POST /prompts) will register into MLflow's Prompt Registry
@@ -285,8 +285,8 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Resource
 metadata:
-  name: mlops
-  description: 'MLOps Assistant persona prompt — see services/orchestration-api/routers/prompts.py'
+  name: llmops
+  description: 'LLMOps Assistant persona prompt — see services/orchestration-api/routers/prompts.py'
   tags:
     - prompt
     - llmops
@@ -297,5 +297,5 @@ metadata:
     viettel.ai/updated-at: '2026-09-06'
 spec:
   type: prompt
-  owner: group:mlops-team
+  owner: group:llmops-team
   system: ai-delivery-portal

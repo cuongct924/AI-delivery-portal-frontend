@@ -4,10 +4,13 @@ metadata:
   name: llm-draft-ingest
   title: 'Draft Prompt / Ingest RAG Data / Draft Eval Set'
   description: >
-    Drafts a new prompt version, ingests documents into a new RAG index
-    version, or registers a new version of a reusable eval-case set.
+    Draft a prompt, ingest documents into a RAG index, or register a reusable
+    eval set.
   tags:
     - llmops
+  links:
+    - title: Troubleshooting FAQ
+      url: /docs/default/system/ai-delivery-portal/troubleshooting-faq
 
 spec:
   owner: user:guest
@@ -15,6 +18,9 @@ spec:
 
   parameters:
     - title: 'Draft Prompt / Ingest RAG Data / Draft Eval Set'
+      description: >
+        Pick what to create, then fill in only that artifact's fields. Nothing
+        goes live here — evaluate and activate it in the next Golden Path.
       required:
         - artifactKind
       properties:
@@ -28,9 +34,77 @@ spec:
               title: 'RAG Index - ingest documents into a Qdrant collection'
             - const: eval-set
               title: 'Eval Set - reusable set of eval questions for the Evaluate Gate'
+          # Rendered as a row of cards (StepLayoutField's choiceCards) — the
+          # three kinds have genuinely different follow-up forms, so scanning
+          # labels+captions beats reading one dense paragraph under a dropdown.
+          x-cards:
+            - value: prompt
+              label: Prompt
+              caption: Draft a system prompt for a persona
+              icon: bolt
+            - value: rag-index
+              label: RAG Index
+              caption: Ingest documents into a Qdrant collection
+              icon: list
+            - value: eval-set
+              label: Eval Set
+              caption: Reusable set of eval questions for the Evaluate Gate
+              icon: query_stats
           default: prompt
           description: >
             Choose the artifact type to create.
+        # Pre-flight FinOps panel (StepLayoutField's costEstimate flag) —
+        # calls the same /costs/estimate + /costs/check the estimate-cost/
+        # cost-gate steps below call at submit time. Its own value is never
+        # read; only its group placement matters.
+        costEstimate:
+          title: Cost estimate
+          type: string
+          readOnly: true
+          # Carries the golden path name so the Review step can resolve the
+          # same estimate config; the panel itself reads its ui:options.
+          default: llm-draft-ingest
+          description: Computed automatically — nothing to fill in.
+        # Security control surface (StepLayoutField's securityScan flag) —
+        # a RAG ingest is where data leaves its boundary, so classification
+        # and PII masking are blocking; the prompt half adds injection scan.
+        dataClassification:
+          title: Data classification
+          type: string
+          oneOf:
+            - const: public
+              title: Public
+            - const: internal
+              title: Internal
+            - const: confidential
+              title: Confidential
+            - const: restricted
+              title: Restricted
+          default: internal
+          description: >
+            Tag the ingested data. Confidential/restricted requires PII
+            detection & masking below.
+        piiScan:
+          title: PII detection & masking
+          type: boolean
+          default: true
+          description: Scan and mask PII before it reaches the index.
+        injectionDetection:
+          title: Prompt-injection detection
+          type: boolean
+          default: true
+          description: Scan drafted prompt content for injection patterns.
+        auditLogging:
+          title: Inference audit trail
+          type: boolean
+          default: true
+          description: Record every draft/ingest with actor and artifact.
+        securityScan:
+          title: Security posture
+          type: string
+          readOnly: true
+          default: llm-draft-ingest
+          description: Computed automatically — nothing to fill in.
       # promptName/personaTitle/promptContent and collectionName/sourcePaths/
       # chunkSize/chunkOverlap only exist in the resolved schema once
       # artifactKind actually picks their branch (same "field only exists
@@ -56,15 +130,15 @@ spec:
               promptName:
                 title: Persona key
                 type: string
-                default: mlops
+                default: llmops
                 description: >
                   Persona key reused by Golden Path #2 (Evaluate & Activate)
-                  and routers/chat.py. Example: "mlops".
+                  and routers/chat.py. Example: "llmops".
               personaTitle:
                 title: Persona display name
                 type: string
-                default: MLOps Assistant
-                description: 'Name shown in the Prompt Registry UI. Example: "MLOps Assistant".'
+                default: LLMOps Assistant
+                description: 'Name shown in the Prompt Registry UI. Example: "LLMOps Assistant".'
               promptContent:
                 title: System prompt content
                 type: string
@@ -72,7 +146,7 @@ spec:
                 ui:options:
                   rows: 14
                 default: >
-                  You are the MLOps Assistant for the AI Delivery Portal.
+                  You are the LLMOps Assistant for the AI Delivery Portal.
                   Answer questions about model training, tracking, registration,
                   deployment and monitoring using the platform's own Golden
                   Paths. Be concise and concrete.
@@ -100,6 +174,15 @@ spec:
                     title: Ingest into an existing collection
                   - const: new
                     title: Create a new collection
+                x-cards:
+                  - value: existing
+                    label: Existing collection
+                    caption: Add a new index version to a collection that exists
+                    icon: list
+                  - value: new
+                    label: New collection
+                    caption: Create a brand-new Qdrant collection
+                    icon: apps
                 default: existing
                 description: >
                   Pick an existing Qdrant collection, or create a new one.
@@ -120,8 +203,9 @@ spec:
                   - docs/troubleshooting-faq.md
                   - docs/glossary-openchoreo.md
                 description: >
-                  Relative repository paths to source documents. Add one file
-                  per line; no JSON wrapper is needed.
+                  Pick the documents to ingest from the list of real repo docs
+                  (GET /rag/sources). Paths are repo-relative, e.g.
+                  "docs/architecture-overview.md".
               chunkSize:
                 title: Chunk size (characters)
                 type: integer
@@ -211,9 +295,12 @@ spec:
       ui:options:
         groups:
           - title: Artifact type
+            icon: category
             fields:
-              - artifactKind
+              - name: artifactKind
+                choiceCards: true
           - title: 'Prompt (when Artifact kind = Prompt)'
+            icon: description
             fields:
               - name: promptName
                 width: 6
@@ -226,9 +313,11 @@ spec:
                 width: 6
               - promptContent
           - title: 'RAG Index (when Artifact kind = RAG Index)'
+            icon: library_books
             fields:
               - name: collectionMode
                 width: 12
+                choiceCards: true
               # Strict dropdown of existing collections (GET /rag/collections);
               # only rendered in the "existing" branch.
               - name: collectionName
@@ -238,8 +327,12 @@ spec:
                 width: 3
               - name: chunkOverlap
                 width: 3
-              - sourcePaths
+              # Multi-select of real docs (GET /rag/sources) — a Dev picks
+              # paths that exist instead of typing one that 400s the ingest.
+              - name: sourcePaths
+                sourcePathsPicker: true
           - title: 'Eval Set (when Artifact kind = Eval Set)'
+            icon: checklist
             fields:
               - name: evalSetName
                 # Free-solo combobox of existing eval-set names (GET
@@ -249,6 +342,40 @@ spec:
                 # allowed, while still supporting new sets.
                 evalSetNameCombo: true
               - evalSetQuestions
+          - title: Security
+            icon: security
+            fields:
+              - name: dataClassification
+                width: 6
+              - name: piiScan
+                width: 6
+              - name: injectionDetection
+                width: 6
+              - name: auditLogging
+                width: 6
+              - name: securityScan
+                securityScan:
+                  goldenPath: llm-draft-ingest
+                  stage: build
+                  artifactFields:
+                    [newCollectionName, collectionName, evalSetName, promptName]
+                  paramFields:
+                    [
+                      dataClassification,
+                      piiScan,
+                      injectionDetection,
+                      auditLogging,
+                    ]
+          - title: Cost estimate
+            icon: attach_money
+            fields:
+              - name: costEstimate
+                costEstimate:
+                  goldenPath: llm-draft-ingest
+                  stage: build
+                  artifactFields:
+                    [newCollectionName, collectionName, evalSetName, promptName]
+                  paramFields: [artifactKind]
 
   steps:
     # Pre-flight FinOps: estimate the build cost of the draft/ingest, tagged
@@ -269,11 +396,28 @@ spec:
       name: 'Check the cost budget'
       action: orchestration:cost-gate
       input:
+        # Block a fail-level overrun (the estimate step above only warns).
+        mode: enforce
         goldenPath: llm-draft-ingest
         stage: build
         artifact: ${{ parameters.artifactKind === 'rag-index' and (parameters.collectionMode === 'new' and parameters.newCollectionName or parameters.collectionName) or (parameters.artifactKind === 'eval-set' and parameters.evalSetName or parameters.promptName) }}
         params:
           artifactKind: ${{ parameters.artifactKind }}
+
+    # Pre-flight security scan: a RAG ingest of confidential/restricted data
+    # without PII masking is blocked before anything is embedded.
+    - id: security-scan
+      name: 'Scan the security posture'
+      action: orchestration:security-scan
+      input:
+        goldenPath: llm-draft-ingest
+        stage: build
+        artifact: ${{ parameters.artifactKind === 'rag-index' and (parameters.collectionMode === 'new' and parameters.newCollectionName or parameters.collectionName) or (parameters.artifactKind === 'eval-set' and parameters.evalSetName or parameters.promptName) }}
+        params:
+          dataClassification: ${{ parameters.dataClassification }}
+          piiScan: ${{ parameters.piiScan }}
+          injectionDetection: ${{ parameters.injectionDetection }}
+          auditLogging: ${{ parameters.auditLogging }}
 
     - id: draft-prompt
       name: 'Draft the prompt'
@@ -303,9 +447,24 @@ spec:
         questions: ${{ parameters.evalSetQuestions }}
 
   output:
+    # Pre-flight FinOps recap — the same estimate/gate the form panel showed,
+    # surfaced on the task result. Values are empty when the estimate step was
+    # skipped (e.g. a non-deploy action); the card then renders nothing.
+    costGoldenPath: llm-draft-ingest
+    costStage: build
+    costEstimated: ${{ steps['estimate-cost'].output.estimatedCost }}
+    costLevel: ${{ steps['cost-gate'].output.level }}
+    costBudget: ${{ steps['cost-gate'].output.budget }}
+    costReasons: ${{ steps['cost-gate'].output.reasons }}
+    costAlternatives: ${{ steps['cost-gate'].output.alternatives }}
+    securityScore: ${{ steps['security-scan'].output.score }}
+    securityPassed: ${{ steps['security-scan'].output.passed }}
     text:
       - title: Result
         content: |
+          Security posture: **${{ steps['security-scan'].output.score }}/100** —
+          data classification, PII masking and the audit trail are enforced.
+
           {% if parameters.artifactKind === 'prompt' %}
           Prompt **${{ parameters.promptName }}** version
           **${{ steps['draft-prompt'].output.version }}** drafted and is not active.

@@ -1,4 +1,19 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import { trainingPresetUpdates } from './trainingPresets';
+import {
+  CUSTOM_MODEL_PRESET,
+  llmServingPresetKeys,
+  llmServingPresetLabel,
+  llmServingPresetUpdates,
+  matchesLlmServingPreset,
+} from './llmServingPresets';
 import Card from '@material-ui/core/Card';
 import CardContent from '@material-ui/core/CardContent';
 import Accordion from '@material-ui/core/Accordion';
@@ -28,8 +43,26 @@ import FlashOnIcon from '@material-ui/icons/FlashOn';
 import ShowChartIcon from '@material-ui/icons/ShowChart';
 import TrendingUpIcon from '@material-ui/icons/TrendingUp';
 import UndoIcon from '@material-ui/icons/Undo';
+import AttachMoneyIcon from '@material-ui/icons/AttachMoney';
+import SecurityIcon from '@material-ui/icons/Security';
 import CheckCircleIcon from '@material-ui/icons/CheckCircle';
 import CancelIcon from '@material-ui/icons/Cancel';
+import StorageIcon from '@material-ui/icons/Storage';
+import NotificationsIcon from '@material-ui/icons/Notifications';
+import InfoIcon from '@material-ui/icons/Info';
+import CategoryIcon from '@material-ui/icons/Category';
+import DescriptionIcon from '@material-ui/icons/Description';
+import LibraryBooksIcon from '@material-ui/icons/LibraryBooks';
+import PlaylistAddCheckIcon from '@material-ui/icons/PlaylistAddCheck';
+import LaunchIcon from '@material-ui/icons/Launch';
+import AssignmentIcon from '@material-ui/icons/Assignment';
+import MemoryIcon from '@material-ui/icons/Memory';
+import SpeedIcon from '@material-ui/icons/Speed';
+import HistoryIcon from '@material-ui/icons/History';
+import BuildIcon from '@material-ui/icons/Build';
+import MenuBookIcon from '@material-ui/icons/MenuBook';
+import TableChartIcon from '@material-ui/icons/TableChart';
+import LayersIcon from '@material-ui/icons/Layers';
 import {
   configApiRef,
   discoveryApiRef,
@@ -64,6 +97,16 @@ interface GroupField {
    * be typed. Falls back to the plain field while loading/empty.
    */
   huggingFaceModelPicker?: boolean;
+  /**
+   * Dropdown of curated, verified model presets (llmServingPresets) instead of
+   * a free-text field — picking one fills the sibling `huggingFaceModelId` +
+   * `modelName` AND a compute profile that fits the model (gpuType/gpuCount/
+   * quantization/maxContextLength), so a Dev doesn't have to know a 70B needs
+   * 4x A100 with int4-awq. The `custom` sentinel leaves every field as-is for
+   * a hand-typed model. Meant to sit right before a `huggingFaceModelPicker`
+   * field; the picker flips back to `custom` if the id is hand-edited.
+   */
+  modelPresetPicker?: boolean;
   /**
    * Dropdown of K8s Secret names in the namespace (GET /secrets) instead of a
    * free-text field — a typo'd Secret name leaves the pod stuck pulling a
@@ -277,6 +320,68 @@ interface GroupField {
    */
   evalSetNameCombo?: boolean;
   /**
+   * Multi-select of ingestable source docs (GET /rag/sources) instead of a
+   * free-text array — Draft/Ingest's `sourcePaths`, so a Dev picks real
+   * repo-relative paths (e.g. "docs/architecture-overview.md") instead of
+   * typing one that 400s the whole ingest at the backend's file check. Same
+   * fail-open contract as the pickers above: plain field while loading/empty.
+   */
+  sourcePathsPicker?: boolean;
+  /**
+   * Renders an enum/oneOf field as a row of selectable cards (icon + label +
+   * one-line caption) instead of a plain `<select>` — same shape as
+   * actionPicker, but generic: options come from the field's own schema
+   * (`x-cards` when present, else `oneOf` const/title, else `enum`), so any
+   * template can use it without a hardcoded option list. Built for the
+   * LLMOps templates' `artifactKind`/`action` fields, where 2-3 choices with
+   * genuinely different meanings read poorly as a dropdown + dense paragraph.
+   */
+  choiceCards?: boolean;
+  /**
+   * Renders an array field as a multi-select (checkbox dropdown + chips)
+   * instead of RJSF's default array widget — options come from the field's
+   * own schema (`items.oneOf`/`items.enum`, else the field's own
+   * `oneOf`/`enum`), so any template can use it without a hardcoded list.
+   * Built for Setup Model Monitoring's `metricNames`: monitoring a single
+   * metric hides real regressions (e.g. high accuracy on imbalanced data
+   * while recall collapses), so the Dev picks a set. Falls through to the
+   * plain field when the schema carries no options.
+   */
+  multiSelect?: boolean;
+  /**
+   * Renders this array field as a task-type-aware metrics table instead of
+   * a plain multi-select: reads the sibling modelName/modelVersion's
+   * registry metadata (task_type) and shows only the metrics that apply
+   * (classification: F1/accuracy/precision/recall; regression: RMSE/MAE/
+   * R2), each with its own minimum-acceptable threshold. Writes this field
+   * (the metric names) AND the sibling `metricThresholds` object together,
+   * so a Dev can't pair a classification metric with a regression model.
+   * Falls back to showing every schema option while the model's task_type
+   * is still unknown. Built for Setup Model Monitoring's `metricNames`.
+   */
+  taskTypeMetrics?: boolean;
+  /**
+   * Filters this enum/oneOf field's options to the ones tagged for the
+   * selected model's task_type (schema `x-task-type` on each option) — so a
+   * regression model can't be paired with a classifier algorithm. Falls
+   * back to every option while the task_type is unknown. Built for Setup
+   * Model Monitoring's `retrainAlgorithm`.
+   */
+  taskTypeOptions?: boolean;
+  /**
+   * Skip rendering this field entirely — for a property whose value is
+   * written by a sibling's own flag (e.g. `metricThresholds` under
+   * `taskTypeMetrics`), so it doesn't also render as a raw object field.
+   */
+  hidden?: boolean;
+  /**
+   * Render a read-only TextField showing this field's (auto-bound) value —
+   * for a value the platform fills from model metadata (e.g. `taskType`),
+   * where an editable input would invite a value that disagrees with the
+   * model. Unlike `lockedDisplay` (const-only), this works on any field.
+   */
+  readOnlyDisplay?: boolean;
+  /**
    * Live GET /llm-deploy/validate-model lookup below this field — the
    * frontend half of llm-serve-deploy's gated-model guardrail: surfaces whether
    * the typed `huggingFaceModelId` exists and whether it is gated
@@ -301,6 +406,73 @@ interface GroupField {
    * only, same fail-quiet contract as every other live panel here.
    */
   rolloutEligibilityGate?: boolean;
+  /**
+   * Live role gate below this field — release_strategy='instant' needs the
+   * 'llm-ops-admin' role server-side (orchestration-api's own user_has_role
+   * check). When the signed-in user lacks it, this warns AND StepLayout falls
+   * the value back to pr-gated, so the run can't 403 at prepare time. Meant
+   * for llm-serve-deploy's `releaseStrategy` field.
+   */
+  releaseEligibilityPanel?: boolean;
+  /**
+   * Live pre-flight FinOps panel below this field: calls
+   * orchestration-api's POST /costs/estimate + /costs/check with the
+   * golden path, lifecycle stage, artifact and path-specific params, so a
+   * Dev sees the estimated cost and budget impact BEFORE running the
+   * golden path — the same estimate the `orchestration:estimate-cost` /
+   * `orchestration:cost-gate` steps compute at submit time, surfaced while
+   * the form is still being filled in. Advisory only, same fail-quiet
+   * contract as every other live panel here. Meant for a dedicated
+   * read-only property placed last in the step, right before Review.
+   */
+  costEstimate?: CostEstimateOptions;
+  /**
+   * Live pre-flight security panel below this field: calls
+   * orchestration-api's POST /security/scan with the golden path, lifecycle
+   * stage, artifact and the chosen security controls, so a Dev sees the
+   * posture (and any blocking finding) BEFORE running the golden path — the
+   * same scan the `orchestration:security-scan` step runs at submit time.
+   * Advisory only, same fail-quiet contract as every other live panel here.
+   * Meant for a dedicated read-only property placed last in the step.
+   */
+  securityScan?: SecurityScanOptions;
+}
+
+/**
+ * Config for the pre-flight cost panel. `artifactFields`/`paramFields` are
+ * form field names read from the current formData (the first non-empty
+ * artifact wins; params are forwarded as-is), so the panel never has to
+ * know a path's shape beyond this config.
+ */
+interface CostEstimateOptions {
+  /** Golden path name, e.g. `evaluate-deploy-model`. */
+  goldenPath: string;
+  /** Lifecycle stage the cost belongs to. */
+  stage: 'build' | 'gate' | 'run';
+  /** Form fields holding the artifact name; first non-empty wins. */
+  artifactFields: string[];
+  /** Form fields forwarded as path-specific estimate params. */
+  paramFields?: string[];
+  /** Only render when every entry matches the current formData value. */
+  when?: Record<string, unknown>;
+}
+
+/**
+ * Config for the pre-flight security panel. Same shape as
+ * `CostEstimateOptions` — `paramFields` names the security control fields
+ * whose current values are forwarded to the scan.
+ */
+interface SecurityScanOptions {
+  /** Golden path name, e.g. `llm-serve-deploy`. */
+  goldenPath: string;
+  /** Lifecycle stage the scan belongs to. */
+  stage: 'build' | 'gate' | 'run';
+  /** Form fields holding the artifact name; first non-empty wins. */
+  artifactFields: string[];
+  /** Form fields forwarded as the scan's security control values. */
+  paramFields?: string[];
+  /** Only render when every entry matches the current formData value. */
+  when?: Record<string, unknown>;
 }
 
 /**
@@ -330,6 +502,29 @@ const GROUP_ICONS = {
   bolt: FlashOnIcon,
   query_stats: ShowChartIcon,
   trending_up: TrendingUpIcon,
+  undo: UndoIcon,
+  attach_money: AttachMoneyIcon,
+  security: SecurityIcon,
+  // Added for the Golden Path templates' group headers — each maps to the
+  // closest Material icon for the group's meaning (data, artifact kind,
+  // prompt, RAG, eval, release, compute, ...). Keep this the single source
+  // of truth: a group.icon not listed here renders no icon at all.
+  storage: StorageIcon,
+  notifications: NotificationsIcon,
+  info: InfoIcon,
+  category: CategoryIcon,
+  description: DescriptionIcon,
+  library_books: LibraryBooksIcon,
+  checklist: PlaylistAddCheckIcon,
+  launch: LaunchIcon,
+  assignment: AssignmentIcon,
+  memory: MemoryIcon,
+  speed: SpeedIcon,
+  history: HistoryIcon,
+  build: BuildIcon,
+  menu_book: MenuBookIcon,
+  table_chart: TableChartIcon,
+  layers: LayersIcon,
 } as const;
 
 interface StepLayoutGroup {
@@ -420,6 +615,77 @@ function useOpenChoreoAuthHeaders(): () => Promise<HeadersInit> {
 }
 
 /**
+ * Decodes a JWT payload's role/group claim without verifying the signature
+ * (orchestration-api verifies it server-side). Returns null when the token
+ * isn't a decodable JWT, so the caller can fail open rather than wrongly
+ * deny a role. Mirrors orchestration-api's own `user_has_role` claim lookup
+ * (`roles` then `groups`).
+ */
+function decodeJwtRoles(token: string): string[] | null {
+  const payload = token.split('.')[1];
+  if (!payload) return null;
+  try {
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const json = JSON.parse(
+      decodeURIComponent(
+        atob(normalized)
+          .split('')
+          .map(c => `%${`00${c.charCodeAt(0).toString(16)}`.slice(-2)}`)
+          .join(''),
+      ),
+    ) as Record<string, unknown>;
+    const roles = json.roles ?? json.groups;
+    return Array.isArray(roles) ? roles.map(String) : [];
+  } catch {
+    return null;
+  }
+}
+
+type RoleCheckState =
+  | { status: 'loading' }
+  | { status: 'resolved'; hasRole: boolean };
+
+/**
+ * Whether the signed-in user carries `role` on their Thunder token — the
+ * frontend half of orchestration-api's own `user_has_role` gate (e.g.
+ * release_strategy='instant' needs 'llm-ops-admin'). Fails open: auth
+ * disabled (the local-dev bypass user has every role server-side) or an
+ * undecodable token both resolve to hasRole=true, so this can never block a
+ * run the backend would have allowed.
+ */
+function useHasRole(role: string): RoleCheckState {
+  const configApi = useApi(configApiRef);
+  const authApi = useApi(openChoreoAuthApiRef);
+  const [state, setState] = useState<RoleCheckState>({ status: 'loading' });
+  useEffect(() => {
+    let cancelled = false;
+    const authEnabled =
+      configApi.getOptionalBoolean('openchoreo.features.auth.enabled') ?? true;
+    if (!authEnabled) {
+      setState({ status: 'resolved', hasRole: true });
+      return undefined;
+    }
+    authApi
+      .getAccessToken()
+      .then(token => {
+        if (cancelled) return;
+        const roles = token ? decodeJwtRoles(token) : null;
+        setState({
+          status: 'resolved',
+          hasRole: roles === null ? true : roles.includes(role),
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setState({ status: 'resolved', hasRole: true });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [configApi, authApi, role]);
+  return state;
+}
+
+/**
  * Coerces any list-endpoint body to a string array — accepts a bare JSON
  * array (`["a","b"]`, like GET /models returns) as well as a wrapped object
  * (`{names:[...]}`, `{versions:[...]}`, `{columns:[...]}`, `{features:[...]}`,
@@ -439,6 +705,7 @@ function toStringList(body: unknown): string[] {
       'features',
       'datasets',
       'models',
+      'sources',
     ]) {
       if (Array.isArray(obj[key])) return (obj[key] as unknown[]).map(String);
     }
@@ -844,6 +1111,11 @@ function useLlmModels(): string[] {
 /** Registered eval-set names (GET /eval-sets) — see the evalSetNamePicker GroupField flag's own doc comment. */
 function useEvalSets(): string[] {
   return useNameList('/eval-sets');
+}
+
+/** Ingestable source docs (GET /rag/sources) — see the sourcePathsPicker GroupField flag's own doc comment. */
+function useRagSources(): string[] {
+  return useNameList('/rag/sources');
 }
 
 /** K8s Secret names in the namespace (GET /secrets) — see the secretPicker GroupField flag's own doc comment. */
@@ -1861,6 +2133,40 @@ function DatasetPickerField({
   );
 }
 
+interface ReferenceDataLockedFieldProps {
+  title: string;
+  uri: string;
+  modelName: string;
+  modelVersion: string;
+}
+
+/**
+ * Read-only display of a model version's training dataset, bound from MLflow
+ * lineage (see the referenceDataUri effect in StepLayout). A disabled field
+ * rather than a picker: the value is not a choice — drifting it to another
+ * dataset would silently compare production against the wrong baseline.
+ * Rendered only once the form value already equals the attached URI, so a
+ * lineage URI outside the picker's own listing (e.g. an enriched file with
+ * no .dvc sibling) never trips the picker's out-of-range error.
+ */
+function ReferenceDataLockedField({
+  title,
+  uri,
+  modelName,
+  modelVersion,
+}: ReferenceDataLockedFieldProps): JSX.Element {
+  return (
+    <TextField
+      fullWidth
+      variant="outlined"
+      label={title}
+      value={uri}
+      disabled
+      helperText={`Attached from ${modelName}:${modelVersion} training data — change the model to change it.`}
+    />
+  );
+}
+
 interface DataSourcePickerFieldProps {
   name: string;
   title: string;
@@ -2050,6 +2356,473 @@ function ActionPickerField({
         );
       })}
     </Grid>
+  );
+}
+
+interface ChoiceCard {
+  value: string;
+  label: string;
+  caption?: string;
+  icon?: keyof typeof GROUP_ICONS;
+  /** Optional per-option default threshold (schema `x-threshold`) — used by taskTypeMetrics to seed a metric's minimum-acceptable value. */
+  threshold?: number;
+  /** Optional task type this option belongs to (schema `x-task-type`) — used by taskTypeOptions to hide options that don't apply to the selected model. */
+  taskType?: string;
+}
+
+/**
+ * Reads card options from a field's own schema — `x-cards` (explicit, with
+ * per-option caption/icon) wins; else `oneOf` const/title; else `enum`
+ * (label = value). Returns `[]` when the field has none of these, so the
+ * caller can fall back to the plain field.
+ */
+function choiceCardsFromSchema(schema: JSONSchema7): ChoiceCard[] {
+  const explicit = (schema as { 'x-cards'?: unknown })['x-cards'];
+  if (Array.isArray(explicit)) {
+    return explicit.flatMap(entry => {
+      const obj = (entry ?? {}) as Record<string, unknown>;
+      if (typeof obj.value !== 'string') return [];
+      return [
+        {
+          value: obj.value,
+          label: typeof obj.label === 'string' ? obj.label : obj.value,
+          caption: typeof obj.caption === 'string' ? obj.caption : undefined,
+          icon:
+            typeof obj.icon === 'string'
+              ? (obj.icon as keyof typeof GROUP_ICONS)
+              : undefined,
+        },
+      ];
+    });
+  }
+  if (Array.isArray(schema.oneOf)) {
+    return schema.oneOf.flatMap(entry => {
+      const obj = entry as Record<string, unknown>;
+      if (typeof obj.const !== 'string') return [];
+      return [
+        {
+          value: obj.const,
+          label: typeof obj.title === 'string' ? obj.title : obj.const,
+          threshold:
+            typeof obj['x-threshold'] === 'number'
+              ? obj['x-threshold']
+              : undefined,
+          taskType:
+            typeof obj['x-task-type'] === 'string'
+              ? obj['x-task-type']
+              : undefined,
+        },
+      ];
+    });
+  }
+  if (Array.isArray(schema.enum)) {
+    return schema.enum.map(value => ({
+      value: String(value),
+      label: String(value),
+    }));
+  }
+  return [];
+}
+
+/**
+ * Generic row of selectable cards for an enum/oneOf field — same visual
+ * shape as ActionPickerField, but options come from the field's schema
+ * (see choiceCardsFromSchema) instead of a hardcoded list. Renders nothing
+ * (caller falls back to the plain field) when the schema carries no options.
+ */
+function ChoiceCardsField({
+  schema,
+  value,
+  onChange,
+}: {
+  schema: JSONSchema7;
+  value: unknown;
+  onChange: (value: string) => void;
+}): JSX.Element | null {
+  const options = choiceCardsFromSchema(schema);
+  if (options.length === 0) return null;
+  return (
+    <Grid container spacing={1}>
+      {options.map(option => {
+        const selected = value === option.value;
+        const Icon = option.icon ? GROUP_ICONS[option.icon] : undefined;
+        return (
+          <Grid item xs={12} sm={6} key={option.value}>
+            <Card
+              onClick={() => onChange(option.value)}
+              style={{
+                cursor: 'pointer',
+                border: `${selected ? 2 : 1}px solid ${
+                  selected ? NEUTRAL.textPrimary : NEUTRAL.border
+                }`,
+                backgroundColor: selected ? NEUTRAL.paper : NEUTRAL.background,
+              }}
+              elevation={0}
+            >
+              <CardContent
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 8,
+                  padding: 12,
+                }}
+              >
+                {Icon && (
+                  <Icon
+                    style={{
+                      fontSize: 20,
+                      marginTop: 2,
+                      color: selected
+                        ? NEUTRAL.textPrimary
+                        : NEUTRAL.textSecondary,
+                    }}
+                  />
+                )}
+                <Box>
+                  <Typography
+                    variant="body2"
+                    style={{ fontWeight: selected ? 700 : 500 }}
+                  >
+                    {option.label}
+                  </Typography>
+                  {option.caption && (
+                    <Typography
+                      variant="caption"
+                      style={{ color: NEUTRAL.textSecondary }}
+                    >
+                      {option.caption}
+                    </Typography>
+                  )}
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+        );
+      })}
+    </Grid>
+  );
+}
+
+/**
+ * Options for a multi-select array field — reads the field's own
+ * `items.oneOf`/`items.enum` (the array shape) first, falling back to the
+ * field's top-level `oneOf`/`enum` (a scalar field mistakenly flagged).
+ * Reuses choiceCardsFromSchema so labels/captions stay identical to the
+ * card renderer. Returns `[]` when the schema carries no options, so the
+ * caller can fall back to the plain field.
+ */
+function multiSelectOptionsFromSchema(schema: JSONSchema7): ChoiceCard[] {
+  const items = schema.items;
+  if (items && typeof items === 'object' && !Array.isArray(items)) {
+    const fromItems = choiceCardsFromSchema(items as JSONSchema7);
+    if (fromItems.length > 0) return fromItems;
+  }
+  return choiceCardsFromSchema(schema);
+}
+
+interface MultiSelectFieldProps {
+  name: string;
+  title: string;
+  description?: string;
+  required: boolean;
+  options: ChoiceCard[];
+  value: unknown;
+  onChange: (value: unknown) => void;
+}
+
+/**
+ * Multi-select of a fixed option set (checkbox dropdown + chips) for an
+ * array field — the array counterpart of ChoiceCardsField. Writes a string
+ * array, so the template's `${{ parameters.<name> }}` reaches the action as
+ * a real list. See the `multiSelect` GroupField flag's own doc comment.
+ */
+function MultiSelectField({
+  name,
+  title,
+  description,
+  required,
+  options,
+  value,
+  onChange,
+}: MultiSelectFieldProps): JSX.Element {
+  const selected = Array.isArray(value) ? (value as string[]) : [];
+  const labelFor = (val: string) =>
+    options.find(option => option.value === val)?.label ?? val;
+  return (
+    <TextField
+      select
+      fullWidth
+      variant="outlined"
+      label={`${title}${required ? '*' : ''}`}
+      helperText={description}
+      value={selected}
+      onChange={e => onChange(e.target.value)}
+      name={name}
+      SelectProps={{
+        multiple: true,
+        renderValue: (v: unknown) => (
+          <Box display="flex" flexWrap="wrap" style={{ gap: 4 }}>
+            {(v as string[]).map(val => (
+              <Chip key={val} label={labelFor(val)} size="small" />
+            ))}
+          </Box>
+        ),
+      }}
+    >
+      {options.map(option => (
+        <MenuItem key={option.value} value={option.value}>
+          <Checkbox size="small" checked={selected.includes(option.value)} />
+          {option.label}
+        </MenuItem>
+      ))}
+    </TextField>
+  );
+}
+
+/** Metrics that only make sense for a classification model — see taskTypeMetrics. */
+const CLASSIFICATION_METRICS = ['f1_score', 'accuracy', 'precision', 'recall'];
+/** Metrics that only make sense for a regression model — see taskTypeMetrics. */
+const REGRESSION_METRICS = ['rmse', 'mae', 'r2_score'];
+
+/**
+ * The metric names that apply to `taskType`, or `null` when the task type
+ * isn't known yet (caller then shows every option rather than guessing).
+ */
+function metricsForTaskType(taskType: string | null): Set<string> | null {
+  if (taskType === 'classification') return new Set(CLASSIFICATION_METRICS);
+  if (taskType === 'regression') return new Set(REGRESSION_METRICS);
+  return null;
+}
+
+/** Seed threshold for a metric — its schema `x-threshold` when set, else a task-type default (1.0 for an error metric, 0.85 for a score). */
+function defaultMetricThreshold(
+  option: { threshold?: number },
+  taskType: string | null,
+): number {
+  if (typeof option.threshold === 'number') return option.threshold;
+  return taskType === 'regression' ? 1 : 0.85;
+}
+
+interface TaskTypeMetricsFieldProps {
+  name: string;
+  title: string;
+  description?: string;
+  required: boolean;
+  options: ChoiceCard[];
+  /** The selected model version's task_type, or null while unknown. */
+  taskType: string | null;
+  /** Selected metric names (this field's own value). */
+  value: unknown;
+  /** Per-metric thresholds (the sibling `metricThresholds` object). */
+  thresholds: unknown;
+  onChange: (names: string[], thresholds: Record<string, number>) => void;
+}
+
+/**
+ * Task-type-aware metrics table — the DevEx half of "don't make a Dev pick
+ * a task type the model already declares". Shows only the metrics that
+ * apply to the selected model's task_type, each with its own
+ * minimum-acceptable threshold, and writes the metric names + thresholds
+ * together so the two can never disagree. See the `taskTypeMetrics`
+ * GroupField flag's own doc comment.
+ */
+function TaskTypeMetricsField({
+  name,
+  title,
+  description,
+  required,
+  options,
+  taskType,
+  value,
+  thresholds,
+  onChange,
+}: TaskTypeMetricsFieldProps): JSX.Element {
+  const selected = Array.isArray(value) ? (value as string[]) : [];
+  const thresholdMap =
+    thresholds && typeof thresholds === 'object'
+      ? (thresholds as Record<string, number>)
+      : {};
+  const filter = metricsForTaskType(taskType);
+  const relevant = filter ? options.filter(o => filter.has(o.value)) : options;
+  const isRegression = taskType === 'regression';
+
+  // Prune metrics that don't belong to the (new) task type, and keep at
+  // least one metric selected — so switching a model from classification to
+  // regression can't leave `f1_score` (or its threshold) silently attached
+  // to a regression model, and the required minItems:1 is always met.
+  // Idempotent, so it runs every render like StepLayout's other binding
+  // effects; re-seeding when empty (not just on a task-type change) also
+  // survives a sibling effect's onChange landing in the same commit.
+  useEffect(() => {
+    if (!filter || !taskType) return;
+    const relevantSelected = selected.filter(m => filter.has(m));
+    const stale = selected.filter(m => !filter.has(m));
+    const needsSeed = relevantSelected.length === 0 && relevant.length > 0;
+    if (stale.length === 0 && !needsSeed) return;
+    const nextThresholds = { ...thresholdMap };
+    stale.forEach(metric => delete nextThresholds[metric]);
+    let nextNames = relevantSelected;
+    if (needsSeed) {
+      const first = relevant[0];
+      nextNames = [first.value];
+      nextThresholds[first.value] = defaultMetricThreshold(first, taskType);
+    }
+    onChange(nextNames, nextThresholds);
+  });
+
+  const toggle = (metric: string, checked: boolean) => {
+    const nextNames = checked
+      ? [...selected, metric]
+      : selected.filter(m => m !== metric);
+    const nextThresholds = { ...thresholdMap };
+    if (checked) {
+      const option = options.find(o => o.value === metric) ?? {};
+      nextThresholds[metric] = defaultMetricThreshold(option, taskType);
+    } else {
+      delete nextThresholds[metric];
+    }
+    onChange(nextNames, nextThresholds);
+  };
+
+  const setThreshold = (metric: string, raw: string) => {
+    const nextThresholds = { ...thresholdMap };
+    if (raw === '') delete nextThresholds[metric];
+    else nextThresholds[metric] = Number(raw);
+    onChange(selected, nextThresholds);
+  };
+
+  return (
+    <Box>
+      <Typography variant="subtitle2">
+        {title}
+        {required ? '*' : ''}
+      </Typography>
+      {description && (
+        <Typography
+          variant="caption"
+          display="block"
+          style={{ color: NEUTRAL.textSecondary, marginBottom: 4 }}
+        >
+          {description}
+        </Typography>
+      )}
+      <Typography
+        variant="caption"
+        display="block"
+        style={{ color: NEUTRAL.textSecondary, marginBottom: 8 }}
+      >
+        {taskType
+          ? `Auto-applied for this model's task type: ${taskType}.`
+          : 'Task type not detected yet — showing every metric.'}
+      </Typography>
+      <Table size="small">
+        <TableHead>
+          <TableRow>
+            <TableCell>Metric</TableCell>
+            <TableCell>
+              {isRegression ? 'Maximum acceptable error' : 'Minimum acceptable'}
+            </TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {relevant.map(option => {
+            const checked = selected.includes(option.value);
+            return (
+              <TableRow key={option.value}>
+                <TableCell>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        size="small"
+                        checked={checked}
+                        onChange={e => toggle(option.value, e.target.checked)}
+                      />
+                    }
+                    label={option.label}
+                  />
+                </TableCell>
+                <TableCell>
+                  <TextField
+                    type="number"
+                    size="small"
+                    variant="outlined"
+                    value={thresholdMap[option.value] ?? ''}
+                    disabled={!checked}
+                    onChange={e => setThreshold(option.value, e.target.value)}
+                    inputProps={{
+                      min: 0,
+                      max: isRegression ? undefined : 1,
+                      step: 0.01,
+                    }}
+                    name={`${name}-${option.value}`}
+                  />
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </Box>
+  );
+}
+
+interface TaskTypeOptionsFieldProps {
+  name: string;
+  title: string;
+  description?: string;
+  required: boolean;
+  options: ChoiceCard[];
+  taskType: string | null;
+  value: unknown;
+  onChange: (value: string) => void;
+}
+
+/**
+ * Select whose options are filtered to the selected model's task_type (see
+ * the `taskTypeOptions` GroupField flag). Clears a value that no longer
+ * applies when the task type changes (e.g. a classifier algorithm left over
+ * after switching to a regression model) so the select never shows a value
+ * that isn't in its own list.
+ */
+function TaskTypeOptionsField({
+  name,
+  title,
+  description,
+  required,
+  options,
+  taskType,
+  value,
+  onChange,
+}: TaskTypeOptionsFieldProps): JSX.Element {
+  const filtered = taskType
+    ? options.filter(
+        option => option.taskType === undefined || option.taskType === taskType,
+      )
+    : options;
+  const selected = typeof value === 'string' ? value : '';
+  useEffect(() => {
+    if (!taskType) return;
+    if (selected && !filtered.some(option => option.value === selected)) {
+      onChange(filtered[0]?.value ?? '');
+    }
+  });
+  return (
+    <TextField
+      select
+      fullWidth
+      variant="outlined"
+      label={`${title}${required ? '*' : ''}`}
+      helperText={description}
+      value={selected}
+      onChange={e => onChange(e.target.value)}
+      name={name}
+    >
+      {filtered.map(option => (
+        <MenuItem key={option.value} value={option.value}>
+          {option.label}
+        </MenuItem>
+      ))}
+    </TextField>
   );
 }
 
@@ -2329,6 +3102,49 @@ function HuggingFaceModelPickerField({
         />
       )}
     />
+  );
+}
+
+/**
+ * Dropdown of curated model presets — see modelPresetPicker. Selecting a
+ * preset is a one-shot patch of the sibling model + compute fields (applied
+ * by the caller); `custom` is a no-op so a hand-typed model is never
+ * clobbered.
+ */
+function ModelPresetPickerField({
+  name,
+  title,
+  description,
+  required,
+  value,
+  onChange,
+}: {
+  name: string;
+  title: string;
+  description?: string;
+  required: boolean;
+  value: unknown;
+  onChange: (value: string) => void;
+}): JSX.Element {
+  const selected =
+    typeof value === 'string' && value ? value : CUSTOM_MODEL_PRESET;
+  return (
+    <TextField
+      select
+      fullWidth
+      variant="outlined"
+      label={`${title}${required ? '*' : ''}`}
+      helperText={description}
+      value={selected}
+      onChange={e => onChange(e.target.value)}
+      name={name}
+    >
+      {llmServingPresetKeys.map(key => (
+        <MenuItem key={key} value={key}>
+          {llmServingPresetLabel(key)}
+        </MenuItem>
+      ))}
+    </TextField>
   );
 }
 
@@ -2871,6 +3687,40 @@ function RolloutEligibilityGatePanel({
   );
 }
 
+/**
+ * Role gate for llm-serve-deploy's `releaseStrategy` field — see useHasRole.
+ * release_strategy='instant' needs 'llm-ops-admin' server-side; without it
+ * the run 403s at prepare time. Renders nothing outside environment=dev
+ * (instant isn't offered there anyway) or while the role check is loading.
+ */
+function ReleaseEligibilityPanel({
+  environment,
+  roleState,
+}: {
+  environment: unknown;
+  roleState: RoleCheckState;
+}): JSX.Element | null {
+  if (environment !== 'dev' || roleState.status !== 'resolved') return null;
+  return (
+    <Box display="flex" alignItems="flex-start" style={{ gap: 8 }}>
+      <Chip
+        label={roleState.hasRole ? 'Instant available' : 'Instant needs a role'}
+        size="small"
+        style={{
+          backgroundColor: roleState.hasRole ? STATUS.success : STATUS.warning,
+          color: '#FFF',
+          flexShrink: 0,
+        }}
+      />
+      <Typography variant="body2">
+        {roleState.hasRole
+          ? 'You have llm-ops-admin — instant deploys are available.'
+          : "instant requires the 'llm-ops-admin' role — without it the run 403s, so this form falls back to pr-gated."}
+      </Typography>
+    </Box>
+  );
+}
+
 type LiveVersionState =
   | { status: 'loading' }
   | { status: 'none' }
@@ -3015,6 +3865,574 @@ function VersionComparisonPanel({
   );
 }
 
+interface CostEstimate {
+  estimatedCost: number;
+  currency: string;
+  breakdown: Record<string, number>;
+}
+
+interface CostCheck {
+  level: 'ok' | 'warn' | 'fail';
+  budget: number | null;
+  reasons: string[];
+  alternatives: string[];
+}
+
+type CostEstimateState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'ready'; estimate: CostEstimate; check: CostCheck }
+  | { status: 'error' };
+
+const COST_LEVEL_TONE: Record<
+  CostCheck['level'],
+  { color: string; label: string }
+> = {
+  ok: { color: STATUS.success, label: 'Within budget' },
+  warn: { color: STATUS.warning, label: 'Near budget' },
+  fail: { color: STATUS.error, label: 'Over budget' },
+};
+
+/** Every `when` entry must equal the current formData value. */
+function matchesWhen(
+  when: Record<string, unknown> | undefined,
+  data: Record<string, unknown>,
+): boolean {
+  if (!when) return true;
+  return Object.entries(when).every(([key, value]) => data[key] === value);
+}
+
+/** First non-empty string among the configured artifact fields. */
+function firstNonEmptyString(
+  fields: string[],
+  data: Record<string, unknown>,
+): string | undefined {
+  for (const field of fields) {
+    const value = data[field];
+    if (typeof value === 'string' && value) return value;
+  }
+  return undefined;
+}
+
+/** Forward the configured param fields that currently hold a value. */
+function buildCostParams(
+  fields: string[] | undefined,
+  data: Record<string, unknown>,
+): Record<string, unknown> {
+  const params: Record<string, unknown> = {};
+  for (const field of fields ?? []) {
+    const value = data[field];
+    if (value !== undefined && value !== null && value !== '') {
+      params[field] = value;
+    }
+  }
+  return params;
+}
+
+function formatCostUsd(value: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    return `${value.toFixed(2)} ${currency}`;
+  }
+}
+
+/**
+ * Live POST /costs/estimate + /costs/check lookup — the pre-flight half of
+ * the `orchestration:estimate-cost` / `orchestration:cost-gate` steps, so a
+ * Dev sees the cost and budget impact before running the golden path. Same
+ * debounced, fail-quiet contract as useGpuRecommendation above: a 500ms
+ * debounce, in-flight cancellation on change, and any failure folds into
+ * 'error' (the panel then shows a one-line notice, never blocks the form).
+ */
+function useCostEstimate(
+  opts: CostEstimateOptions,
+  data: Record<string, unknown>,
+): CostEstimateState {
+  const discoveryApi = useApi(discoveryApiRef);
+  const { fetch } = useApi(fetchApiRef);
+  const getAuthHeaders = useOpenChoreoAuthHeaders();
+  const [state, setState] = useState<CostEstimateState>({ status: 'idle' });
+
+  const active = matchesWhen(opts.when, data);
+  const artifact = firstNonEmptyString(opts.artifactFields, data);
+  const params = buildCostParams(opts.paramFields, data);
+  // Stable key so the effect only refires when the payload actually changes
+  // (params is a fresh object every render).
+  const paramsKey = JSON.stringify(params);
+
+  useEffect(() => {
+    if (!active || !artifact) {
+      // Bail out with the same object when already idle, so an unstable
+      // dependency can't drive a setState -> render -> effect loop.
+      setState(prev => (prev.status === 'idle' ? prev : { status: 'idle' }));
+      return undefined;
+    }
+    setState(prev =>
+      prev.status === 'loading' ? prev : { status: 'loading' },
+    );
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      const payload = {
+        golden_path: opts.goldenPath,
+        stage: opts.stage,
+        artifact,
+        params,
+      };
+      const jsonHeaders = (headers: HeadersInit): HeadersInit => ({
+        ...(headers as Record<string, string>),
+        'Content-Type': 'application/json',
+      });
+      Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
+        .then(([proxyUrl, headers]) =>
+          Promise.all([
+            fetch(`${proxyUrl}/orchestration-api/costs/estimate`, {
+              method: 'POST',
+              headers: jsonHeaders(headers),
+              body: JSON.stringify(payload),
+            }),
+            fetch(`${proxyUrl}/orchestration-api/costs/check`, {
+              method: 'POST',
+              headers: jsonHeaders(headers),
+              body: JSON.stringify({ ...payload, mode: 'warn' }),
+            }),
+          ]),
+        )
+        .then(async ([estimateRes, checkRes]) => {
+          if (!estimateRes.ok) throw new Error(`HTTP ${estimateRes.status}`);
+          const estimateBody = (await estimateRes.json()) as Record<
+            string,
+            unknown
+          >;
+          const checkBody = checkRes.ok
+            ? ((await checkRes.json()) as Record<string, unknown>)
+            : {};
+          if (cancelled) return;
+          setState({
+            status: 'ready',
+            estimate: {
+              estimatedCost: toNullableNumber(estimateBody.estimated_cost) ?? 0,
+              currency:
+                typeof estimateBody.currency === 'string'
+                  ? estimateBody.currency
+                  : 'USD',
+              breakdown:
+                estimateBody.breakdown &&
+                typeof estimateBody.breakdown === 'object'
+                  ? (estimateBody.breakdown as Record<string, number>)
+                  : {},
+            },
+            check: {
+              level:
+                checkBody.level === 'warn' || checkBody.level === 'fail'
+                  ? checkBody.level
+                  : 'ok',
+              budget: toNullableNumber(checkBody.budget),
+              reasons: Array.isArray(checkBody.reasons)
+                ? checkBody.reasons.map(String)
+                : [],
+              alternatives: Array.isArray(checkBody.alternatives)
+                ? checkBody.alternatives.map(String)
+                : [],
+            },
+          });
+        })
+        .catch(() => {
+          if (!cancelled) setState({ status: 'error' });
+        });
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    discoveryApi,
+    fetch,
+    getAuthHeaders,
+    active,
+    artifact,
+    paramsKey,
+    opts.goldenPath,
+    opts.stage,
+  ]);
+
+  return state;
+}
+
+/**
+ * Pre-flight cost panel — estimated cost, budget status, gate reasons and
+ * the per-component breakdown, all from the same APIs the golden path's own
+ * estimate/gate steps call at submit time. Renders nothing until the
+ * artifact is set (or when `when` doesn't match), so it never shows an
+ * empty box on an unrelated branch.
+ */
+function CostEstimatePanel({
+  opts,
+  data,
+}: {
+  opts: CostEstimateOptions;
+  data: Record<string, unknown>;
+}): JSX.Element | null {
+  const state = useCostEstimate(opts, data);
+
+  if (state.status === 'idle') return null;
+
+  const box = (children: ReactNode) => (
+    <Box
+      style={{
+        border: `1px solid ${NEUTRAL.border}`,
+        borderRadius: 4,
+        padding: 12,
+      }}
+    >
+      {children}
+    </Box>
+  );
+
+  if (state.status === 'loading') {
+    return box(
+      <Typography variant="body2" style={{ color: NEUTRAL.textSecondary }}>
+        Estimating {opts.stage} cost…
+      </Typography>,
+    );
+  }
+  if (state.status === 'error') {
+    return box(
+      <Typography variant="body2" style={{ color: NEUTRAL.textSecondary }}>
+        Cost estimate unavailable right now.
+      </Typography>,
+    );
+  }
+
+  const { estimate, check } = state;
+  const tone = COST_LEVEL_TONE[check.level];
+  const breakdownEntries = Object.entries(estimate.breakdown).filter(
+    ([, value]) => typeof value === 'number' && value > 0,
+  );
+
+  return box(
+    <>
+      <Box
+        display="flex"
+        alignItems="baseline"
+        justifyContent="space-between"
+        style={{ gap: 8 }}
+      >
+        <Typography variant="body2" style={{ fontWeight: 600 }}>
+          Estimated {opts.stage} cost
+        </Typography>
+        <Typography variant="h6" style={{ fontWeight: 700 }}>
+          {formatCostUsd(estimate.estimatedCost, estimate.currency)}
+        </Typography>
+      </Box>
+      {check.budget !== null && (
+        <Box
+          display="flex"
+          alignItems="center"
+          style={{ gap: 8, marginTop: 4 }}
+        >
+          <Chip
+            label={tone.label}
+            size="small"
+            style={{ backgroundColor: tone.color, color: '#FFF' }}
+          />
+          <Typography variant="body2" style={{ color: NEUTRAL.textSecondary }}>
+            Budget {formatCostUsd(check.budget, estimate.currency)}
+          </Typography>
+        </Box>
+      )}
+      {check.reasons.length > 0 && (
+        <Box marginTop={1}>
+          {check.reasons.map((reason, index) => (
+            <Typography
+              key={index}
+              variant="body2"
+              style={{ color: NEUTRAL.textSecondary }}
+            >
+              • {reason}
+            </Typography>
+          ))}
+        </Box>
+      )}
+      {check.alternatives.length > 0 && (
+        <Typography
+          variant="body2"
+          style={{ color: NEUTRAL.textSecondary, marginTop: 4 }}
+        >
+          Alternatives: {check.alternatives.join('; ')}
+        </Typography>
+      )}
+      {breakdownEntries.length > 0 && (
+        <Box marginTop={1}>
+          {breakdownEntries.map(([key, value]) => (
+            <Typography
+              key={key}
+              variant="body2"
+              style={{ color: NEUTRAL.textSecondary }}
+            >
+              {key}: {formatCostUsd(value, estimate.currency)}
+            </Typography>
+          ))}
+        </Box>
+      )}
+      <Typography
+        variant="caption"
+        style={{
+          color: NEUTRAL.textSecondary,
+          display: 'block',
+          marginTop: 8,
+        }}
+      >
+        Pre-flight estimate — the actual cost may differ.
+      </Typography>
+    </>,
+  );
+}
+
+interface SecurityFinding {
+  control: string;
+  pillar: string;
+  severity: 'blocking' | 'warning';
+  message: string;
+}
+
+interface SecurityControlStatus {
+  id: string;
+  pillar: string;
+  label: string;
+  status: 'enforced' | 'missing' | 'not-applicable';
+}
+
+interface SecurityScan {
+  passed: boolean;
+  score: number;
+  findings: SecurityFinding[];
+  controls: SecurityControlStatus[];
+}
+
+type SecurityScanState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'ready'; scan: SecurityScan }
+  | { status: 'error' };
+
+const PILLAR_LABELS: Record<string, string> = {
+  'model-governance': 'Model Registry Governance',
+  'data-isolation': 'Data Isolation',
+  'prompt-security': 'Prompt Security',
+  'inference-audit': 'Inference Audit',
+};
+
+/**
+ * Live POST /security/scan lookup — the pre-flight half of the
+ * `orchestration:security-scan` step, so a Dev sees the security posture and
+ * any blocking finding before running the golden path. Same debounced,
+ * fail-quiet contract as useCostEstimate above.
+ */
+function useSecurityScan(
+  opts: SecurityScanOptions,
+  data: Record<string, unknown>,
+): SecurityScanState {
+  const discoveryApi = useApi(discoveryApiRef);
+  const { fetch } = useApi(fetchApiRef);
+  const getAuthHeaders = useOpenChoreoAuthHeaders();
+  const [state, setState] = useState<SecurityScanState>({ status: 'idle' });
+
+  const active = matchesWhen(opts.when, data);
+  const artifact = firstNonEmptyString(opts.artifactFields, data);
+  const params = buildCostParams(opts.paramFields, data);
+  const paramsKey = JSON.stringify(params);
+
+  useEffect(() => {
+    if (!active || !artifact) {
+      setState(prev => (prev.status === 'idle' ? prev : { status: 'idle' }));
+      return undefined;
+    }
+    setState(prev =>
+      prev.status === 'loading' ? prev : { status: 'loading' },
+    );
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      const payload = {
+        golden_path: opts.goldenPath,
+        stage: opts.stage,
+        artifact,
+        params,
+      };
+      Promise.all([discoveryApi.getBaseUrl('proxy'), getAuthHeaders()])
+        .then(([proxyUrl, headers]) =>
+          fetch(`${proxyUrl}/orchestration-api/security/scan`, {
+            method: 'POST',
+            headers: {
+              ...(headers as Record<string, string>),
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+          }),
+        )
+        .then(async response => {
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const body = (await response.json()) as Record<string, unknown>;
+          if (cancelled) return;
+          setState({
+            status: 'ready',
+            scan: {
+              passed: body.passed === true,
+              score: toNullableNumber(body.score) ?? 0,
+              findings: Array.isArray(body.findings)
+                ? (body.findings as SecurityFinding[])
+                : [],
+              controls: Array.isArray(body.controls)
+                ? (body.controls as SecurityControlStatus[])
+                : [],
+            },
+          });
+        })
+        .catch(() => {
+          if (!cancelled) setState({ status: 'error' });
+        });
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    discoveryApi,
+    fetch,
+    getAuthHeaders,
+    active,
+    artifact,
+    paramsKey,
+    opts.goldenPath,
+    opts.stage,
+  ]);
+
+  return state;
+}
+
+/**
+ * Pre-flight security panel — posture score, blocking/warning findings and
+ * the per-surface control status, all from the same API the golden path's
+ * own security-scan step calls at submit time. Renders nothing until the
+ * artifact is set (or when `when` doesn't match).
+ */
+function SecurityScanPanel({
+  opts,
+  data,
+}: {
+  opts: SecurityScanOptions;
+  data: Record<string, unknown>;
+}): JSX.Element | null {
+  const state = useSecurityScan(opts, data);
+
+  if (state.status === 'idle') return null;
+
+  const box = (children: ReactNode) => (
+    <Box
+      style={{
+        border: `1px solid ${NEUTRAL.border}`,
+        borderRadius: 4,
+        padding: 12,
+      }}
+    >
+      {children}
+    </Box>
+  );
+
+  if (state.status === 'loading') {
+    return box(
+      <Typography variant="body2" style={{ color: NEUTRAL.textSecondary }}>
+        Scanning security posture…
+      </Typography>,
+    );
+  }
+  if (state.status === 'error') {
+    return box(
+      <Typography variant="body2" style={{ color: NEUTRAL.textSecondary }}>
+        Security scan unavailable right now.
+      </Typography>,
+    );
+  }
+
+  const { scan } = state;
+  const tone = scan.passed ? STATUS.success : STATUS.error;
+  const missing = scan.controls.filter(c => c.status === 'missing');
+
+  return box(
+    <>
+      <Box
+        display="flex"
+        alignItems="baseline"
+        justifyContent="space-between"
+        style={{ gap: 8 }}
+      >
+        <Typography variant="body2" style={{ fontWeight: 600 }}>
+          Security posture
+        </Typography>
+        <Chip
+          label={`${scan.score}/100`}
+          size="small"
+          style={{ backgroundColor: tone, color: '#FFF' }}
+        />
+      </Box>
+      {scan.findings.length === 0 ? (
+        <Typography
+          variant="body2"
+          style={{ color: NEUTRAL.textSecondary, marginTop: 4 }}
+        >
+          All required controls are in place.
+        </Typography>
+      ) : (
+        <Box marginTop={1}>
+          {scan.findings.map((finding, index) => (
+            <Typography
+              key={index}
+              variant="body2"
+              style={{
+                color:
+                  finding.severity === 'blocking'
+                    ? STATUS.error
+                    : NEUTRAL.textSecondary,
+              }}
+            >
+              • [{PILLAR_LABELS[finding.pillar] ?? finding.pillar}]{' '}
+              {finding.message}
+            </Typography>
+          ))}
+        </Box>
+      )}
+      {missing.length > 0 && (
+        <Typography
+          variant="caption"
+          style={{
+            color: NEUTRAL.textSecondary,
+            display: 'block',
+            marginTop: 8,
+          }}
+        >
+          Missing controls: {missing.map(c => c.label).join(', ')}
+        </Typography>
+      )}
+      <Typography
+        variant="caption"
+        style={{
+          color: NEUTRAL.textSecondary,
+          display: 'block',
+          marginTop: 8,
+        }}
+      >
+        Pre-flight scan — a blocking finding stops the run at submit time.
+      </Typography>
+    </>,
+  );
+}
+
 interface PromotionStatus {
   project: string;
   component: string;
@@ -3025,6 +4443,7 @@ interface PromotionStatus {
 type PromotionStatusState =
   | { status: 'loading' }
   | { status: 'none' }
+  | { status: 'no_pipeline'; message: string }
   | { status: 'found'; data: PromotionStatus };
 
 const PROMOTION_SOURCE_ENVIRONMENT: Record<string, string> = {
@@ -3064,12 +4483,30 @@ function usePromotionStatus(modelName: unknown): PromotionStatusState {
           { headers },
         ),
       )
-      .then(res => {
+      .then(async res => {
+        // A 404 is the meaningful "this model has no promotion pipeline"
+        // case (only the one scoped project does) — surface its detail
+        // instead of folding it into the same silent 'none' as a network
+        // blip, so the Dev sees why promote will fail before submitting.
+        if (res.status === 404) {
+          const body = await res.json().catch(() => ({ detail: undefined }));
+          if (!cancelled) {
+            setState({
+              status: 'no_pipeline',
+              message:
+                typeof body.detail === 'string'
+                  ? body.detail
+                  : `'${modelName}' has no promotion pipeline`,
+            });
+          }
+          return null;
+        }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json() as Promise<Partial<PromotionStatus>>;
       })
       .then(data => {
-        if (cancelled) return;
+        // null sentinel from the 404 branch above — state already set.
+        if (cancelled || data === null) return;
         // A 200 without an environments map would crash the panel's
         // per-environment reads — coerce instead of trusting the shape.
         setState({
@@ -3117,6 +4554,22 @@ function PromotionPreviewPanel({
   targetEnvironment: unknown;
 }): JSX.Element | null {
   const state = usePromotionStatus(modelName);
+  if (state.status === 'no_pipeline') {
+    return (
+      <Box display="flex" alignItems="flex-start" style={{ gap: 8 }}>
+        <Chip
+          label="No pipeline"
+          size="small"
+          style={{
+            backgroundColor: STATUS.warning,
+            color: '#FFF',
+            flexShrink: 0,
+          }}
+        />
+        <Typography variant="body2">{state.message}</Typography>
+      </Box>
+    );
+  }
   if (state.status !== 'found') return null;
   if (typeof targetEnvironment !== 'string' || !targetEnvironment) return null;
 
@@ -3752,12 +5205,16 @@ function StepLayout(
   const { versions: modelVersions, loading: modelVersionsLoading } =
     useModelVersions(data.modelName);
   const modelSummary = useModelVersionCheck(data.modelName, data.modelVersion);
+  // release_strategy='instant' needs the llm-ops-admin role server-side — see
+  // the releaseEligibilityPanel flag / the fallback effect below.
+  const llmOpsAdminRole = useHasRole('llm-ops-admin');
   const promptNames = usePrompts();
   const promptVersions = usePromptVersions(data.promptName);
   const ragCollections = useRagCollections();
   const ragIndexVersions = useRagIndexVersions(data.collectionName);
   const llmModels = useLlmModels();
   const evalSets = useEvalSets();
+  const ragSources = useRagSources();
   const secretNames = useSecretNames();
 
   // Three kinds of stale formData this step's own branching
@@ -3789,6 +5246,7 @@ function StepLayout(
   // a dependency array — case 1 needs the previous render's property
   // names to diff against.
   const previousPropertyNames = useRef<Set<string>>(new Set());
+  const appliedTrainingPresets = useRef<Record<string, unknown>>({});
   useEffect(() => {
     const currentNames = new Set(Object.keys(properties));
     const updates: Record<string, unknown> = {};
@@ -3813,7 +5271,34 @@ function StepLayout(
     });
 
     previousPropertyNames.current = currentNames;
+    if (data.trainingMode === 'platform') {
+      const presetUpdates = trainingPresetUpdates(data);
+      Object.entries(presetUpdates).forEach(([name, value]) => {
+        if (appliedTrainingPresets.current[name] === data.useCase) return;
+        const fieldSchema = properties[name];
+        if (!fieldSchema) return;
+        const allowed = resolvedEnumValues(fieldSchema);
+        if (allowed && value !== undefined && !allowed.includes(value)) return;
+        if (name === 'algorithm' && data.algorithmFamily !== 'scikit-learn')
+          return;
+        updates[name] = value;
+        appliedTrainingPresets.current[name] = data.useCase;
+      });
+    }
     if (Object.keys(updates).length > 0) onChange({ ...data, ...updates });
+  });
+
+  // release_strategy='instant' needs the llm-ops-admin role server-side; when
+  // the signed-in user lacks it, fall back to pr-gated so the run can't 403
+  // at prepare time. Only fires once the role check has resolved, and only
+  // for a schema that actually declares releaseStrategy (a no-op elsewhere).
+  useEffect(() => {
+    if (!properties.releaseStrategy) return;
+    if (llmOpsAdminRole.status !== 'resolved' || llmOpsAdminRole.hasRole)
+      return;
+    if (data.releaseStrategy === 'instant') {
+      onChange({ ...data, releaseStrategy: 'pr-gated' });
+    }
   });
 
   // Keeps `dataSource` pointed at a source GET /datasets actually returned
@@ -3899,7 +5384,27 @@ function StepLayout(
   // Bind monitoring.referenceDataUri to the selected model version's
   // registered training dataset when model metadata exposes it. Older model
   // versions may not have that metadata, so the existing dataset picker stays
-  // available as a backward-compatible fallback.
+  // available as a backward-compatible fallback. The binding is enforced,
+  // not suggested: once attached, the field renders locked (see
+  // ReferenceDataLockedField) so reference data can't drift away from the
+  // model it baselines.
+  const referenceModelName =
+    typeof data.modelName === 'string' && data.modelName.length > 0
+      ? data.modelName
+      : undefined;
+  const referenceModelVersion =
+    typeof data.modelVersion === 'string' && data.modelVersion.length > 0
+      ? data.modelVersion
+      : undefined;
+  const attachedReferenceUri =
+    properties.referenceDataUri !== undefined &&
+    referenceModelName !== undefined &&
+    referenceModelVersion !== undefined &&
+    modelSummary.status === 'found'
+      ? modelSummary.summary.dataset_uri ??
+        modelSummary.summary.tags.dataset_uri ??
+        modelSummary.summary.tags.training_dataset_uri
+      : undefined;
   const previousReferenceModel = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (!properties.referenceDataUri) return;
@@ -3916,12 +5421,40 @@ function StepLayout(
       return;
     }
     if (modelSummary.status !== 'found') return;
-    const summaryDatasetUri =
-      modelSummary.summary.dataset_uri ??
-      modelSummary.summary.tags.dataset_uri ??
-      modelSummary.summary.tags.training_dataset_uri;
-    if (summaryDatasetUri && data.referenceDataUri !== summaryDatasetUri) {
+    const summaryDatasetUri = attachedReferenceUri;
+    if (
+      typeof summaryDatasetUri === 'string' &&
+      data.referenceDataUri !== summaryDatasetUri
+    ) {
       onChange({ ...data, referenceDataUri: summaryDatasetUri });
+    }
+  });
+
+  // Bind `taskType` to the selected model version's registry metadata — the
+  // same "the model already declares this, don't make the Dev retype it"
+  // reasoning as the reference-data binding above. Drives the metrics table
+  // (taskTypeMetrics) and the retrain request's task_type, so neither can
+  // disagree with the model. Clears on a model switch so a stale task type
+  // never lingers while the new model's summary is still in flight.
+  const previousTaskTypeModel = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!properties.taskType) return;
+    const modelName = typeof data.modelName === 'string' ? data.modelName : '';
+    const modelVersion =
+      typeof data.modelVersion === 'string' ? data.modelVersion : '';
+    const modelKey =
+      modelName && modelVersion ? `${modelName}:${modelVersion}` : undefined;
+    if (modelKey !== previousTaskTypeModel.current) {
+      previousTaskTypeModel.current = modelKey;
+      if (data.taskType !== undefined) {
+        onChange({ ...data, taskType: undefined });
+      }
+      return;
+    }
+    if (modelSummary.status !== 'found') return;
+    const taskType = modelSummary.summary.task_type;
+    if (taskType && data.taskType !== taskType) {
+      onChange({ ...data, taskType });
     }
   });
 
@@ -3953,16 +5486,127 @@ function StepLayout(
     llmModelPicker?: boolean,
     evalSetNamePicker?: boolean,
     evalSetNameCombo?: boolean,
+    sourcePathsPicker?: boolean,
+    choiceCards?: boolean,
+    multiSelect?: boolean,
     secretPicker?: boolean,
     huggingFaceModelValidator?: boolean,
     huggingFaceModelPicker?: boolean,
+    modelPresetPicker?: boolean,
     gpuRecommendationPanel?: boolean,
     rolloutEligibilityGate?: boolean,
+    releaseEligibilityPanel?: boolean,
+    costEstimate?: CostEstimateOptions,
+    securityScan?: SecurityScanOptions,
     disabled?: boolean,
     autoFillModelName?: boolean,
+    taskTypeMetrics?: boolean,
+    taskTypeOptions?: boolean,
+    hidden?: boolean,
+    readOnlyDisplay?: boolean,
   ) => {
     const fieldSchema = properties[name];
     if (!fieldSchema) return null;
+    if (hidden) return null;
+    if (readOnlyDisplay) {
+      return (
+        <Grid item xs={12} md={width} key={name}>
+          <TextField
+            variant="outlined"
+            fullWidth
+            InputProps={{ readOnly: true }}
+            label={
+              typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+            }
+            value={typeof data[name] === 'string' ? (data[name] as string) : ''}
+            helperText={
+              typeof fieldSchema.description === 'string'
+                ? fieldSchema.description
+                : 'Detected from the model — not editable here.'
+            }
+          />
+        </Grid>
+      );
+    }
+    if (taskTypeMetrics) {
+      const options = multiSelectOptionsFromSchema(fieldSchema);
+      if (options.length > 0) {
+        const taskType =
+          modelSummary.status === 'found'
+            ? modelSummary.summary.task_type
+            : null;
+        return (
+          <Grid item xs={12} key={name}>
+            <TaskTypeMetricsField
+              name={name}
+              title={
+                typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+              }
+              description={
+                typeof fieldSchema.description === 'string'
+                  ? fieldSchema.description
+                  : undefined
+              }
+              required={requiredFields.has(name)}
+              options={options}
+              taskType={taskType}
+              value={data[name]}
+              thresholds={data.metricThresholds}
+              onChange={(names, thresholds) =>
+                onChange({
+                  ...data,
+                  [name]: names,
+                  metricThresholds: thresholds,
+                })
+              }
+            />
+          </Grid>
+        );
+      }
+    }
+    if (taskTypeOptions) {
+      const options = multiSelectOptionsFromSchema(fieldSchema);
+      if (options.length > 0) {
+        const taskType =
+          modelSummary.status === 'found'
+            ? modelSummary.summary.task_type
+            : null;
+        return (
+          <Grid item xs={12} md={width} key={name}>
+            <TaskTypeOptionsField
+              name={name}
+              title={
+                typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+              }
+              description={
+                typeof fieldSchema.description === 'string'
+                  ? fieldSchema.description
+                  : undefined
+              }
+              required={requiredFields.has(name)}
+              options={options}
+              taskType={taskType}
+              value={data[name]}
+              onChange={value => onChange({ ...data, [name]: value })}
+            />
+          </Grid>
+        );
+      }
+    }
+    if (costEstimate) {
+      return (
+        <Grid item xs={12} key={name}>
+          <CostEstimatePanel opts={costEstimate} data={data} />
+        </Grid>
+      );
+    }
+    if (securityScan) {
+      return (
+        <Grid item xs={12} key={name}>
+          <SecurityScanPanel opts={securityScan} data={data} />
+        </Grid>
+      );
+    }
     if (actionPicker) {
       return (
         <Grid item xs={12} key={name}>
@@ -3972,6 +5616,50 @@ function StepLayout(
           />
         </Grid>
       );
+    }
+    if (choiceCards) {
+      const cards = (
+        <ChoiceCardsField
+          schema={fieldSchema}
+          value={data[name]}
+          onChange={value => onChange({ ...data, [name]: value })}
+        />
+      );
+      // No options in the schema (e.g. a free-text field mistakenly flagged)
+      // — fall through to the plain field rather than render an empty row.
+      if (choiceCardsFromSchema(fieldSchema).length > 0) {
+        return (
+          <Grid item xs={12} key={name}>
+            {cards}
+          </Grid>
+        );
+      }
+    }
+    if (multiSelect) {
+      const options = multiSelectOptionsFromSchema(fieldSchema);
+      // Same fall-through as choiceCards: no options in the schema means
+      // this isn't the field the flag was meant for.
+      if (options.length > 0) {
+        return (
+          <Grid item xs={12} md={width} key={name}>
+            <MultiSelectField
+              name={name}
+              title={
+                typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+              }
+              description={
+                typeof fieldSchema.description === 'string'
+                  ? fieldSchema.description
+                  : undefined
+              }
+              required={requiredFields.has(name)}
+              options={options}
+              value={data[name]}
+              onChange={value => onChange({ ...data, [name]: value })}
+            />
+          </Grid>
+        );
+      }
     }
     if (summaryField) {
       return (
@@ -4353,6 +6041,28 @@ function StepLayout(
         </Grid>
       );
     }
+    if (sourcePathsPicker && ragSources.length > 0) {
+      return (
+        <Grid item xs={12} md={width} key={name}>
+          <ColumnPickerField
+            name={name}
+            title={
+              typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+            }
+            description={
+              typeof fieldSchema.description === 'string'
+                ? fieldSchema.description
+                : undefined
+            }
+            required={requiredFields.has(name)}
+            mode="multi"
+            columns={ragSources}
+            value={data[name]}
+            onChange={value => onChange({ ...data, [name]: value })}
+          />
+        </Grid>
+      );
+    }
     if (secretPicker && secretNames.length > 0) {
       return (
         <Grid item xs={12} md={width} key={name}>
@@ -4374,6 +6084,61 @@ function StepLayout(
         </Grid>
       );
     }
+    if (modelPresetPicker) {
+      return (
+        <Grid item xs={12} md={width} key={name}>
+          <ModelPresetPickerField
+            name={name}
+            title={
+              typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+            }
+            description={
+              typeof fieldSchema.description === 'string'
+                ? fieldSchema.description
+                : undefined
+            }
+            required={requiredFields.has(name)}
+            value={data[name]}
+            onChange={value => {
+              // One-shot patch of the model + compute fields; `custom` is a
+              // no-op so a hand-typed model is never clobbered.
+              onChange({
+                ...data,
+                [name]: value,
+                ...llmServingPresetUpdates(value),
+              });
+            }}
+          />
+        </Grid>
+      );
+    }
+    if (releaseEligibilityPanel) {
+      return (
+        <Fragment key={name}>
+          <Grid item xs={12} md={width} key={`${name}-input`}>
+            <SchemaField
+              schema={fieldSchema}
+              uiSchema={(uiSchema as Record<string, unknown>)[name] ?? {}}
+              formData={data[name] as any}
+              onChange={value => onChange({ ...data, [name]: value })}
+              idSchema={(idSchema as Record<string, unknown>)[name] as any}
+              name={name}
+              required={requiredFields.has(name)}
+              registry={registry}
+              errorSchema={errorSchema?.[name]}
+              onBlur={() => {}}
+              onFocus={() => {}}
+            />
+          </Grid>
+          <Grid item xs={12}>
+            <ReleaseEligibilityPanel
+              environment={data.environment}
+              roleState={llmOpsAdminRole}
+            />
+          </Grid>
+        </Fragment>
+      );
+    }
     if (
       huggingFaceModelValidator ||
       huggingFaceModelPicker ||
@@ -4386,6 +6151,15 @@ function StepLayout(
         // Derive modelName from the HF id so the Dev doesn't retype it.
         if (autoFillModelName && typeof value === 'string') {
           next.modelName = deriveModelName(value);
+        }
+        // A hand-edited HF id no longer matches the picked preset — flip the
+        // dropdown back to custom so it never claims a preset the form no
+        // longer holds.
+        if (
+          properties.modelPreset &&
+          !matchesLlmServingPreset(data.modelPreset, value)
+        ) {
+          next.modelPreset = CUSTOM_MODEL_PRESET;
         }
         onChange(next);
       };
@@ -4470,6 +6244,29 @@ function StepLayout(
       );
     }
     if (datasetPicker && (datasetsLoading || datasets.length > 0)) {
+      // A lineage-attached reference dataset is not a choice — render it
+      // locked instead of the picker (which would also out-of-range error
+      // when the URI isn't in its own listing, e.g. enriched files).
+      if (
+        name === 'referenceDataUri' &&
+        typeof attachedReferenceUri === 'string' &&
+        referenceModelName !== undefined &&
+        referenceModelVersion !== undefined &&
+        data[name] === attachedReferenceUri
+      ) {
+        return (
+          <Grid item xs={12} md={width} key={`${name}-locked`}>
+            <ReferenceDataLockedField
+              title={
+                typeof fieldSchema.title === 'string' ? fieldSchema.title : name
+              }
+              uri={attachedReferenceUri}
+              modelName={referenceModelName}
+              modelVersion={referenceModelVersion}
+            />
+          </Grid>
+        );
+      }
       // Scoped to whichever source the sibling dataSourcePicker field
       // currently holds — falls back to showing everything if this step
       // never declared a dataSource field (dataSourcePicker is opt-in per
@@ -4725,11 +6522,22 @@ function StepLayout(
           llmModelPicker,
           evalSetNamePicker,
           evalSetNameCombo,
+          sourcePathsPicker,
+          choiceCards,
+          multiSelect,
           secretPicker,
           huggingFaceModelValidator,
           huggingFaceModelPicker,
+          modelPresetPicker,
           gpuRecommendationPanel,
           rolloutEligibilityGate,
+          releaseEligibilityPanel,
+          costEstimate,
+          securityScan,
+          taskTypeMetrics,
+          taskTypeOptions,
+          hidden,
+          readOnlyDisplay,
         } = normalizeField(entry);
         return renderField(
           name,
@@ -4759,13 +6567,24 @@ function StepLayout(
           llmModelPicker,
           evalSetNamePicker,
           evalSetNameCombo,
+          sourcePathsPicker,
+          choiceCards,
+          multiSelect,
           secretPicker,
           huggingFaceModelValidator,
           huggingFaceModelPicker,
+          modelPresetPicker,
           gpuRecommendationPanel,
           rolloutEligibilityGate,
+          releaseEligibilityPanel,
+          costEstimate,
+          securityScan,
           disabled,
           autoFillModelName,
+          taskTypeMetrics,
+          taskTypeOptions,
+          hidden,
+          readOnlyDisplay,
         );
       })}
     </Grid>
@@ -4812,6 +6631,18 @@ function StepLayout(
 
   return (
     <>
+      {/* Step-level intro/guidance — the Stepper only renders a step's
+          title, so a `description:` on the parameter step would otherwise
+          never show. Rendered once above the groups as a short "what this
+          step is for" line. */}
+      {typeof schema.description === 'string' && schema.description && (
+        <Typography
+          variant="body2"
+          style={{ color: NEUTRAL.textSecondary, marginBottom: 16 }}
+        >
+          {schema.description}
+        </Typography>
+      )}
       {groups.map(group => {
         // Progressive disclosure at the panel level, not just per-field: a
         // group whose every field belongs to a branch that isn't active

@@ -15,6 +15,8 @@ import { createTemplateAction } from '@backstage/plugin-scaffolder-node';
 import {
   ActionDeps,
   authHeaders,
+  describeError,
+  fetchWithRetry,
   getBaseUrl,
   postJson,
 } from './actionsHttpClient';
@@ -104,6 +106,12 @@ interface CostCheckResponse {
   readonly estimated_cost: number;
   readonly budget: number | null;
   readonly reasons: string[];
+  /**
+   * Cheaper alternatives the backend suggests when the estimate is over
+   * budget (e.g. spot pricing, a smaller GPU). Optional — absent until
+   * orchestration-api returns them.
+   */
+  readonly alternatives?: string[];
 }
 
 /** Response body of `POST {baseUrl}/deploy-model/prepare`. */
@@ -398,10 +406,33 @@ export function createTriggerTrainingAction({
       let status: WorkflowStatusResponse;
       let lastLoggedPhase: string | null | undefined;
       for (;;) {
-        const response = await fetch(
-          `${baseUrl}/trigger-training/${workflowName}/status`,
-          { headers: await authHeaders(tokenService) },
-        );
+        let response: Response;
+        try {
+          response = await fetch(
+            `${baseUrl}/trigger-training/${workflowName}/status`,
+            { headers: await authHeaders(tokenService) },
+          );
+        } catch (error) {
+          // A transient network blip (orchestration-api restart, dropped
+          // keep-alive socket) must not fail a run that's still progressing
+          // — log and retry until the deadline instead of throwing.
+          if (Date.now() >= deadline) {
+            throw new Error(
+              `Timed out after ${
+                pollTimeoutMs / 1000
+              }s waiting for workflow "${workflowName}" to finish (last poll error: ${describeError(
+                error,
+              )})`,
+            );
+          }
+          ctx.logger.warn(
+            `Status poll for "${workflowName}" failed (${describeError(
+              error,
+            )}); retrying`,
+          );
+          await sleep(pollIntervalMs);
+          continue;
+        }
         if (!response.ok) {
           throw new Error(
             `GET workflow status failed with ${
@@ -443,7 +474,7 @@ export function createTriggerTrainingAction({
       }
 
       // register-step registers async — fetch the resulting version now.
-      const latestVersionResponse = await fetch(
+      const latestVersionResponse = await fetchWithRetry(
         `${baseUrl}/models/${encodeURIComponent(
           ctx.input.modelName,
         )}/latest-version`,
@@ -494,6 +525,12 @@ export function createValidateDatasetAction({
                 'Label column — required unless taskType is clustering',
             })
             .optional(),
+        idColumns: z =>
+          z
+            .array(z.string(), {
+              description: 'Identifier columns excluded from training features',
+            })
+            .optional(),
         timeColumn: z =>
           z
             .string({ description: 'Date/time column, if the data is ordered' })
@@ -522,6 +559,7 @@ export function createValidateDatasetAction({
           dataset_uri: ctx.input.datasetUri,
           task_type: ctx.input.taskType,
           target_column: ctx.input.targetColumn,
+          id_columns: ctx.input.idColumns,
           time_column: ctx.input.timeColumn,
         },
         tokenService,
@@ -783,7 +821,9 @@ export function createEstimateCostAction({ config, tokenService }: ActionDeps) {
     schema: {
       input: {
         goldenPath: z =>
-          z.string({ description: 'Golden path name, e.g. train-track-register' }),
+          z.string({
+            description: 'Golden path name, e.g. train-track-register',
+          }),
         stage: z =>
           z.enum(['build', 'gate', 'run'], {
             description: 'Lifecycle stage the cost belongs to',
@@ -799,8 +839,7 @@ export function createEstimateCostAction({ config, tokenService }: ActionDeps) {
             .optional(),
       },
       output: {
-        estimatedCost: z =>
-          z.number({ description: 'Estimated cost in USD' }),
+        estimatedCost: z => z.number({ description: 'Estimated cost in USD' }),
         breakdown: z =>
           z.record(z.number(), {
             description: 'Per-component estimate (cpu/gpu/token/...)',
@@ -838,7 +877,9 @@ export function createCostGateAction({ config, tokenService }: ActionDeps) {
     schema: {
       input: {
         goldenPath: z =>
-          z.string({ description: 'Golden path name, e.g. train-track-register' }),
+          z.string({
+            description: 'Golden path name, e.g. train-track-register',
+          }),
         stage: z =>
           z.enum(['build', 'gate', 'run'], {
             description: 'Lifecycle stage the cost belongs to',
@@ -865,6 +906,10 @@ export function createCostGateAction({ config, tokenService }: ActionDeps) {
           z.number({ description: 'Budget the estimate was checked against' }),
         reasons: z =>
           z.array(z.string(), { description: 'Why the level was chosen' }),
+        alternatives: z =>
+          z.array(z.string(), {
+            description: 'Cheaper alternatives when over budget',
+          }),
       },
     },
     async handler(ctx) {
@@ -885,9 +930,15 @@ export function createCostGateAction({ config, tokenService }: ActionDeps) {
       ctx.output('estimatedCost', result.estimated_cost);
       if (result.budget !== null) ctx.output('budget', result.budget);
       ctx.output('reasons', result.reasons);
+      ctx.output('alternatives', result.alternatives ?? []);
       if (!result.allow) {
+        const alternatives = result.alternatives?.length
+          ? ` — alternatives: ${result.alternatives.join('; ')}`
+          : '';
         throw new Error(
-          `Cost gate blocked ${ctx.input.goldenPath}: ${result.reasons.join('; ')}`,
+          `Cost gate blocked ${ctx.input.goldenPath}: ${result.reasons.join(
+            '; ',
+          )}${alternatives}`,
         );
       }
     },
@@ -1195,6 +1246,11 @@ export function createConfirmPromotionAction({
           z.record(z.string(), z.string().nullable(), {
             description: 'Release bound in each environment after applying it',
           }),
+        environmentsSummary: z =>
+          z.string({
+            description:
+              'Readable "env=release" list — the object above renders as [object Object] in a template string',
+          }),
         prodPendingApproval: z =>
           z.boolean({
             description: 'True when staging is ahead of production',
@@ -1220,6 +1276,12 @@ export function createConfirmPromotionAction({
         `Confirmed "${ctx.input.modelName}"'s promotion in ${ctx.input.environment}`,
       );
       ctx.output('environments', environments);
+      ctx.output(
+        'environmentsSummary',
+        Object.entries(environments)
+          .map(([env, release]) => `${env}=${release ?? '(none)'}`)
+          .join(', '),
+      );
       ctx.output('prodPendingApproval', prodPendingApproval);
     },
   });
@@ -1290,18 +1352,25 @@ export function createSetupMonitoringAction({
                 'Use the managed delayed-label stream or provide a custom URI',
             })
             .optional(),
-        metricName: z =>
+        metricNames: z =>
           z
-            .string({
+            .array(z.string(), {
               description:
-                'Metric to monitor when monitoringType=performance-degradation, e.g. f1_score or accuracy',
+                'Metrics to monitor when monitoringType=performance-degradation, e.g. ["f1_score", "recall"]',
+            })
+            .optional(),
+        metricThresholds: z =>
+          z
+            .record(z.number(), {
+              description:
+                'Per-metric minimum acceptable value, keyed by metric name, e.g. {"f1_score": 0.85}',
             })
             .optional(),
         minMetricThreshold: z =>
           z
             .number({
               description:
-                'Minimum acceptable performance metric when monitoringType=performance-degradation',
+                'Single fallback threshold when metricThresholds is not given',
             })
             .optional(),
         onDriftDetected: z =>
@@ -1319,6 +1388,11 @@ export function createSetupMonitoringAction({
       output: {
         cronWorkflowName: z =>
           z.string({ description: 'Name of the registered CronWorkflow' }),
+        metricNamesSummary: z =>
+          z.string({
+            description:
+              'Comma-joined selected metrics — an array renders poorly in a template string',
+          }),
       },
     },
     async handler(ctx) {
@@ -1330,6 +1404,16 @@ export function createSetupMonitoringAction({
               ctx.input.monitoringType,
             )
           : undefined;
+      // Per-metric thresholds are the real contract; min_metric_threshold is
+      // kept as a single fallback for an older orchestration-api that only
+      // knows the scalar — the lowest selected threshold is the safe
+      // equivalent (trips no later than any individual metric would).
+      const metricThresholds = ctx.input.metricThresholds;
+      const thresholdValues = Object.values(metricThresholds ?? {});
+      const minMetricThreshold =
+        thresholdValues.length > 0
+          ? Math.min(...thresholdValues)
+          : ctx.input.minMetricThreshold;
       const { cron_workflow_name: cronWorkflowName } =
         await postJson<SetupMonitoringResponse>(
           `${baseUrl}/setup-monitoring`,
@@ -1344,8 +1428,9 @@ export function createSetupMonitoringAction({
             drift_threshold: ctx.input.driftThreshold,
             ground_truth_data_uri: ctx.input.groundTruthDataUri,
             ground_truth_data_source: ctx.input.groundTruthDataSource,
-            metric_name: ctx.input.metricName,
-            min_metric_threshold: ctx.input.minMetricThreshold,
+            metric_names: ctx.input.metricNames,
+            metric_thresholds: metricThresholds,
+            min_metric_threshold: minMetricThreshold,
             on_drift_detected: ctx.input.onDriftDetected,
             retrain_request_json: retrainRequestJson,
             failure_webhook_url: config.getOptionalString(
@@ -1358,6 +1443,10 @@ export function createSetupMonitoringAction({
         `Registered monitoring CronWorkflow "${cronWorkflowName}"`,
       );
       ctx.output('cronWorkflowName', cronWorkflowName);
+      ctx.output(
+        'metricNamesSummary',
+        (ctx.input.metricNames ?? []).join(', '),
+      );
     },
   });
 }

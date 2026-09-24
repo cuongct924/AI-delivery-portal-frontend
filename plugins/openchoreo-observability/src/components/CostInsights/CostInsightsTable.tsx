@@ -15,6 +15,7 @@ import {
 } from '@material-ui/core';
 import type { IconComponent } from '@backstage/core-plugin-api';
 import type {
+  CostDimension,
   CostRow,
   CostRowRecommendation,
   CostScope,
@@ -124,7 +125,16 @@ const useStyles = makeStyles(theme => ({
   actionCell: { textAlign: 'right', whiteSpace: 'nowrap' },
 }));
 
-const dimensionHeader = (level: CostScopeLevel): string => {
+const dimensionHeader = (
+  level: CostScopeLevel,
+  dimension?: CostDimension,
+): string => {
+  // The AI dimensions re-key rows away from the infra level, so the header
+  // follows the active dimension instead of the scope level.
+  if (dimension === 'artifact') return 'Artifact';
+  if (dimension === 'goldenPath') return 'Golden path';
+  if (dimension === 'team') return 'Team';
+  if (dimension === 'domain') return 'Domain';
   switch (level) {
     case 'namespace':
       return 'Project';
@@ -191,6 +201,8 @@ export interface CostInsightsTableProps {
    * forces `recommendation` so it never shows an allocation table.
    */
   mode?: 'auto' | 'allocation' | 'recommendation';
+  /** Active row dimension, so the name column header follows it. */
+  dimension?: CostDimension;
 }
 
 const EmptyState: FC = () => {
@@ -252,7 +264,11 @@ function recommendedChanges(
     });
   }
   // GPU is the biggest AI cost line, so surface its right-size too.
-  if (rec.gpuRequest && current.gpuRequest && rec.gpuRequest !== current.gpuRequest) {
+  if (
+    rec.gpuRequest &&
+    current.gpuRequest &&
+    rec.gpuRequest !== current.gpuRequest
+  ) {
     changes.push({
       label: 'gpu',
       from: current.gpuRequest,
@@ -470,6 +486,7 @@ const StandardCostTable: FC<CostInsightsTableProps> = ({
   icon: KindIcon,
   titles,
   stage = 'all',
+  dimension,
 }) => {
   const classes = useStyles();
   const [orderBy, setOrderBy] = useState<SortId>('total');
@@ -523,7 +540,7 @@ const StandardCostTable: FC<CostInsightsTableProps> = ({
         <TableHead>
           <TableRow>
             <TableCell sortDirection={orderBy === 'name' ? order : false}>
-              {sortLabel('name', dimensionHeader(level))}
+              {sortLabel('name', dimensionHeader(level, dimension))}
             </TableCell>
             {showStages ? (
               <>

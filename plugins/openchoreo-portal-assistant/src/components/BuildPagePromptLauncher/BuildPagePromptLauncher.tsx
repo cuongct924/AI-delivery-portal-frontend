@@ -1,9 +1,9 @@
 import * as React from 'react';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useEntity } from '@backstage/plugin-catalog-react';
 import { Box, Button, makeStyles } from '@material-ui/core';
-import ChatOutlinedIcon from '@material-ui/icons/ChatOutlined';
+import { AssistantBotIcon } from '../AssistantBotIcon/AssistantBotIcon';
 import { useLatestFailedRun } from '@openchoreo/backstage-plugin-openchoreo-ci';
 import {
   CHOREO_ANNOTATIONS,
@@ -70,7 +70,13 @@ export const BuildPagePromptLauncher = () => {
   const { entity } = useEntity();
   const { getEntityDetails } = useComponentEntityDetails();
   const location = useLocation();
-  const { openDrawer, hasConversation } = useAssistantDrawer();
+  const { openDrawer, hasConversation, registerContextualLauncher } =
+    useAssistantDrawer();
+
+  // This launcher owns the bottom-right slot on the build page (both the
+  // failed-mode popup and the healthy-mode pill), so the global FAB hides
+  // instead of overlapping it.
+  useEffect(() => registerContextualLauncher(), [registerContextualLauncher]);
 
   const componentName = entity.metadata.name;
   const namespaceFallback =
@@ -243,7 +249,7 @@ export const BuildPagePromptLauncher = () => {
         }}
         aria-label="Open Portal Assistant to review recent build runs"
       >
-        <ChatOutlinedIcon className={classes.icon} />
+        <AssistantBotIcon className={classes.icon} />
         Ask AI
       </Button>
     </Box>

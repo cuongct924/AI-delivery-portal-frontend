@@ -64,7 +64,7 @@
     "@backstage/plugin-catalog-react": "^3.0.0",
     "@backstage/plugin-permission-common": "^0.9.9",
     "@backstage/plugin-permission-react": "^0.5.1",
-    "@backstage/plugin-scaffolder-react": "^2.0.0",
+    "@backstage/plugin-scaffolder-react": "patch:@backstage/plugin-scaffolder-react@npm%3A2.0.0#~/.yarn/patches/@backstage-plugin-scaffolder-react-npm-2.0.0-c0ef78831e.patch",
     "@backstage/plugin-techdocs-common": "^0.1.1",
     "@backstage/theme": "^0.7.3",
     "@dagrejs/dagre": "^2.0.4",

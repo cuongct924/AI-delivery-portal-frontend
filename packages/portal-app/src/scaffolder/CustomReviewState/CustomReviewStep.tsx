@@ -8,6 +8,7 @@ import {
 import { type ReviewStepProps } from '@backstage/plugin-scaffolder-react';
 import { parseEntityRef } from '@backstage/catalog-model';
 import { sanitizeLabel } from '@openchoreo/backstage-plugin-common';
+import { ReviewCostEstimate } from './ReviewCostEstimate';
 import { useStyles } from './styles';
 
 // ---------------------------------------------------------------------------
@@ -738,6 +739,10 @@ export const CustomReviewStep = ({
   return (
     <>
       <Box className={classes.reviewContent}>
+        {/* Pre-flight FinOps recap for the MLOps/LLMOps golden paths — the
+            same estimate the form panel showed, right before Create. Renders
+            nothing for other templates. */}
+        <ReviewCostEstimate formData={formData} />
         {templateType === 'deployment-pipeline' && (
           <DeploymentPipelineReview data={formData} />
         )}

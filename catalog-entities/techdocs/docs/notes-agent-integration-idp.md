@@ -124,7 +124,7 @@ layer). Khác biệt cần phân biệt: **MCP Tool** = hành động agent *g�
 
 ### 5.3. Multi-agent readiness
 
-Repo đã có 2 persona khác domain (`mlops`, `k8s` — xem
+Repo đã có 2 persona khác domain (`llmops`, `k8s` — xem
 `.state/llmops-registry.json`), đúng hình dạng ranh giới multi-agent tự
 nhiên. Nhưng `chat.py:88-92` gọi `registry.list_tools()` **không lọc theo
 persona** — persona `k8s` tuyên bố "read-only" trong prompt text nhưng vẫn

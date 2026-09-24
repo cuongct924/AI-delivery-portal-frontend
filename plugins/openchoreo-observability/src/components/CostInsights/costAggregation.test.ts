@@ -155,6 +155,34 @@ describe('dimensionOf', () => {
     expect(dimensionOf(untagged, 'namespace', 'team')).toBe('p1');
     expect(dimensionOf(untagged, 'namespace', 'domain')).toBe('p1');
   });
+
+  it('groups by golden path, falling back to artifact then component', () => {
+    const tagged = costItem({
+      project: 'p1',
+      component: 'c1',
+      artifact: 'model-a',
+      goldenPath: 'evaluate-deploy-model',
+    });
+    expect(dimensionOf(tagged, 'namespace', 'goldenPath')).toBe(
+      'evaluate-deploy-model',
+    );
+
+    const noPath = costItem({
+      project: 'p1',
+      component: 'c1',
+      artifact: 'model-a',
+      goldenPath: '',
+    });
+    expect(dimensionOf(noPath, 'namespace', 'goldenPath')).toBe('model-a');
+
+    const bare = costItem({
+      project: 'p1',
+      component: 'c1',
+      artifact: '',
+      goldenPath: '',
+    });
+    expect(dimensionOf(bare, 'namespace', 'goldenPath')).toBe('c1');
+  });
 });
 
 describe('totalCost & percentChange', () => {

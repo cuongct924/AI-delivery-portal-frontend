@@ -8,10 +8,12 @@ import {
   Slide,
   Tooltip,
   Typography,
+  fade,
   makeStyles,
 } from '@material-ui/core';
-import ChatOutlinedIcon from '@material-ui/icons/ChatOutlined';
 import CloseIcon from '@material-ui/icons/Close';
+import { AssistantBotIcon } from '../AssistantBotIcon/AssistantBotIcon';
+import { useAssistantDrawer } from '../AssistantContext/AssistantDrawerContext';
 
 const useStyles = makeStyles(theme => ({
   root: {
@@ -72,6 +74,31 @@ const useStyles = makeStyles(theme => ({
   fab: {
     boxShadow: theme.shadows[6],
   },
+  // Soft attention ring while the prompt is collapsed — signals there's a
+  // contextual suggestion waiting without stealing focus.
+  fabPulse: {
+    animation: '$fabPulse 2.4s ease-in-out infinite',
+  },
+  '@keyframes fabPulse': {
+    '0%': {
+      boxShadow: `${theme.shadows[6]}, 0 0 0 0 ${fade(
+        theme.palette.primary.main,
+        0.45,
+      )}`,
+    },
+    '70%': {
+      boxShadow: `${theme.shadows[6]}, 0 0 0 14px ${fade(
+        theme.palette.primary.main,
+        0,
+      )}`,
+    },
+    '100%': {
+      boxShadow: `${theme.shadows[6]}, 0 0 0 0 ${fade(
+        theme.palette.primary.main,
+        0,
+      )}`,
+    },
+  },
 }));
 
 export type AssistantPromptLauncherProps = {
@@ -120,8 +147,13 @@ export const AssistantPromptLauncher = ({
   defaultOpen = true,
 }: AssistantPromptLauncherProps) => {
   const classes = useStyles();
+  const { registerContextualLauncher } = useAssistantDrawer();
   const [open, setOpen] = useState(defaultOpen);
   const panelId = `assistant-prompt-launcher-${useId()}`;
+
+  // Tell the provider a contextual launcher owns the bottom-right slot, so
+  // the global FAB hides instead of overlapping this one.
+  useEffect(() => registerContextualLauncher(), [registerContextualLauncher]);
   const fabRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   // Track whether the open state was driven by a user toggle so we
@@ -205,14 +237,14 @@ export const AssistantPromptLauncher = ({
         <Fab
           color="primary"
           size="medium"
-          className={classes.fab}
+          className={`${classes.fab}${open ? '' : ` ${classes.fabPulse}`}`}
           onClick={toggleOpen}
           aria-label={fabAriaLabel}
           aria-expanded={open}
           aria-controls={panelId}
           ref={fabRef}
         >
-          <ChatOutlinedIcon />
+          <AssistantBotIcon />
         </Fab>
       </Tooltip>
     </div>

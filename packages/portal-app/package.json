@@ -60,7 +60,7 @@
     "@backstage/plugin-permission-react": "^0.5.1",
     "@backstage/plugin-scaffolder": "^1.37.0",
     "@backstage/plugin-scaffolder-common": "^2.2.0",
-    "@backstage/plugin-scaffolder-react": "^2.0.0",
+    "@backstage/plugin-scaffolder-react": "patch:@backstage/plugin-scaffolder-react@npm%3A2.0.0#~/.yarn/patches/@backstage-plugin-scaffolder-react-npm-2.0.0-c0ef78831e.patch",
     "@backstage/plugin-search": "^1.7.4",
     "@backstage/plugin-search-react": "^1.11.4",
     "@backstage/plugin-techdocs": "^1.17.6",

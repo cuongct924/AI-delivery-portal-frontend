@@ -49,6 +49,7 @@ import {
   createRagIngestAction,
 } from './llmOpsActions';
 import { createNotebookAction } from './notebookActions';
+import { createSecurityScanAction } from './securityActions';
 
 /* eslint-disable @typescript-eslint/no-var-requires */
 const jsonschema = require('jsonschema');
@@ -101,6 +102,7 @@ const actionsById = new Map(
     createDraftEvalSetAction,
     createFetchEvalSetAction,
     createNotebookAction,
+    createSecurityScanAction,
   ].map(factory => {
     const action = factory({ config });
     return [action.id, action] as const;
@@ -237,6 +239,8 @@ function scalarFor(prop: JsonSchema): unknown {
       return 1;
     case 'boolean':
       return true;
+    case 'object':
+      return {};
     default:
       return 'placeholder';
   }

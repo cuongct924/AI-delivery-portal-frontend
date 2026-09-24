@@ -475,6 +475,12 @@ export interface CostItem {
   /** AI artifact name, for the `artifact` dimension. Falls back to the component. */
   artifact?: string;
   /**
+   * Golden path that produced the cost (e.g. `evaluate-deploy-model`), for the
+   * `goldenPath` dimension. Optional — absent means the observer doesn't tag
+   * it yet, and the dimension falls back to the artifact/component.
+   */
+  goldenPath?: string;
+  /**
    * Usage counters driving unit economics (cost per 1k inferences / tokens).
    * Optional — absent means the unit metric can't be computed for this item.
    */

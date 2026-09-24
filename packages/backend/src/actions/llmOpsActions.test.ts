@@ -468,7 +468,7 @@ describe('orchestration:evaluate-prompt', () => {
     const action = createEvaluatePromptAction({ config });
     const { ctx, outputs } = createMockContext<typeof action>(
       {
-        name: 'mlops',
+        name: 'llmops',
         version: '1',
         evalCases: ['q1', 'q2'],
         model: 'llama-3-8b-self-hosted',
@@ -483,7 +483,7 @@ describe('orchestration:evaluate-prompt', () => {
     expect(outputs.totalTokens).toBe(80);
     expect(outputs.totalCostUsd).toBeNull();
     expect(fetchMock).toHaveBeenCalledWith(
-      `${BASE_URL}/prompts/mlops/evaluate`,
+      `${BASE_URL}/prompts/llmops/evaluate`,
       expect.objectContaining({
         body: JSON.stringify({
           version: '1',
@@ -498,11 +498,11 @@ describe('orchestration:evaluate-prompt', () => {
 describe('orchestration:activate-prompt', () => {
   it('calls the per-name activate endpoint and outputs activeVersion', async () => {
     const fetchMock = mockFetchResponses([
-      { ok: true, body: { name: 'mlops', active_version: '2' } },
+      { ok: true, body: { name: 'llmops', active_version: '2' } },
     ]);
     const action = createActivatePromptAction({ config });
     const { ctx, outputs } = createMockContext<typeof action>(
-      { name: 'mlops', version: '2' },
+      { name: 'llmops', version: '2' },
       '/tmp/workspace',
     );
 
@@ -510,7 +510,7 @@ describe('orchestration:activate-prompt', () => {
 
     expect(outputs.activeVersion).toBe('2');
     expect(fetchMock).toHaveBeenCalledWith(
-      `${BASE_URL}/prompts/mlops/activate`,
+      `${BASE_URL}/prompts/llmops/activate`,
       expect.objectContaining({
         body: JSON.stringify({ version: '2' }),
       }),
@@ -519,11 +519,11 @@ describe('orchestration:activate-prompt', () => {
 
   it('forwards isRollback as is_rollback', async () => {
     const fetchMock = mockFetchResponses([
-      { ok: true, body: { name: 'mlops', active_version: '1' } },
+      { ok: true, body: { name: 'llmops', active_version: '1' } },
     ]);
     const action = createActivatePromptAction({ config });
     const { ctx, outputs } = createMockContext<typeof action>(
-      { name: 'mlops', version: '1', isRollback: true },
+      { name: 'llmops', version: '1', isRollback: true },
       '/tmp/workspace',
     );
 
@@ -531,7 +531,7 @@ describe('orchestration:activate-prompt', () => {
 
     expect(outputs.activeVersion).toBe('1');
     expect(fetchMock).toHaveBeenCalledWith(
-      `${BASE_URL}/prompts/mlops/activate`,
+      `${BASE_URL}/prompts/llmops/activate`,
       expect.objectContaining({
         body: JSON.stringify({ version: '1', is_rollback: true }),
       }),
@@ -542,12 +542,12 @@ describe('orchestration:activate-prompt', () => {
     const fetchMock = mockFetchResponses([
       {
         ok: true,
-        body: { name: 'mlops', environment: 'staging', active_version: '1' },
+        body: { name: 'llmops', environment: 'staging', active_version: '1' },
       },
     ]);
     const action = createActivatePromptAction({ config });
     const { ctx, outputs } = createMockContext<typeof action>(
-      { name: 'mlops', version: '1', environment: 'staging' },
+      { name: 'llmops', version: '1', environment: 'staging' },
       '/tmp/workspace',
     );
 
@@ -555,7 +555,7 @@ describe('orchestration:activate-prompt', () => {
 
     expect(outputs.activeVersion).toBe('1');
     expect(fetchMock).toHaveBeenCalledWith(
-      `${BASE_URL}/prompts/mlops/activate`,
+      `${BASE_URL}/prompts/llmops/activate`,
       expect.objectContaining({
         body: JSON.stringify({ version: '1', environment: 'staging' }),
       }),

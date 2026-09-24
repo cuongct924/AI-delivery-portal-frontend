@@ -87,6 +87,8 @@ export function dimensionOf(
   switch (dimension) {
     case 'artifact':
       return item.artifact || item.component;
+    case 'goldenPath':
+      return item.goldenPath || item.artifact || item.component;
     case 'team':
       return item.team || item.project;
     case 'domain':

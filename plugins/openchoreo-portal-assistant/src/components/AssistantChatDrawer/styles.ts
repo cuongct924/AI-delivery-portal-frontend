@@ -1,13 +1,61 @@
 import { makeStyles } from '@material-ui/core/styles';
 
-const DRAWER_WIDTH = 440;
-
 export const useStyles = makeStyles(theme => ({
   drawerPaper: {
-    width: DRAWER_WIDTH,
+    // Width is driven inline by the resizable-drawer state; the class
+    // only owns layout + the positioning context the drag handle needs.
+    // `position: fixed` is MUI's own value for the paper — restated here
+    // so the absolute drag handle anchors to the panel, not the viewport.
     maxWidth: '90vw',
     display: 'flex',
     flexDirection: 'column',
+    position: 'fixed',
+    // MUI's paper sets `overflow-y: auto`, which makes overflow-x compute
+    // to `auto` too and would clip the half-outside drag handle. The body
+    // owns scrolling, so the paper can stay visible.
+    overflow: 'visible',
+  },
+  // Invisible grab strip pinned to the drawer's left edge. Widened hit
+  // area (8px) with a thin grip line that fades in on hover / while
+  // dragging so the affordance is discoverable without adding chrome.
+  resizeHandle: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    width: 8,
+    transform: 'translateX(-50%)',
+    cursor: 'col-resize',
+    zIndex: 2,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    touchAction: 'none',
+    '&::after': {
+      content: '""',
+      width: 3,
+      height: 40,
+      borderRadius: 3,
+      backgroundColor: theme.palette.divider,
+      transition: 'background-color 120ms ease, height 120ms ease',
+    },
+    '&:hover::after': {
+      backgroundColor: theme.palette.primary.main,
+      height: 56,
+    },
+    '&:focus-visible': {
+      outline: 'none',
+    },
+    '&:focus-visible::after': {
+      backgroundColor: theme.palette.primary.main,
+      height: 56,
+    },
+  },
+  resizeHandleActive: {
+    '&::after': {
+      backgroundColor: theme.palette.primary.main,
+      height: 56,
+    },
   },
   header: {
     display: 'flex',
@@ -16,6 +64,12 @@ export const useStyles = makeStyles(theme => ({
     padding: theme.spacing(1.5, 2),
     borderBottom: `1px solid ${theme.palette.divider}`,
   },
+  headerTitleWrap: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1),
+  },
+  headerIcon: { color: theme.palette.primary.main },
   headerTitle: { fontWeight: 600 },
   body: {
     flex: 1,
@@ -124,34 +178,78 @@ export const useStyles = makeStyles(theme => ({
     padding: theme.spacing(1.5, 2),
     borderTop: `1px solid ${theme.palette.divider}`,
   },
+  // Empty-state hero shown only on the empty timeline. Mirrors the
+  // Gemini side-panel layout: a warm greeting, a large question, then a
+  // stack of full-width suggestion pills that are impossible to miss.
+  // Vanishes once the user sends the first turn.
   emptyState: {
     margin: 'auto',
+    width: '100%',
+    maxWidth: 520,
+    textAlign: 'left',
+    padding: theme.spacing(3, 1),
+  },
+  greeting: {
+    fontSize: 22,
+    fontWeight: 600,
+    lineHeight: 1.3,
+    color: theme.palette.primary.main,
+  },
+  greetingQuestion: {
+    fontSize: 22,
+    fontWeight: 600,
+    lineHeight: 1.3,
+    color: theme.palette.text.primary,
+    marginBottom: theme.spacing(1),
+  },
+  emptyContext: {
+    fontSize: 13,
+    lineHeight: 1.5,
     color: theme.palette.text.secondary,
-    textAlign: 'center',
-    padding: theme.spacing(3),
+    marginBottom: theme.spacing(2.5),
   },
-  // Pill-strip of suggestion chips shown only on the empty timeline.
-  // Vanishes once the user sends the first turn — the goal is to
-  // bootstrap a conversation without occupying space afterwards.
-  suggestionStrip: {
+  // Vertical stack of large, left-aligned suggestion pills. Each pill
+  // is a full-width tap target with a trailing arrow so the "click me"
+  // affordance reads at a glance — the previous small centred chips
+  // were easy to overlook.
+  suggestionList: {
     display: 'flex',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: theme.spacing(0.75),
-    marginTop: theme.spacing(2),
+    flexDirection: 'column',
+    gap: theme.spacing(1),
   },
-  suggestionChip: {
-    // Chips already have a clickable affordance via the variant; this
-    // just bumps line-height for multi-line wrapping and gives a subtle
-    // hover affordance distinct from the plain default.
-    height: 'auto',
-    padding: theme.spacing(0.5, 0),
+  suggestionPill: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: theme.spacing(1.5),
+    width: '100%',
+    textAlign: 'left',
+    padding: theme.spacing(1.5, 2),
+    borderRadius: theme.shape.borderRadius * 2,
+    border: `1px solid ${theme.palette.divider}`,
+    backgroundColor: theme.palette.background.default,
+    color: theme.palette.text.primary,
+    fontSize: 14,
+    lineHeight: 1.4,
     cursor: 'pointer',
-    '& .MuiChip-label': {
-      whiteSpace: 'normal',
-      paddingTop: theme.spacing(0.25),
-      paddingBottom: theme.spacing(0.25),
+    transition: 'background-color 120ms ease, border-color 120ms ease',
+    '&:hover': {
+      backgroundColor: theme.palette.action.hover,
+      borderColor: theme.palette.primary.main,
     },
+    '&:focus-visible': {
+      outline: `2px solid ${theme.palette.primary.main}`,
+      outlineOffset: 2,
+    },
+  },
+  suggestionPillLabel: {
+    flex: 1,
+    minWidth: 0,
+  },
+  suggestionPillIcon: {
+    fontSize: 18,
+    color: theme.palette.text.secondary,
+    flexShrink: 0,
   },
   // Native ``<details>`` block holding the evidence / trace-bridge
   // section of an assistant message. We default to closed (no ``open``

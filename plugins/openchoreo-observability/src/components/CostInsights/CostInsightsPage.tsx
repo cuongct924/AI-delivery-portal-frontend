@@ -265,6 +265,7 @@ interface InsightsTabProps {
   optimizeScope?: CostScope;
   scopes: CostScope[];
   stage: CostStageFilter;
+  dimension: CostDimension;
   onSetBudget: () => void;
   refresh: () => void;
 }
@@ -292,6 +293,7 @@ const CostInsightsInsightsTab: FC<InsightsTabProps> = ({
   optimizeScope,
   scopes,
   stage,
+  dimension,
   onSetBudget,
   refresh,
 }) => {
@@ -411,6 +413,7 @@ const CostInsightsInsightsTab: FC<InsightsTabProps> = ({
                   data.level === 'component' && scopes.length === 1
                 }
                 stage={stage}
+                dimension={dimension}
                 mode="allocation"
               />
             </Box>
@@ -437,6 +440,7 @@ const CostInsightsInsightsTab: FC<InsightsTabProps> = ({
                   data.level === 'component' && scopes.length === 1
                 }
                 stage={stage}
+                dimension={dimension}
                 mode="recommendation"
               />
             </Box>
@@ -570,9 +574,6 @@ const CostInsightsTabBar = () => {
 
 export const CostInsightsPage = () => {
   const classes = useStyles();
-  // Optional monthly budget for the scope, so the forecast can show burn
-  // against it. Absent means the budget cards stay hidden.
-  const { budget, setBudget } = useCostBudget();
   const [budgetDialogOpen, setBudgetDialogOpen] = useState(false);
   const location = useLocation();
   const { selection, setSelection, update, searchParams } = useCostSelection();
@@ -583,6 +584,23 @@ export const CostInsightsPage = () => {
   // Resolved against the catalog so the scope matches what the dropdowns show.
   const { resolved, loading: scopeLoading } =
     useResolvedScopeSelection(selection);
+  // Optional monthly budget for the scope, so the forecast can show burn
+  // against it. Absent means the budget cards stay hidden. Keyed by the
+  // resolved scope so each scope keeps its own budget.
+  const budgetScopeKey = useMemo(
+    () =>
+      [
+        resolved.namespaces.join(','),
+        resolved.projects.map(p => `${p.namespace}/${p.name}`).join(','),
+        resolved.components
+          .map(c => `${c.namespace}/${c.project}/${c.name}`)
+          .join(','),
+      ]
+        .filter(Boolean)
+        .join('|'),
+    [resolved],
+  );
+  const { budget, setBudget } = useCostBudget(budgetScopeKey);
   const { level, scopes: resolvedScopes } = expandSelection(resolved);
   // A half-resolved selection would query the parent scope and be superseded
   // the moment a child tier's options land, so hold until the scope settles.
@@ -758,6 +776,7 @@ export const CostInsightsPage = () => {
                 optimizeScope={optimizeScope}
                 scopes={scopes}
                 stage={stage}
+                dimension={dimension}
                 onSetBudget={() => setBudgetDialogOpen(true)}
                 refresh={refresh}
               />

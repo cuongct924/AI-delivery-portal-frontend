@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import {
   Box,
   Button,
-  Chip,
+  ButtonBase,
   Drawer,
   IconButton,
   InputAdornment,
@@ -16,10 +16,10 @@ import CloseIcon from '@material-ui/icons/Close';
 import SendIcon from '@material-ui/icons/Send';
 import StopIcon from '@material-ui/icons/Stop';
 import DeleteOutlineIcon from '@material-ui/icons/DeleteOutline';
-import AndroidOutlinedIcon from '@material-ui/icons/AndroidOutlined';
 import ExpandMoreIcon from '@material-ui/icons/ExpandMore';
 import ExpandLessIcon from '@material-ui/icons/ExpandLess';
-import { useApi } from '@backstage/core-plugin-api';
+import ArrowForwardIcon from '@material-ui/icons/ArrowForward';
+import { identityApiRef, useApi } from '@backstage/core-plugin-api';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remend from 'remend';
@@ -30,8 +30,10 @@ import {
   type StreamEvent,
 } from '../../api/PerchAgentApi';
 import type { PinnedContext } from '../AssistantContext/AssistantDrawerContext';
+import { AssistantBotIcon } from '../AssistantBotIcon/AssistantBotIcon';
 import { useStyles } from './styles';
 import { splitForCollapse, splitForStreaming } from './splitForCollapse';
+import { MIN_DRAWER_WIDTH, maxDrawerWidth } from './drawerWidth';
 
 /**
  * Strip ``<comp:NAME>`` / ``<proj:NAME>`` / ``<env:NAME>`` /
@@ -118,6 +120,18 @@ interface Props {
    * particular workflow run) and want chips to reference it by name.
    */
   suggestions?: string[];
+  /**
+   * Current panel width in px. Owned by the provider so it can reserve
+   * matching space in the page layout (the content shrinks rather than
+   * being covered by the panel).
+   */
+  width: number;
+  /** True while the user is dragging the resize handle. */
+  isResizing: boolean;
+  /** Pointer-down handler for the resize handle. */
+  onResizeStart: (e: React.MouseEvent<HTMLDivElement>) => void;
+  /** Keyboard handler for the resize handle (arrow keys). */
+  onResizeKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => void;
 }
 
 export const AssistantChatDrawer = ({
@@ -130,10 +144,48 @@ export const AssistantChatDrawer = ({
   resetConversation,
   suggestions,
   openSeq,
+  width,
+  isResizing,
+  onResizeStart,
+  onResizeKeyDown,
 }: Props) => {
   const classes = useStyles();
   const api = useApi(perchAgentApiRef);
+  const identityApi = useApi(identityApiRef);
   const location = useLocation();
+
+  // Greeting name for the empty state. Best-effort: the identity API is
+  // mocked out in some test harnesses, so guard the call and fall back
+  // to a nameless greeting.
+  const [firstName, setFirstName] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const pending = identityApi.getProfileInfo?.();
+    if (!pending) return undefined;
+    pending
+      .then(profile => {
+        if (cancelled) return;
+        const name = profile?.displayName?.trim().split(/\s+/)[0];
+        if (name) setFirstName(name);
+      })
+      .catch(() => {
+        // best-effort — a nameless greeting is fine.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [identityApi]);
+
+  // Escape closes the panel. The drawer is `persistent` (no Modal), so
+  // MUI no longer wires this up for us the way the temporary variant did.
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
 
   // Recompute scope on every navigation; old conversations stay readable
   // but new turns use the latest scope. The pinned context (if any)
@@ -491,14 +543,40 @@ export const AssistantChatDrawer = ({
   return (
     <Drawer
       anchor="right"
+      variant="persistent"
       open={open}
       onClose={onClose}
-      PaperProps={{ className: classes.drawerPaper }}
+      PaperProps={{
+        className: classes.drawerPaper,
+        style: { width },
+      }}
     >
+      {/* The handle is a WAI-ARIA "window splitter" — a focusable
+          separator. jsx-a11y doesn't classify `separator` as interactive,
+          so the two rules below are disabled for this element only. */}
+      {/* eslint-disable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */}
+      <div
+        className={`${classes.resizeHandle}${
+          isResizing ? ` ${classes.resizeHandleActive}` : ''
+        }`}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize assistant panel"
+        aria-valuenow={width}
+        aria-valuemin={MIN_DRAWER_WIDTH}
+        aria-valuemax={maxDrawerWidth()}
+        tabIndex={0}
+        onMouseDown={onResizeStart}
+        onKeyDown={onResizeKeyDown}
+      />
+      {/* eslint-enable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */}
       <Box className={classes.header}>
-        <Typography variant="subtitle1" className={classes.headerTitle}>
-          Portal Assistant
-        </Typography>
+        <Box className={classes.headerTitleWrap}>
+          <AssistantBotIcon className={classes.headerIcon} fontSize="small" />
+          <Typography variant="subtitle1" className={classes.headerTitle}>
+            Portal Assistant
+          </Typography>
+        </Box>
         <Box>
           <Tooltip title="Clear conversation">
             <span>
@@ -534,7 +612,13 @@ export const AssistantChatDrawer = ({
       <div className={classes.body} ref={bodyRef}>
         {timeline.length === 0 && !streaming && !toolStatus && (
           <Box className={classes.emptyState}>
-            <Typography variant="body2">
+            <Typography className={classes.greeting}>
+              Hello{firstName ? `, ${firstName}` : ''}
+            </Typography>
+            <Typography className={classes.greetingQuestion}>
+              How can I help you today?
+            </Typography>
+            <Typography className={classes.emptyContext}>
               {(() => {
                 if (scope.caseType === 'build_failure') {
                   return (
@@ -637,17 +721,20 @@ export const AssistantChatDrawer = ({
                 }
               }
               return (
-                <Box className={classes.suggestionStrip}>
+                <Box className={classes.suggestionList}>
                   {chips.map(c => (
-                    <Chip
+                    <ButtonBase
                       key={c.label}
-                      label={c.label}
-                      variant="outlined"
-                      size="small"
-                      clickable
-                      className={classes.suggestionChip}
+                      className={classes.suggestionPill}
                       onClick={() => handleSuggestion(c.message)}
-                    />
+                    >
+                      <span className={classes.suggestionPillLabel}>
+                        {c.label}
+                      </span>
+                      <ArrowForwardIcon
+                        className={classes.suggestionPillIcon}
+                      />
+                    </ButtonBase>
                   ))}
                 </Box>
               );
@@ -712,7 +799,7 @@ export const AssistantChatDrawer = ({
                     }`}
                   >
                     <Box className={classes.fixPromptBannerLabel}>
-                      <AndroidOutlinedIcon
+                      <AssistantBotIcon
                         className={classes.fixPromptBannerIcon}
                       />
                       <Typography

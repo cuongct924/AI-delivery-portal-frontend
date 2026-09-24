@@ -75,8 +75,8 @@ OpenChoreo (see `adapters/factory.py`'s `get_workflow_adapter()` and
 The Portal has a built-in chat assistant (`mcp-chat`), reachable through
 `routers/chat.py`. It answers using:
 
-- A **persona's active system prompt** (currently one persona, "mlops" —
-  the MLOps Assistant), versioned through the same Prompt Registry the
+- A **persona's active system prompt** (currently one persona, "llmops" —
+  the LLMOps Assistant), versioned through the same Prompt Registry the
   LLMOps Golden Path drafts and activates.
 - Optionally, **RAG** over a named Qdrant collection (`use_rag=true`,
   `rag_collection=<name>`) — this is exactly how this document, once

@@ -6,7 +6,7 @@ import {
   useComponentEntityDetails,
 } from '@openchoreo/backstage-plugin-react';
 import { Box, Button, makeStyles } from '@material-ui/core';
-import ChatOutlinedIcon from '@material-ui/icons/ChatOutlined';
+import { AssistantBotIcon } from '../AssistantBotIcon/AssistantBotIcon';
 import { useSearchParams } from 'react-router-dom';
 import { perchAgentApiRef, type ChatScope } from '../../api/PerchAgentApi';
 import { useAssistantDrawer } from '../AssistantContext/AssistantDrawerContext';
@@ -217,7 +217,7 @@ export const LogsPageDebugPrompt = ({
         onFocus={warmIfStale}
         aria-label="Ask AI about these logs"
       >
-        <ChatOutlinedIcon className={classes.icon} />
+        <AssistantBotIcon className={classes.icon} />
         Ask AI
       </Button>
     </Box>

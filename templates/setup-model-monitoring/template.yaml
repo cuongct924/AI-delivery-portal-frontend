@@ -4,11 +4,14 @@ metadata:
   name: setup-model-monitoring
   title: 'Set Up Model Monitoring'
   description: >
-    Schedules recurring drift checks between production and training data,
-    logged to MLflow, with optional auto-retraining.
+    Schedule recurring drift checks for a deployed model, with optional
+    auto-retraining.
   tags:
     - mlops
     - monitoring
+  links:
+    - title: Troubleshooting FAQ
+      url: /docs/default/system/ai-delivery-portal/troubleshooting-faq
 
 spec:
   owner: user:guest
@@ -16,6 +19,10 @@ spec:
 
   parameters:
     - title: Model and monitoring signal
+      description: >
+        Pick the registered model to watch and how often to check it. The
+        reference data is attached automatically from the model's training
+        lineage.
       required:
         - modelName
         - modelVersion
@@ -33,13 +40,21 @@ spec:
           title: Model version
           type: string
           default: '1'
+        # Auto-bound from the selected model version's registry metadata
+        # (StepLayoutField's taskType binding) — the Dev never picks it, and
+        # it drives both the metrics table below and the retrain request's
+        # task_type, so neither can disagree with the model.
+        taskType:
+          title: Task type
+          type: string
+          readOnly: true
+          description: Detected from the model's registry metadata.
         referenceDataUri:
           title: Reference (training) data URI
           type: string
-          default: file:///mnt/data/classification-telco-fraud-detection/telco-fraud-detection-sample.csv
           description: >
-            Select the training dataset used by this model. The platform uses
-            it as the stable baseline for comparison.
+            Auto-filled from the model's training lineage and locked — change
+            the model to change it. Manual pick for versions without lineage.
         productionDataSource:
           title: Production data source
           type: string
@@ -50,9 +65,8 @@ spec:
               title: Custom URI (advanced)
           default: managed-prediction-log
           description: >
-            The recommended option reads data automatically logged by the
-            deployed model. Choose Custom URI only when your data is managed
-            outside the platform.
+            Platform-managed reads the deployed model's prediction log. Use
+            Custom URI only for data managed outside the platform.
         schedulePreset:
           title: Monitoring frequency
           type: string
@@ -75,19 +89,52 @@ spec:
             - performance-degradation
           default: data-drift
           description: >
-            Data drift detects changed input distributions. Performance
-            degradation detects a drop in a quality metric once labels are
-            available for recent production predictions.
+            Data drift = changed input distribution. Performance degradation =
+            a quality-metric drop (needs recent labels).
         onDriftDetected:
           title: On drift detected
           type: string
           enum: [alert-only, auto-retrain]
           default: alert-only
           description: >
-            "alert-only" just logs the monitoring run to MLflow.
-            "auto-retrain" also calls trigger-training automatically —
-            real risk if the drift check false-positives, so this is your
-            call, not the platform's.
+            alert-only logs the run to MLflow. auto-retrain also triggers
+            training — risky if the drift check false-positives.
+        # Pre-flight FinOps panel (StepLayoutField's costEstimate flag) —
+        # calls the same /costs/estimate + /costs/check the estimate-cost/
+        # cost-gate steps below call at submit time. Its own value is never
+        # read; only its group placement matters.
+        costEstimate:
+          title: Cost estimate
+          type: string
+          readOnly: true
+          # Carries the golden path name so the Review step can resolve the
+          # same estimate config; the panel itself reads its ui:options.
+          default: setup-model-monitoring
+          description: Computed automatically — nothing to fill in.
+        # Security control surface (StepLayoutField's securityScan flag) —
+        # the monitoring schedule is the drift/compliance control itself;
+        # these add the audit and reporting half of the surface.
+        auditLogging:
+          title: Inference audit trail
+          type: boolean
+          default: true
+          description: Record every monitoring run with actor and artifact.
+        complianceReport:
+          title: Compliance reporting
+          type: boolean
+          default: true
+          description: Emit a periodic compliance report from the audit trail.
+        modelSigning:
+          title: Model signing
+          type: boolean
+          default: false
+          description: Verify the monitored artifact's signature before each run.
+        securityScan:
+          title: Security posture
+          type: string
+          readOnly: true
+          default: setup-model-monitoring
+          description: Computed automatically — nothing to fill in.
       allOf:
         - if:
             properties:
@@ -161,37 +208,59 @@ spec:
                 description: >
                   Use the managed label stream when production labels are
                   delivered to the platform after inference.
-              metricName:
-                title: Performance metric
-                type: string
-                oneOf:
-                  - const: f1_score
-                    title: F1-score
-                  - const: accuracy
-                    title: Accuracy
-                  - const: precision
-                    title: Precision
-                  - const: recall
-                    title: Recall
-                  - const: rmse
-                    title: RMSE
-                default: f1_score
+              # Rendered by StepLayoutField's taskTypeMetrics flag as a
+              # task-type-aware table: only the metrics that apply to the
+              # selected model's task_type show, each with its own
+              # minimum-acceptable threshold. `x-threshold` seeds a metric's
+              # default; `x-task-type` (on retrainAlgorithm below) hides
+              # options that don't fit the model.
+              metricNames:
+                title: Performance metrics & thresholds
+                type: array
+                items:
+                  oneOf:
+                    - const: f1_score
+                      title: F1-score
+                      x-threshold: 0.85
+                    - const: accuracy
+                      title: Accuracy
+                      x-threshold: 0.9
+                    - const: precision
+                      title: Precision
+                      x-threshold: 0.8
+                    - const: recall
+                      title: Recall
+                      x-threshold: 0.8
+                    - const: rmse
+                      title: RMSE
+                      x-threshold: 1.0
+                    - const: mae
+                      title: MAE
+                      x-threshold: 1.0
+                    - const: r2_score
+                      title: R2-score
+                      x-threshold: 0.8
+                default:
+                  - f1_score
+                minItems: 1
+                uniqueItems: true
                 description: >
-                  Metric to monitor once ground truth is available, for
-                  example f1_score, accuracy, precision, recall, or rmse.
-              minMetricThreshold:
-                title: Minimum acceptable metric
-                type: number
-                default: 0.85
-                minimum: 0
-                maximum: 1
-                description: >
-                  Performance is considered degraded when metricName falls
-                  below this value.
+                  Pick the metrics to watch and set each one's minimum
+                  acceptable value. Watching several at once avoids a single
+                  metric hiding a real regression (e.g. high accuracy on
+                  imbalanced data while recall collapses). Degradation is
+                  flagged when ANY selected metric crosses its threshold.
+              # Written by the metricNames field's taskTypeMetrics flag —
+              # declared here so it's a real schema property (RJSF validates
+              # it) and hidden in the group so it doesn't also render raw.
+              metricThresholds:
+                title: Metric thresholds
+                type: object
+                additionalProperties:
+                  type: number
             required:
               - groundTruthDataSource
-              - metricName
-              - minMetricThreshold
+              - metricNames
         - if:
             properties:
               monitoringType:
@@ -234,24 +303,50 @@ spec:
                 const: auto-retrain
           then:
             properties:
-              retrainTaskType:
-                title: Retrain task type
-                type: string
-                enum: [classification, regression]
-                default: classification
-                description: Select the task type used by the training pipeline.
+              # No retrainTaskType field: the model's own task_type (bound
+              # above) is what the retrain request uses, so a Dev can't pick
+              # a task type that disagrees with the model. The algorithm
+              # options are filtered to that task type via x-task-type.
               retrainAlgorithm:
                 title: Retrain algorithm
                 type: string
-                enum:
-                  - LogisticRegression
-                  - RandomForestClassifier
-                  - GradientBoostingClassifier
-                  - XGBClassifier
+                oneOf:
+                  - const: LogisticRegression
+                    title: Logistic Regression
+                    x-task-type: classification
+                  - const: RandomForestClassifier
+                    title: Random Forest Classifier
+                    x-task-type: classification
+                  - const: GradientBoostingClassifier
+                    title: Gradient Boosting Classifier
+                    x-task-type: classification
+                  - const: XGBClassifier
+                    title: XGBoost Classifier
+                    x-task-type: classification
+                  - const: LinearRegression
+                    title: Linear Regression
+                    x-task-type: regression
+                  - const: RandomForestRegressor
+                    title: Random Forest Regressor
+                    x-task-type: regression
+                  - const: GradientBoostingRegressor
+                    title: Gradient Boosting Regressor
+                    x-task-type: regression
+                  - const: XGBRegressor
+                    title: XGBoost Regressor
+                    x-task-type: regression
+                  - const: KMeans
+                    title: K-Means
+                    x-task-type: clustering
+                  - const: DBSCAN
+                    title: DBSCAN
+                    x-task-type: clustering
+                  - const: AgglomerativeClustering
+                    title: Agglomerative Clustering
+                    x-task-type: clustering
                 default: LogisticRegression
                 description: Select an approved algorithm for reactive retraining.
             required:
-              - retrainTaskType
               - retrainAlgorithm
 
       ui:field: StepLayout
@@ -266,6 +361,9 @@ spec:
               - name: modelVersion
                 width: 6
                 modelVersionPicker: true
+              - name: taskType
+                width: 6
+                readOnlyDisplay: true
               - name: referenceDataUri
                 datasetPicker: true
               - name: productionDataSource
@@ -283,14 +381,40 @@ spec:
               - driftThreshold
               - groundTruthDataSource
               - groundTruthDataUri
-              - metricName
-              - minMetricThreshold
+              - name: metricNames
+                taskTypeMetrics: true
+              - name: metricThresholds
+                hidden: true
           - title: Response
             icon: notifications
             fields:
               - onDriftDetected
-              - retrainTaskType
-              - retrainAlgorithm
+              - name: retrainAlgorithm
+                taskTypeOptions: true
+          - title: Security
+            icon: security
+            fields:
+              - name: auditLogging
+                width: 6
+              - name: complianceReport
+                width: 6
+              - name: modelSigning
+                width: 6
+              - name: securityScan
+                securityScan:
+                  goldenPath: setup-model-monitoring
+                  stage: run
+                  artifactFields: [modelName]
+                  paramFields: [auditLogging, complianceReport, modelSigning]
+          - title: Cost estimate
+            icon: attach_money
+            fields:
+              - name: costEstimate
+                costEstimate:
+                  goldenPath: setup-model-monitoring
+                  stage: run
+                  artifactFields: [modelName]
+                  paramFields: [schedule]
 
   steps:
     # Pre-flight FinOps: estimate the recurring monitoring compute before the
@@ -311,11 +435,27 @@ spec:
       name: 'Check the cost budget'
       action: orchestration:cost-gate
       input:
+        # Block a fail-level overrun (the estimate step above only warns).
+        mode: enforce
         goldenPath: setup-model-monitoring
         stage: run
         artifact: ${{ parameters.modelName }}
         params:
           schedule: ${{ parameters.schedule }}
+
+    # Pre-flight security scan: the monitoring schedule is the drift control;
+    # this checks the audit/compliance half of the surface.
+    - id: security-scan
+      name: 'Scan the security posture'
+      action: orchestration:security-scan
+      input:
+        goldenPath: setup-model-monitoring
+        stage: run
+        artifact: ${{ parameters.modelName }}
+        params:
+          auditLogging: ${{ parameters.auditLogging }}
+          complianceReport: ${{ parameters.complianceReport }}
+          modelSigning: ${{ parameters.modelSigning }}
 
     - id: setup-monitoring
       name: 'Register the monitoring schedule'
@@ -331,19 +471,33 @@ spec:
         driftThreshold: ${{ parameters.driftThreshold }}
         groundTruthDataUri: ${{ parameters.groundTruthDataUri }}
         groundTruthDataSource: ${{ parameters.groundTruthDataSource }}
-        metricName: ${{ parameters.metricName }}
-        minMetricThreshold: ${{ parameters.minMetricThreshold }}
+        metricNames: ${{ parameters.metricNames }}
+        metricThresholds: ${{ parameters.metricThresholds }}
         onDriftDetected: ${{ parameters.onDriftDetected }}
         retrainRequestJson: >-
           {"model_name":"${{ parameters.modelName }}","dataset_uri":"${{
           parameters.referenceDataUri }}","task_type":"${{
-          parameters.retrainTaskType }}","algorithm":"${{
+          parameters.taskType }}","algorithm":"${{
           parameters.retrainAlgorithm }}"}
 
   output:
+    # Pre-flight FinOps recap — the same estimate/gate the form panel showed,
+    # surfaced on the task result. Values are empty when the estimate step was
+    # skipped (e.g. a non-deploy action); the card then renders nothing.
+    costGoldenPath: setup-model-monitoring
+    costStage: run
+    costEstimated: ${{ steps['estimate-cost'].output.estimatedCost }}
+    costLevel: ${{ steps['cost-gate'].output.level }}
+    costBudget: ${{ steps['cost-gate'].output.budget }}
+    costReasons: ${{ steps['cost-gate'].output.reasons }}
+    costAlternatives: ${{ steps['cost-gate'].output.alternatives }}
+    securityScore: ${{ steps['security-scan'].output.score }}
+    securityPassed: ${{ steps['security-scan'].output.passed }}
     links:
       - title: View monitoring runs in MLflow
         url: http://localhost:5000
+      - title: View this model version in MLflow
+        url: http://localhost:5000/#/models/${{ parameters.modelName }}/${{ parameters.modelVersion }}
     text:
       - title: Result
         content: |
@@ -353,6 +507,10 @@ spec:
           on `${{ parameters.schedule }}` using the
           **${{ parameters.monitoringType }}** signal. Data-drift uses a
           drift-share threshold of **${{ parameters.driftThreshold }}**;
-          performance-degradation monitors **${{ parameters.metricName }}**
-          against a minimum of **${{ parameters.minMetricThreshold }}**.
+          performance-degradation monitors
+          **${{ steps['setup-monitoring'].output.metricNamesSummary }}**
+          against each metric's own threshold.
           Response: **${{ parameters.onDriftDetected }}**.
+
+          Security posture: **${{ steps['security-scan'].output.score }}/100** —
+          audit trail and compliance reporting are enforced.

@@ -1,0 +1,38 @@
+diff --git a/dist/hooks/useEventStream.esm.js b/dist/hooks/useEventStream.esm.js
+index 54031d886abe5413b7a5987c73e6656b73a50b17..dc9a11482559447a2e8d4c12fd10128870c5f68e 100644
+--- a/dist/hooks/useEventStream.esm.js
++++ b/dist/hooks/useEventStream.esm.js
+@@ -14,6 +14,7 @@ function reducer(draft, action) {
+         current[next.id] = [];
+         return current;
+       }, {});
++      draft.seenLogIds = /* @__PURE__ */ new Set();
+       draft.error = void 0;
+       draft.completed = false;
+       draft.task = action.data;
+@@ -25,6 +26,15 @@ function reducer(draft, action) {
+         draft.loading = false;
+       }
+       for (const entry of entries) {
++        if (entry.id !== void 0) {
++          if (!draft.seenLogIds) {
++            draft.seenLogIds = /* @__PURE__ */ new Set();
++          }
++          if (draft.seenLogIds.has(entry.id)) {
++            continue;
++          }
++          draft.seenLogIds.add(entry.id);
++        }
+         const logLine = `${entry.createdAt} ${entry.body.message}`;
+         if (!entry.body.stepId || !draft.steps?.[entry.body.stepId]) {
+           continue;
+@@ -87,7 +97,8 @@ const useTaskEventStream = (taskId) => {
+     loading: true,
+     completed: false,
+     stepLogs: {},
+-    steps: {}
++    steps: {},
++    seenLogIds: /* @__PURE__ */ new Set()
+   });
+   useEffect(() => {
+     let didCancel = false;

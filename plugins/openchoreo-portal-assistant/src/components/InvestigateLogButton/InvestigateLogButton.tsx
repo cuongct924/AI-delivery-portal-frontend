@@ -3,7 +3,7 @@ import { useApi } from '@backstage/core-plugin-api';
 import { useEntity } from '@backstage/plugin-catalog-react';
 import { useAssistantEnabled } from '@openchoreo/backstage-plugin-react';
 import { IconButton, Tooltip, makeStyles } from '@material-ui/core';
-import ChatOutlinedIcon from '@material-ui/icons/ChatOutlined';
+import { AssistantBotIcon } from '../AssistantBotIcon/AssistantBotIcon';
 import { useSearchParams } from 'react-router-dom';
 import { perchAgentApiRef, type ChatScope } from '../../api/PerchAgentApi';
 import { useAssistantDrawer } from '../AssistantContext/AssistantDrawerContext';
@@ -248,7 +248,7 @@ export const InvestigateLogButton = ({
         size="small"
         aria-label="Investigate this log line with Portal Assistant"
       >
-        <ChatOutlinedIcon className={classes.icon} />
+        <AssistantBotIcon className={classes.icon} />
       </IconButton>
     </Tooltip>
   );

@@ -4,11 +4,13 @@ metadata:
   name: llm-evaluate-activate
   title: 'Evaluate & Activate Prompt / RAG Version'
   description: >
-    Evaluates a drafted prompt or RAG index version with an LLM judge and
-    activates it immediately if it passes — or rolls back to a previously
-    registered version instantly, with no re-evaluation.
+    Score a drafted prompt or RAG version with an LLM judge, then activate it
+    if it passes — or roll back instantly.
   tags:
     - llmops
+  links:
+    - title: Troubleshooting FAQ
+      url: /docs/default/system/ai-delivery-portal/troubleshooting-faq
 
 spec:
   owner: user:guest
@@ -16,6 +18,10 @@ spec:
 
   parameters:
     - title: What to do
+      description: >
+        Evaluate a drafted version and activate it only if it passes the gate,
+        or roll back to an already-registered version. Pick a non-production
+        environment to try a version before real chat traffic uses it.
       required:
         - action
         - artifactKind
@@ -47,6 +53,18 @@ spec:
           title: Action
           type: string
           enum: [evaluate-activate, rollback]
+          # Rendered as a row of cards (StepLayoutField's choiceCards) — the
+          # two actions have very different consequences, so a caption per
+          # card beats one dense paragraph under a dropdown.
+          x-cards:
+            - value: evaluate-activate
+              label: Evaluate & activate
+              caption: Run the LLM judge; activate only if it passes
+              icon: bolt
+            - value: rollback
+              label: Rollback
+              caption: Reactivate a known-good version instantly, no re-eval
+              icon: undo
           default: evaluate-activate
           description: >
             "evaluate-activate" runs the LLM judge against a drafted version
@@ -61,10 +79,55 @@ spec:
               title: "Prompt - a persona's drafted system prompt version"
             - const: rag-index
               title: "RAG Index - a Qdrant collection's drafted index version"
+          x-cards:
+            - value: prompt
+              label: Prompt
+              caption: A persona's drafted system prompt version
+              icon: bolt
+            - value: rag-index
+              label: RAG Index
+              caption: A Qdrant collection's drafted index version
+              icon: list
           default: prompt
           description: >
             Choose which drafted artifact to evaluate and, if it passes,
             activate — or to roll back.
+        # Pre-flight FinOps panel (StepLayoutField's costEstimate flag) —
+        # calls the same /costs/estimate + /costs/check the estimate-cost/
+        # cost-gate steps below call at submit time. Its own value is never
+        # read; only its group placement matters.
+        costEstimate:
+          title: Cost estimate
+          type: string
+          readOnly: true
+          # Carries the golden path name so the Review step can resolve the
+          # same estimate config; the panel itself reads its ui:options.
+          default: llm-evaluate-activate
+          description: Computed automatically — nothing to fill in.
+        # Security control surface (StepLayoutField's securityScan flag) —
+        # the Evaluate Gate is the last stop before activation, so the
+        # injection scan and audit trail are enforced here.
+        injectionDetection:
+          title: Prompt-injection detection
+          type: boolean
+          default: true
+          description: Run the eval set through an injection check before activating.
+        auditLogging:
+          title: Inference audit trail
+          type: boolean
+          default: true
+          description: Record every evaluate/activate with actor and artifact.
+        complianceReport:
+          title: Compliance reporting
+          type: boolean
+          default: true
+          description: Emit a compliance report from the gate's audit trail.
+        securityScan:
+          title: Security posture
+          type: string
+          readOnly: true
+          default: llm-evaluate-activate
+          description: Computed automatically — nothing to fill in.
       # promptName/promptVersion and collectionName/indexVersion only exist
       # in the resolved schema once artifactKind actually picks their
       # branch — same fix as llm-draft-ingest's own Prompt/RAG Index
@@ -133,7 +196,7 @@ spec:
               promptName:
                 title: Persona key
                 type: string
-                default: mlops
+                default: llmops
                 description: The persona drafted in Golden Path #1 (Draft Prompt).
               promptVersion:
                 title: Prompt version
@@ -179,7 +242,7 @@ spec:
               promptName:
                 title: Persona key
                 type: string
-                default: mlops
+                default: llmops
                 description: The persona to roll back.
               promptVersion:
                 title: Version to roll back to
@@ -219,11 +282,15 @@ spec:
       ui:options:
         groups:
           - title: What to do
+            icon: bolt
             fields:
-              - action
-              - artifactKind
+              - name: action
+                choiceCards: true
+              - name: artifactKind
+                choiceCards: true
               - targetEnvironment
           - title: 'Prompt (when Artifact kind = Prompt)'
+            icon: description
             fields:
               - name: promptName
                 width: 6
@@ -232,6 +299,7 @@ spec:
                 width: 6
                 promptVersionPicker: true
           - title: 'RAG Index (when Artifact kind = RAG Index)'
+            icon: library_books
             fields:
               - name: collectionName
                 width: 6
@@ -243,6 +311,7 @@ spec:
           # (see the allOf above) — disappears entirely for rollback instead
           # of showing a stale/irrelevant eval form.
           - title: Evaluation
+            icon: checklist
             fields:
               - name: evalSetName
                 evalSetNamePicker: true
@@ -250,6 +319,35 @@ spec:
               - name: model
                 width: 6
                 llmModelPicker: true
+          - title: Security
+            icon: security
+            fields:
+              - name: injectionDetection
+                width: 6
+              - name: auditLogging
+                width: 6
+              - name: complianceReport
+                width: 6
+              - name: securityScan
+                securityScan:
+                  goldenPath: llm-evaluate-activate
+                  stage: gate
+                  artifactFields: [collectionName, promptName]
+                  paramFields:
+                    [injectionDetection, auditLogging, complianceReport]
+                  when:
+                    action: evaluate-activate
+          - title: Cost estimate
+            icon: attach_money
+            fields:
+              - name: costEstimate
+                costEstimate:
+                  goldenPath: llm-evaluate-activate
+                  stage: gate
+                  artifactFields: [collectionName, promptName]
+                  paramFields: [artifactKind]
+                  when:
+                    action: evaluate-activate
 
   steps:
     # Pre-flight FinOps: estimate the judge (gate) spend before evaluating.
@@ -272,11 +370,28 @@ spec:
       action: orchestration:cost-gate
       if: ${{ parameters.action === 'evaluate-activate' }}
       input:
+        # Block a fail-level overrun (the estimate step above only warns).
+        mode: enforce
         goldenPath: llm-evaluate-activate
         stage: gate
         artifact: ${{ parameters.artifactKind === 'rag-index' and parameters.collectionName or parameters.promptName }}
         params:
           artifactKind: ${{ parameters.artifactKind }}
+
+    # Pre-flight security scan: the gate is the last stop before activation,
+    # so a missing injection scan or audit trail blocks it.
+    - id: security-scan
+      name: 'Scan the security posture'
+      action: orchestration:security-scan
+      if: ${{ parameters.action === 'evaluate-activate' }}
+      input:
+        goldenPath: llm-evaluate-activate
+        stage: gate
+        artifact: ${{ parameters.artifactKind === 'rag-index' and parameters.collectionName or parameters.promptName }}
+        params:
+          injectionDetection: ${{ parameters.injectionDetection }}
+          auditLogging: ${{ parameters.auditLogging }}
+          complianceReport: ${{ parameters.complianceReport }}
 
     - id: fetch-eval-set
       name: 'Fetch the named eval set'
@@ -330,9 +445,25 @@ spec:
         isRollback: ${{ parameters.action === 'rollback' }}
 
   output:
+    # Pre-flight FinOps recap — the same estimate/gate the form panel showed,
+    # surfaced on the task result. Values are empty when the estimate step was
+    # skipped (e.g. a non-deploy action); the card then renders nothing.
+    costGoldenPath: llm-evaluate-activate
+    costStage: gate
+    costEstimated: ${{ steps['estimate-cost'].output.estimatedCost }}
+    costLevel: ${{ steps['cost-gate'].output.level }}
+    costBudget: ${{ steps['cost-gate'].output.budget }}
+    costReasons: ${{ steps['cost-gate'].output.reasons }}
+    costAlternatives: ${{ steps['cost-gate'].output.alternatives }}
+    securityScore: ${{ steps['security-scan'].output.score }}
+    securityPassed: ${{ steps['security-scan'].output.passed }}
     text:
       - title: Result
         content: |
+          {% if parameters.action === 'evaluate-activate' %}
+          Security posture: **${{ steps['security-scan'].output.score }}/100** —
+          injection detection, audit trail and compliance reporting are enforced.
+          {% endif %}
           {% if parameters.action === 'rollback' %}
           {% if parameters.artifactKind === 'prompt' %}
           **Rolled back.** Prompt **${{ parameters.promptName }}** is active

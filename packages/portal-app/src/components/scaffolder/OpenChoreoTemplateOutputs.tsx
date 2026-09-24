@@ -2,7 +2,9 @@ import { useParams } from 'react-router-dom';
 import useAsync from 'react-use/esm/useAsync';
 import Box from '@material-ui/core/Box';
 import Button from '@material-ui/core/Button';
+import Chip from '@material-ui/core/Chip';
 import Paper from '@material-ui/core/Paper';
+import Typography from '@material-ui/core/Typography';
 import { makeStyles } from '@material-ui/core/styles';
 import Alert, { Color as AlertSeverity } from '@material-ui/lab/Alert';
 import AlertTitle from '@material-ui/lab/AlertTitle';
@@ -45,6 +47,28 @@ const useStyles = makeStyles({
       margin: 0,
     },
   },
+  costCard: {
+    padding: 16,
+    marginBottom: 16,
+  },
+  costHeader: {
+    display: 'flex',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  costTitle: { fontWeight: 600, fontSize: '0.85rem' },
+  costAmount: { fontWeight: 700, fontSize: '1.1rem' },
+  costRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  costMuted: { fontSize: '0.8rem', color: '#5F5F5F' },
+  costOk: { backgroundColor: '#2E7D32', color: '#FFF' },
+  costWarn: { backgroundColor: '#F57C00', color: '#FFF' },
+  costFail: { backgroundColor: '#D32F2F', color: '#FFF' },
 });
 
 const ALERT_SEVERITIES: readonly AlertSeverity[] = [
@@ -139,6 +163,152 @@ function TemplateRunNav() {
   );
 }
 
+interface CostOutput {
+  goldenPath?: unknown;
+  stage?: unknown;
+  estimatedCost?: unknown;
+  level?: unknown;
+  budget?: unknown;
+  reasons?: unknown;
+  alternatives?: unknown;
+}
+
+interface SecurityOutput {
+  score?: unknown;
+  passed?: unknown;
+}
+
+const COST_LEVEL_LABEL: Record<string, string> = {
+  ok: 'Within budget',
+  warn: 'Near budget',
+  fail: 'Over budget',
+};
+
+function formatUsd(value: number): string {
+  return new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function toNumber(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function toReasons(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (typeof value === 'string' && value.trim() !== '') {
+    return value
+      .split(',')
+      .map(part => part.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+/**
+ * Pre-flight FinOps recap on the task result — the same estimate/gate the
+ * form panel showed, read from the template's `output.cost` block. Renders
+ * nothing when the estimate step was skipped (all values empty).
+ */
+function CostCard({ cost }: { cost: CostOutput }) {
+  const classes = useStyles();
+  const estimated = toNumber(cost.estimatedCost);
+  if (estimated === null) return null;
+
+  const budget = toNumber(cost.budget);
+  const level = typeof cost.level === 'string' ? cost.level : '';
+  const reasons = toReasons(cost.reasons);
+  const alternatives = toReasons(cost.alternatives);
+  const stage = typeof cost.stage === 'string' ? cost.stage : '';
+  let levelClass = classes.costOk;
+  if (level === 'fail') levelClass = classes.costFail;
+  else if (level === 'warn') levelClass = classes.costWarn;
+
+  return (
+    <Box paddingBottom={2}>
+      <Paper className={classes.costCard}>
+        <Box className={classes.costHeader}>
+          <Typography className={classes.costTitle}>
+            Estimated {stage} cost
+          </Typography>
+          <Typography className={classes.costAmount}>
+            {formatUsd(estimated)}
+          </Typography>
+        </Box>
+        {budget !== null && (
+          <Box className={classes.costRow}>
+            <Chip
+              label={COST_LEVEL_LABEL[level] ?? 'Within budget'}
+              size="small"
+              className={levelClass}
+            />
+            <Typography className={classes.costMuted}>
+              Budget {formatUsd(budget)}
+            </Typography>
+          </Box>
+        )}
+        {reasons.map((reason, index) => (
+          <Typography key={index} className={classes.costMuted}>
+            • {reason}
+          </Typography>
+        ))}
+        {alternatives.length > 0 && (
+          <Typography className={classes.costMuted} style={{ marginTop: 4 }}>
+            Alternatives: {alternatives.join('; ')}
+          </Typography>
+        )}
+        <Typography className={classes.costMuted} style={{ marginTop: 8 }}>
+          Pre-flight estimate — the actual cost may differ.
+        </Typography>
+      </Paper>
+    </Box>
+  );
+}
+
+/**
+ * Security posture recap on the task result — the same scan the form panel
+ * showed, read from the template's flat `security*` output keys. Renders
+ * nothing when the scan step was skipped (no score).
+ */
+function SecurityCard({ security }: { security: SecurityOutput }) {
+  const classes = useStyles();
+  const score = toNumber(security.score);
+  if (score === null) return null;
+
+  const passed = security.passed === true || security.passed === 'true';
+
+  return (
+    <Box paddingBottom={2}>
+      <Paper className={classes.costCard}>
+        <Box className={classes.costHeader}>
+          <Typography className={classes.costTitle}>
+            Security posture
+          </Typography>
+          <Typography className={classes.costAmount}>{score}/100</Typography>
+        </Box>
+        <Box className={classes.costRow}>
+          <Chip
+            label={passed ? 'All controls enforced' : 'Blocked'}
+            size="small"
+            className={passed ? classes.costOk : classes.costFail}
+          />
+        </Box>
+        <Typography className={classes.costMuted} style={{ marginTop: 8 }}>
+          Model Registry Governance · Data Isolation · Prompt Security ·
+          Inference Audit
+        </Typography>
+      </Paper>
+    </Box>
+  );
+}
+
 /**
  * Scaffolder task-page outputs renderer used across all OpenChoreo templates
  * (wired as `EXPERIMENTAL_TemplateOutputsComponent` in OpenChoreoScaffolderPage).
@@ -162,8 +332,28 @@ export function OpenChoreoTemplateOutputs(props: {
     Boolean(url || entityRef),
   );
   const texts = (output?.text ?? []).filter(text => Boolean(text.content));
+  // The template's `output` schema only allows string values, so the cost
+  // recap is spread across flat `cost*` keys rather than one nested object.
+  const cost: CostOutput = {
+    goldenPath: output?.costGoldenPath,
+    stage: output?.costStage,
+    estimatedCost: output?.costEstimated,
+    level: output?.costLevel,
+    budget: output?.costBudget,
+    reasons: output?.costReasons,
+    alternatives: output?.costAlternatives,
+  };
+  const security: SecurityOutput = {
+    score: output?.securityScore,
+    passed: output?.securityPassed,
+  };
 
-  if (links.length === 0 && texts.length === 0) {
+  if (
+    links.length === 0 &&
+    texts.length === 0 &&
+    !cost.estimatedCost &&
+    security.score === undefined
+  ) {
     return <TemplateRunNav />;
   }
 
@@ -198,6 +388,8 @@ export function OpenChoreoTemplateOutputs(props: {
           </Paper>
         </Box>
       )}
+      {cost.estimatedCost && <CostCard cost={cost} />}
+      <SecurityCard security={security} />
       {texts.map((text, index) => (
         <TemplateTextOutput
           key={index}

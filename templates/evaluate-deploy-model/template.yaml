@@ -4,9 +4,12 @@ metadata:
   name: evaluate-deploy-model
   title: 'Evaluate & Deploy Model'
   description: >
-    Deploy, roll back, or promote a model version — pick `action` below.
+    Deploy, roll back, or promote a registered model version.
   tags:
     - mlops
+  links:
+    - title: Troubleshooting FAQ
+      url: /docs/default/system/ai-delivery-portal/troubleshooting-faq
 
 spec:
   owner: user:guest
@@ -14,6 +17,10 @@ spec:
 
   parameters:
     - title: Model to deploy
+      description: >
+        Pick an action and a registered model version. Deploy runs the
+        Evaluate Gate first; rollback and promote reuse an already-passed
+        version.
       required:
         - action
         - modelName
@@ -51,6 +58,58 @@ spec:
           title: Summary
           type: string
           readOnly: true
+          description: Computed automatically — nothing to fill in.
+        # Pre-flight FinOps panel (StepLayoutField's costEstimate flag) —
+        # calls the same /costs/estimate + /costs/check the estimate-cost/
+        # cost-gate steps below call at submit time, so the Dev sees the
+        # run cost and budget impact before running. Its own value is never
+        # read; only its group placement matters.
+        costEstimate:
+          title: Cost estimate
+          type: string
+          readOnly: true
+          # Carries the golden path name so the Review step can resolve the
+          # same estimate config; the panel itself reads its ui:options.
+          default: evaluate-deploy-model
+          description: Computed automatically — nothing to fill in.
+        # Security control surface (StepLayoutField's securityScan flag) —
+        # scanned before the deploy/promote runs; a blocking finding stops it.
+        approvalGate:
+          title: Approval gate
+          type: string
+          oneOf:
+            - const: none
+              title: No approval
+            - const: auto
+              title: Auto-approve on gate pass
+            - const: manual
+              title: Manual approval required
+          default: auto
+          description: >
+            Required off dev — a non-dev deploy/promote needs an approval
+            gate, not just a passing Evaluate Gate.
+        provenanceTracking:
+          title: Provenance tracking
+          type: boolean
+          default: true
+          description: Record dataset version + code commit with the version.
+        auditLogging:
+          title: Inference audit trail
+          type: boolean
+          default: true
+          description: Record every deploy/promote with actor and artifact.
+        explainability:
+          title: Explainability
+          type: boolean
+          default: false
+          description: Attach the gate's reasoning to the audited decision.
+        # Pre-flight security panel — calls the same /security/scan the
+        # security-scan step below calls at submit time.
+        securityScan:
+          title: Security posture
+          type: string
+          readOnly: true
+          default: evaluate-deploy-model
           description: Computed automatically — nothing to fill in.
         # modelVersion/enablePredictionLogging/deployStrategy/
         # releaseStrategy/trafficPercent/repoUrl/targetEnvironment are all
@@ -109,6 +168,18 @@ spec:
                   ProjectReleaseBinding manifest and opens a PR — nothing
                   is applied to the cluster until you run this template
                   again with **promote-confirm** after merging it.
+              # Declared here too, not just under deploy/pr-gated below:
+              # this branch requires repoUrl (the PR needs a target repo)
+              # but RJSF can't fill a required property that doesn't exist
+              # in the resolved schema — without this, Review always fails
+              # with "'Repo Url' must have required property 'repoUrl'".
+              # Renders inside the Release group (releaseStrategy itself
+              # stays deploy-only and is skipped here).
+              repoUrl:
+                title: Repository
+                type: string
+                default: github.com?owner=cuongct924&repo=backstage-plugins
+                description: 'PR target repo: github.com?owner=<org>&repo=<repo>.'
         - if:
             required: [action]
             properties:
@@ -233,8 +304,43 @@ spec:
               - deployStrategy
               - name: trafficPercent
                 versionComparison: true
+          - title: Security
+            icon: security
+            fields:
+              - name: approvalGate
+                width: 6
+              - name: provenanceTracking
+                width: 6
+              - name: auditLogging
+                width: 6
+              - name: explainability
+                width: 6
+              - name: securityScan
+                securityScan:
+                  goldenPath: evaluate-deploy-model
+                  stage: run
+                  artifactFields: [modelName]
+                  paramFields:
+                    [
+                      approvalGate,
+                      provenanceTracking,
+                      auditLogging,
+                      explainability,
+                      targetEnvironment,
+                    ]
+          - title: Cost estimate
+            icon: attach_money
+            fields:
+              - name: costEstimate
+                costEstimate:
+                  goldenPath: evaluate-deploy-model
+                  stage: run
+                  artifactFields: [modelName]
+                  paramFields: [deployStrategy, trafficPercent]
+                  when:
+                    action: deploy
           - title: Release
-            icon: function
+            icon: launch
             fields:
               - releaseStrategy
               - repoUrl
@@ -250,7 +356,7 @@ spec:
             fields:
               - enablePredictionLogging
           - title: Summary
-            icon: list
+            icon: assignment
             fields:
               - name: deploySummary
                 summaryField: true
@@ -294,12 +400,31 @@ spec:
       action: orchestration:cost-gate
       if: ${{ parameters.action === 'deploy' }}
       input:
+        # Block a fail-level overrun (the estimate step above only warns).
+        mode: enforce
         goldenPath: evaluate-deploy-model
         stage: run
         artifact: ${{ parameters.modelName }}
         params:
           deployStrategy: ${{ parameters.deployStrategy }}
           trafficPercent: ${{ parameters.trafficPercent }}
+
+    # Pre-flight security scan: a non-dev promote without an approval gate is
+    # blocked before the manifest is rendered.
+    - id: security-scan
+      name: 'Scan the security posture'
+      action: orchestration:security-scan
+      if: ${{ parameters.action === 'deploy' or parameters.action === 'promote' }}
+      input:
+        goldenPath: evaluate-deploy-model
+        stage: run
+        artifact: ${{ parameters.modelName }}
+        params:
+          approvalGate: ${{ parameters.approvalGate }}
+          provenanceTracking: ${{ parameters.provenanceTracking }}
+          auditLogging: ${{ parameters.auditLogging }}
+          explainability: ${{ parameters.explainability }}
+          environment: ${{ parameters.targetEnvironment }}
 
     - id: prepare-manifest
       name: 'Render the InferenceService manifest / deploy'
@@ -400,6 +525,23 @@ spec:
         eventType: deploy
 
   output:
+    # Pre-flight FinOps recap — the same estimate/gate the form panel showed,
+    # surfaced on the task result. Values are empty when the estimate step was
+    # skipped (e.g. a non-deploy action); the card then renders nothing.
+    costGoldenPath: evaluate-deploy-model
+    costStage: run
+    costEstimated: ${{ steps['estimate-cost'].output.estimatedCost }}
+    costLevel: ${{ steps['cost-gate'].output.level }}
+    costBudget: ${{ steps['cost-gate'].output.budget }}
+    costReasons: ${{ steps['cost-gate'].output.reasons }}
+    costAlternatives: ${{ steps['cost-gate'].output.alternatives }}
+    securityScore: ${{ steps['security-scan'].output.score }}
+    securityPassed: ${{ steps['security-scan'].output.passed }}
+    links:
+      - title: View this model in MLflow
+        url: http://localhost:5000/#/models/${{ parameters.modelName }}
+      - title: 'Next: Set Up Monitoring for this version'
+        url: /create/templates/default/setup-model-monitoring
     text:
       - title: Result
         content: |
@@ -422,7 +564,7 @@ spec:
           **${{ parameters.confirmEnvironment }}**.
 
           Release bound per environment:
-          `${{ steps['confirm-promote'].output.environments }}`
+          `${{ steps['confirm-promote'].output.environmentsSummary }}`
 
           {% if steps['confirm-promote'].output.prodPendingApproval %}
           Staging is now ahead of production — run this template again
@@ -435,6 +577,9 @@ spec:
           (deployStrategy=${{ parameters.deployStrategy }}, releaseStrategy=${{ parameters.releaseStrategy }}).
 
           Estimated run cost: **${{ steps['estimate-cost'].output.estimatedCost }} USD**.
+
+          Security posture: **${{ steps['security-scan'].output.score }}/100** —
+          approval gate, provenance tracking and the audit trail are enforced.
 
           {% if parameters.releaseStrategy === 'pr-gated' %}
           Deploy PR opened: ${{ steps['publish-pr'].output.remoteUrl }}
@@ -449,7 +594,11 @@ spec:
           {% endif %}
 
           {% if parameters.enablePredictionLogging %}
-          **Next step:** prediction logging is enabled for this version —
+          **Next step:** open **Set Up Model Monitoring** (link above) with
+          modelName=`${{ parameters.modelName }}` and
+          modelVersion=`${{ parameters.modelVersion }}`.
+
+          Prediction logging is enabled for this version —
           have whatever calls the deployed endpoint also call
           `POST /models/${{ parameters.modelName }}/predictions/log` with
           the same version. "Set Up Model Monitoring" already exists as a

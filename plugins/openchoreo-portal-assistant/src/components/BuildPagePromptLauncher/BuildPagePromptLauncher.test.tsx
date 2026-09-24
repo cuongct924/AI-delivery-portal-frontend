@@ -54,6 +54,7 @@ jest.mock('../AssistantContext/AssistantDrawerContext', () => ({
   useAssistantDrawer: () => ({
     openDrawer: (...args: unknown[]) => holder.openDrawer(...args),
     hasConversation: (...args: unknown[]) => holder.hasConversation(...args),
+    registerContextualLauncher: () => () => {},
   }),
 }));
 

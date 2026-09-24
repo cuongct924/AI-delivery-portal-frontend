@@ -144,6 +144,54 @@ describe('orchestration:trigger-training', () => {
     await expect(action.handler(ctx)).rejects.toThrow(/Timed out/);
   });
 
+  it('retries the status poll after a transient network failure', async () => {
+    const fetchMock = jest.fn();
+    fetchMock
+      .mockImplementationOnce(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ workflow_name: 'wf-net' }),
+        text: async () => '',
+      }))
+      // First status poll: a transient `fetch failed` (e.g. orchestration-api
+      // restarting) — must not fail the run.
+      .mockImplementationOnce(async () => {
+        throw new TypeError('fetch failed');
+      })
+      .mockImplementationOnce(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          name: 'wf-net',
+          phase: 'Succeeded',
+          message: null,
+        }),
+        text: async () => '',
+      }))
+      .mockImplementationOnce(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ name: 'fraud-detection', version: '7' }),
+        text: async () => '',
+      }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const action = createTriggerTrainingAction({ config, pollIntervalMs: 1 });
+    const { ctx, outputs } = createMockContext<typeof action>(
+      {
+        modelName: 'fraud-detection',
+        datasetUri: 'file:///data.csv',
+        taskType: 'classification',
+        algorithm: 'LogisticRegression',
+      },
+      '/tmp/workspace',
+    );
+
+    await action.handler(ctx);
+
+    expect(outputs.phase).toBe('Succeeded');
+    expect(outputs.modelVersion).toBe('7');
+  });
+
   it('forwards architecture and DL hyperparameters to the orchestration API', async () => {
     const fetchMock = mockFetchResponses([
       { ok: true, body: { workflow_name: 'wf-4' } },
@@ -289,7 +337,7 @@ describe('orchestration:trigger-training', () => {
 
 describe('orchestration:validate-dataset', () => {
   it('outputs results and does not throw when nothing is blocking', async () => {
-    mockFetchResponses([
+    const fetchMock = mockFetchResponses([
       {
         ok: true,
         body: [
@@ -314,11 +362,18 @@ describe('orchestration:validate-dataset', () => {
         datasetUri: 'file:///data.csv',
         taskType: 'classification',
         targetColumn: 'is_fraud',
+        idColumns: ['customer_id'],
       },
       '/tmp/workspace',
     );
 
     await action.handler(ctx);
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject(
+      {
+        id_columns: ['customer_id'],
+      },
+    );
 
     expect(outputs.results).toEqual([
       { checkName: 'check_missing_values', severity: 'info', message: 'clean' },
@@ -544,6 +599,7 @@ describe('orchestration:cost-gate', () => {
           estimated_cost: 120,
           budget: 100,
           reasons: ['over budget'],
+          alternatives: ['use spot pricing', 'downsize to A100'],
         },
       },
     ]);
@@ -563,6 +619,10 @@ describe('orchestration:cost-gate', () => {
     expect(outputs.level).toBe('warn');
     expect(outputs.estimatedCost).toBe(120);
     expect(outputs.budget).toBe(100);
+    expect(outputs.alternatives).toEqual([
+      'use spot pricing',
+      'downsize to A100',
+    ]);
   });
 
   it('throws when enforce mode blocks a fail', async () => {
@@ -575,6 +635,7 @@ describe('orchestration:cost-gate', () => {
           estimated_cost: 300,
           budget: 100,
           reasons: ['way over budget'],
+          alternatives: ['use spot pricing'],
         },
       },
     ]);
@@ -589,7 +650,9 @@ describe('orchestration:cost-gate', () => {
       '/tmp/workspace',
     );
 
-    await expect(action.handler(ctx)).rejects.toThrow('way over budget');
+    await expect(action.handler(ctx)).rejects.toThrow(
+      'way over budget — alternatives: use spot pricing',
+    );
   });
 });
 
@@ -609,7 +672,7 @@ describe('orchestration:setup-monitoring', () => {
         monitoringType: 'performance-degradation',
         groundTruthDataSource: 'managed-label-log',
         groundTruthDataUri: 'file:///data/ground-truth.csv',
-        metricName: 'f1_score',
+        metricNames: ['f1_score', 'recall'],
         minMetricThreshold: 0.85,
         onDriftDetected: 'alert-only',
       },
@@ -628,11 +691,42 @@ describe('orchestration:setup-monitoring', () => {
       monitoring_type: 'performance-degradation',
       ground_truth_data_source: 'managed-label-log',
       ground_truth_data_uri: 'file:///data/ground-truth.csv',
-      metric_name: 'f1_score',
+      metric_names: ['f1_score', 'recall'],
       min_metric_threshold: 0.85,
       on_drift_detected: 'alert-only',
     });
     expect(outputs.cronWorkflowName).toBe('monitoring-cron-1');
+    expect(outputs.metricNamesSummary).toBe('f1_score, recall');
+  });
+
+  it('forwards per-metric thresholds and derives the scalar fallback', async () => {
+    const fetchMock = mockFetchResponses([
+      { ok: true, body: { cron_workflow_name: 'monitoring-cron-1' } },
+    ]);
+    const action = createSetupMonitoringAction({ config });
+    const { ctx } = createMockContext<typeof action>(
+      {
+        modelName: 'fraud-detection',
+        modelVersion: '3',
+        referenceDataUri: 'file:///data/reference.csv',
+        productionDataSource: 'managed-prediction-log',
+        schedule: '0 * * * *',
+        monitoringType: 'performance-degradation',
+        groundTruthDataSource: 'managed-label-log',
+        groundTruthDataUri: 'file:///data/ground-truth.csv',
+        metricNames: ['f1_score', 'recall'],
+        metricThresholds: { f1_score: 0.85, recall: 0.7 },
+        onDriftDetected: 'alert-only',
+      },
+      '/tmp/workspace',
+    );
+
+    await action.handler(ctx);
+
+    const [, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(requestInit.body as string);
+    expect(body.metric_thresholds).toEqual({ f1_score: 0.85, recall: 0.7 });
+    expect(body.min_metric_threshold).toBe(0.7);
   });
 
   it('adds reactive metadata to auto-retrain requests', async () => {
